@@ -3,11 +3,12 @@
 import sys
 from PySide6.QtWidgets import QApplication
 
-from overlay_window import OverlayWindow
+from overlay import OverlayWindow
 
 
 def main():
     app = QApplication(sys.argv)
+    
     overlay = OverlayWindow()
     overlay.resize(300, 150)
     overlay.show()
