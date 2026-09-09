@@ -7,7 +7,7 @@ from overlay import OverlayWindow
 from pie_menu import PieMenu
 from hotkey import HotkeyListener
 
-PIE_MENU_HOTKEY = "ctrl+alt+space"
+PIE_MENU_HOTKEY = "ctrl+shift+space"
 
 
 def main():

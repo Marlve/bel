@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pie_math import wedge_index
+from pie_menu import wedge_index
 
 
 class WedgeIndexTests(unittest.TestCase):

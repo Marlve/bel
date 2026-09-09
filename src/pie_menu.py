@@ -5,23 +5,35 @@
 
 import math
 
-from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QCursor
 from PySide6.QtCore import Qt, QPointF
 
 import style
-from pie_math import wedge_index
+from overlay import OverlayWindow
 
 LABELS = ["Up", "Right", "Down", "Left"]
 RADIUS = 90
 DEADZONE = 20
 
 
-class PieMenu(QWidget):
+def wedge_index(dx, dy, count, deadzone=0):
+    """Index of the wedge (0 = up, going clockwise) that (dx, dy) points
+    into, or None if the point is inside the deadzone. dx/dy are a screen
+    space offset from the menu's center - y grows downward.
+    """
+    if math.hypot(dx, dy) < deadzone:
+        return None
+
+    math_angle = math.degrees(math.atan2(-dy, dx)) % 360  # 0=right, 90=up
+    compass_angle = (90 - math_angle) % 360  # 0=up, 90=right, clockwise
+    wedge_width = 360 / count
+    shifted = (compass_angle + wedge_width / 2) % 360
+    return int(shifted // wedge_width)
+
+
+class PieMenu(OverlayWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
