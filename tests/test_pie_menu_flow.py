@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtCore import Qt, QEvent, QAbstractAnimation
+from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
 from pie_menu import PieMenu, HIDDEN, OPEN, PROMPTING
 
@@ -17,6 +17,23 @@ PROMPT_WEDGE = 3  # the one WEDGE_CONFIG gives a placeholder
 
 def key(code, text=""):
     return QKeyEvent(QEvent.KeyPress, code, Qt.NoModifier, text)
+
+
+class StubAction(QObject):
+    """Stands in for a wedge's action, recording its calls. Carries the
+    chunk/finished signals a wedge with a placeholder has to expose, since
+    that's what a result card wires itself to."""
+
+    chunk = Signal(str)
+    finished = Signal()
+
+    def __init__(self, index, calls):
+        super().__init__()
+        self.index = index
+        self.calls = calls
+
+    def __call__(self, *args):
+        self.calls.append((self.index, args))
 
 
 class PieMenuFlowTests(unittest.TestCase):
@@ -33,9 +50,12 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.motion = False
         self.calls = []
         for index, wedge in enumerate(self.menu.wedges):
-            wedge.action = lambda *args, index=index: self.calls.append((index, args))
+            wedge.action = StubAction(index, self.calls)
 
     def tearDown(self):
+        for card in list(self.menu.cards.cards):
+            card.close()
+        self.menu.cards.cards.clear()
         self.menu.close()
         self.menu.deleteLater()
 
@@ -93,6 +113,64 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.prompt_bar.submit()
         self.assertEqual(self.calls, [(PROMPT_WEDGE, ("what is on my plate today",))])
         self.assertEqual(self.menu.phase, HIDDEN)
+
+    def test_submitting_opens_a_card_born_as_the_prompt_bar(self):
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        born = self.menu.prompt_bar.screenRect()
+        self.menu.prompt_bar.field.setText("what is on my plate today")
+        self.menu.prompt_bar.submit()
+
+        self.assertEqual(len(self.menu.cards.cards), 1)
+        card = self.menu.cards.cards[0]
+        self.assertEqual(card.prompt, "what is on my plate today")
+        self.assertEqual(card.born, born)
+        self.assertEqual(card.dock.size().toSize().width(), 340)
+
+    def test_a_card_docks_against_the_top_right_of_the_work_area(self):
+        screen = QApplication.primaryScreen()
+        area = screen.availableGeometry()
+        dock = self.menu.cards.dockRect(0, screen)
+        self.assertEqual(dock.top(), area.y() + 24)
+        self.assertEqual(dock.right(), area.x() + area.width() - 24)
+
+    def test_stacked_cards_sit_below_the_newest(self):
+        screen = QApplication.primaryScreen()
+        first = self.menu.cards.dockRect(0, screen)
+        second = self.menu.cards.dockRect(1, screen)
+        self.assertEqual(second.top() - first.top(), 352)
+        self.assertEqual(second.left(), first.left())
+
+    def test_chunks_arriving_mid_flight_wait_for_the_card_to_land(self):
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        self.menu.prompt_bar.field.setText("hello")
+        self.menu.prompt_bar.submit()
+
+        card = self.menu.cards.cards[0]
+        self.menu.wedges[PROMPT_WEDGE].action.chunk.emit("in flight")
+        self.assertEqual(card.body.toPlainText(), "")
+        card.flight.stop()
+        card.onLanded()
+        self.assertEqual(card.body.toPlainText(), "in flight")
+
+    def test_a_finished_request_stops_feeding_its_card(self):
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        self.menu.prompt_bar.field.setText("hello")
+        self.menu.prompt_bar.submit()
+
+        card = self.menu.cards.cards[0]
+        card.flight.stop()
+        card.onLanded()
+        action = self.menu.wedges[PROMPT_WEDGE].action
+        action.chunk.emit("first answer")
+        action.finished.emit()
+        action.chunk.emit("second question's answer")
+        self.assertEqual(card.body.toPlainText(), "first answer")
 
     def test_an_empty_prompt_is_rejected_rather_than_sent(self):
         self.openMenu()

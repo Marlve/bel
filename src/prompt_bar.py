@@ -16,7 +16,7 @@ import math
 
 from PySide6.QtWidgets import QWidget, QLineEdit
 from PySide6.QtGui import QPainter, QColor, QPen, QPalette
-from PySide6.QtCore import Qt, QRectF, QPointF, QEvent, Signal, QVariantAnimation
+from PySide6.QtCore import Qt, QRectF, QPoint, QPointF, QEvent, Signal, QVariantAnimation
 
 import style
 
@@ -79,6 +79,12 @@ class PromptBar(QWidget):
         self.rect_opacity = rect_opacity
         self.chrome_opacity = chrome_opacity
         self.update()
+
+    def screenRect(self):
+        """Where the frame sits in screen coordinates - what the result card
+        is born as."""
+        origin = self.mapToGlobal(QPoint(0, 0))
+        return QRectF(origin.x(), origin.y(), self.width(), self.height())
 
     def appendSeed(self, text):
         """Keystrokes that landed while the field was still in flight."""

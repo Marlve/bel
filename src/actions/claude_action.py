@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, QThread, QTimer
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from claude import ClaudeWorker
@@ -17,7 +17,16 @@ class ClaudeAction(QObject):
     (hung CLI), and the app quitting while a request is in flight. Both are
     routed through `cancel()`, which terminates the subprocess so it can't
     outlive this app.
+
+    Re-emits the response as it streams so a result card can show it. Every
+    call ends with exactly one `finished`, including the rejected-because-busy
+    case - a card wires itself to these signals when it opens and unwires on
+    `finished`, so a call that never finished would leave it listening and
+    catch the *next* request's output.
     """
+
+    chunk = Signal(str)
+    finished = Signal()
 
     def __init__(self, prompt=DEFAULT_PROMPT):
         super().__init__()
@@ -40,6 +49,8 @@ class ClaudeAction(QObject):
             # would drop the only Python reference to that QThread/worker,
             # letting Qt garbage-collect a thread that's still running.
             print("selected: Claude -> still waiting on the previous request")
+            self.chunk.emit("Still waiting on the previous request.")
+            self.finished.emit()
             return
 
         self.thread = QThread()
@@ -71,9 +82,11 @@ class ClaudeAction(QObject):
 
     def on_chunk(self, text):
         print(text, end="", flush=True)
+        self.chunk.emit(text)
 
     def on_finished(self):
         print()
         self.timeout_timer.stop()
         self.thread = None
         self.worker = None
+        self.finished.emit()  # after the state is cleared, so a listener may start the next request

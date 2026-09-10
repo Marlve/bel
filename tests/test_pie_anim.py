@@ -23,6 +23,8 @@ from pie_anim import (
     geometry_rest_ms,
     handoff_total_ms,
     lerp_rect,
+    card_flight_progress,
+    card_radius,
 )
 
 R = style.RING_RADIUS
@@ -218,6 +220,23 @@ class LerpRectTests(unittest.TestCase):
 
     def test_halfway(self):
         self.assertEqual(lerp_rect(self.a, self.b, 0.5), QRectF(100, 25, 300, 80))
+
+
+class CardFlightTests(unittest.TestCase):
+    BORN_RADIUS = style.FIELD_HEIGHT / 2
+
+    def test_ends(self):
+        self.assertAlmostEqual(card_flight_progress(0), 0)
+        self.assertAlmostEqual(card_flight_progress(style.CARD_FLIGHT_MS), 1)
+
+    def test_never_overshoots(self):
+        # Overshoot next to a screen corner reads as an error, not as polish.
+        self.assertLessEqual(max(card_flight_progress(ms) for ms in range(style.CARD_FLIGHT_MS + 1)), 1)
+
+    def test_radius_squares_off_before_the_flight_lands(self):
+        self.assertAlmostEqual(card_radius(0, self.BORN_RADIUS), self.BORN_RADIUS)
+        self.assertAlmostEqual(card_radius(style.CARD_RADIUS_MS, self.BORN_RADIUS), style.CARD_RADIUS)
+        self.assertAlmostEqual(card_radius(style.CARD_FLIGHT_MS, self.BORN_RADIUS), style.CARD_RADIUS)
 
 
 if __name__ == "__main__":

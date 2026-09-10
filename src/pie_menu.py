@@ -15,6 +15,7 @@ import style
 import pie_anim
 from overlay import OverlayWindow
 from prompt_bar import PromptBar
+from result_card import CardStack
 from actions import ACTIONS
 from util import force_foreground, reduced_motion
 
@@ -131,6 +132,7 @@ class PieMenu(OverlayWindow):
         self.hovered_wedge = None
         self.chosen_wedge = None
         self.prompt_text = None
+        self.born_rect = None  # the prompt bar's last rect, which a card is born as
         self.wedges = build_wedges(WEDGE_CONFIG)
         self.motion = not reduced_motion()
 
@@ -155,6 +157,7 @@ class PieMenu(OverlayWindow):
         self.prompt_bar = PromptBar(self)
         self.prompt_bar.submitted.connect(self.onPromptSubmitted)
         self.prompt_bar.cancelled.connect(self.returnToRing)
+        self.cards = CardStack()  # cards are top-level windows; this is what keeps them alive
 
         self.setWindowOpacity(0)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -357,6 +360,7 @@ class PieMenu(OverlayWindow):
 
     def onPromptSubmitted(self, text):
         self.prompt_text = text
+        self.born_rect = self.prompt_bar.screenRect()  # capture before anything hides it
         self.beginClose()
 
     def cancelPrompt(self):
@@ -368,15 +372,17 @@ class PieMenu(OverlayWindow):
         self.phase = CLOSING
         self.releaseMouse()
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.prompt_bar.hide()
 
-        # Fire at the start of the close, not the end - the user shouldn't wait on the fade.
+        # Fire at the start of the close, not the end - the user shouldn't
+        # wait on the fade. A prompt wedge's answer goes to a card born as
+        # the bar's own rect, so the card has to exist before the bar goes.
         if self.chosen_wedge is not None:
             wedge = self.wedges[self.chosen_wedge]
             if wedge.placeholder is None:
                 wedge.action()
             else:
-                wedge.action(self.prompt_text)
+                self.cards.open(self.born_rect, self.prompt_text, wedge.action)
+        self.prompt_bar.hide()
 
         self.close_ms = 0
         self.runClock(self.close_clock, style.CLOSE_MS)

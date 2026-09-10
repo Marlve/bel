@@ -101,6 +101,32 @@ REJECT_SHIFT = 4
 REJECT_SHAKES = 2
 
 
+# --- Result card. On send, the prompt bar's rect keeps flying: out of the
+# ring's way and into the top-right corner, where the answer streams in. ---
+
+CARD_FLIGHT_MS = 420
+CARD_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
+CARD_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same curve
+CARD_RADIUS = 12
+CARD_SIZE = 340
+CARD_MARGIN = 24  # from the work area's edges, so the card never hides under the taskbar
+CARD_GAP = 12  # between stacked cards
+CARD_MAX = 3
+CARD_RESTACK_MS = 220  # an older card getting out of a newer one's way
+CARD_DISMISS_MS = 140
+CARD_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
+
+CARD_PADDING = 18
+CARD_MARK = 14
+CARD_ECHO_SIZE = 11
+CARD_BODY_SIZE = 13
+CARD_SURFACE = "#141924"
+CARD_BORDER = "#2A3243"
+CARD_ECHO = "#6B7488"
+CARD_BODY = "#D7DCE6"
+CARD_SCROLLBAR = "#2A3243"
+
+
 def prompt_field_stylesheet(text_color):
     return (
         "background: transparent;"
@@ -110,6 +136,30 @@ def prompt_field_stylesheet(text_color):
         f"font-size: {FIELD_FONT_SIZE}pt;"
         f"selection-background-color: {ACCENT};"
         f"selection-color: {LABEL_HOVER};"
+    )
+
+
+def card_echo_stylesheet():
+    return f"color: {CARD_ECHO}; font-family: {FONT_FAMILY}; font-size: {CARD_ECHO_SIZE}pt; background: transparent;"
+
+
+def card_close_stylesheet():
+    return (
+        f"QPushButton {{ color: {CARD_ECHO}; background: transparent; border: none;"
+        f" font-family: {FONT_FAMILY}; font-size: {CARD_ECHO_SIZE}pt; }}"
+        f"QPushButton:hover {{ color: {TEXT}; }}"
+    )
+
+
+def card_body_stylesheet():
+    return (
+        f"QTextBrowser {{ background: transparent; border: none; color: {CARD_BODY};"
+        f" font-family: {FONT_FAMILY}; font-size: {CARD_BODY_SIZE}pt;"
+        f" selection-background-color: {ACCENT}; selection-color: {LABEL_HOVER}; }}"
+        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+        f"QScrollBar::handle:vertical {{ background: {CARD_SCROLLBAR}; border-radius: 3px; min-height: 24px; }}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
     )
 
 

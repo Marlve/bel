@@ -25,6 +25,7 @@ SELECT = easing(style.SELECT_EASING)
 CLOSE = easing(style.CLOSE_EASING)
 RING_EXIT = easing(style.RING_EXIT_EASING)
 GROW = easing(style.GROW_EASING)
+CARD_FLIGHT = easing(style.CARD_FLIGHT_EASING)
 
 
 def progress(elapsed, duration, start=0):
@@ -128,6 +129,19 @@ def crossfade_progress(elapsed):
 
 def field_progress(elapsed):
     return progress(elapsed, style.FIELD_ARRIVE_MS, geometry_rest_ms())
+
+
+# --- The card's flight to the corner. It starts as the prompt bar's rect
+# and squares off into the docked card before it gets there.
+
+
+def card_flight_progress(elapsed):
+    return CARD_FLIGHT.valueForProgress(progress(elapsed, style.CARD_FLIGHT_MS))
+
+
+def card_radius(elapsed, start):
+    t = CARD_FLIGHT.valueForProgress(progress(elapsed, style.CARD_RADIUS_MS))
+    return lerp(start, style.CARD_RADIUS, t)
 
 
 def lerp_rect(a, b, t):
