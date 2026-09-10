@@ -18,10 +18,15 @@ if hasattr(sys.stdout, "reconfigure"):
   # imports this module rather than only running it as a standalone script.
   sys.stdout.reconfigure(encoding="utf-8")
 
-def askBel(prompt):
+def askBel(prompt, on_process=None):
   """Yields each text delta as Claude streams its response, instead of
   returning the full response at once - callers can react to partial
   output rather than waiting for the whole thing.
+
+  `on_process`, if given, is called with the spawned subprocess as soon as
+  it starts, so a caller (e.g. ClaudeWorker) can terminate it from outside
+  this generator - otherwise a hung or abandoned request has no way to be
+  cancelled short of killing the whole app.
   """
   process = subprocess.Popen(
       [
@@ -38,6 +43,8 @@ def askBel(prompt):
       text=True,
       encoding="utf-8",
   )
+  if on_process is not None:
+      on_process(process)
 
   try:
       for line in process.stdout:
@@ -78,6 +85,7 @@ class ClaudeWorker(QObject):
   def __init__(self, prompt):
       super().__init__()
       self._prompt = prompt
+      self._process = None
 
   def run(self):
       # `finished` must always fire, even on error - it's what tells the
@@ -85,9 +93,22 @@ class ClaudeWorker(QObject):
       # wedge_actions.py); otherwise a failed request leaves the wedge
       # permanently stuck and leaks this thread for the app's lifetime.
       try:
-          for text in askBel(self._prompt):
+          for text in askBel(self._prompt, on_process=self._track_process):
               self.chunk.emit(text)
       except Exception as error:
           self.chunk.emit(f"[error: {error}]")
       finally:
           self.finished.emit()
+
+  def _track_process(self, process):
+      self._process = process
+
+  def cancel(self):
+      """Terminates the underlying `claude` subprocess if one is running,
+      unblocking askBel()'s blocking read so run() can finish normally
+      instead of hanging forever. Safe to call from another thread -
+      subprocess.Popen.terminate()/poll() don't touch Qt/Python threading
+      state, just the OS process handle.
+      """
+      if self._process is not None and self._process.poll() is None:
+          self._process.terminate()
