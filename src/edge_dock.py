@@ -33,6 +33,7 @@ class EdgeDock:
         self.streaming = False
         self.composer_focused = False
         self.ever_interacted = False  # picks the 6s idle timer vs the faster 2.5s leave timer
+        self.manually_minimized = False  # header button: folds to COMPACT and stops there, no timers, no busy-reopen
         self.pending_timer = None
         self._busyChanged()  # arms the initial 6s idle timer - a freshly landed card is already "idle"
 
@@ -78,9 +79,21 @@ class EdgeDock:
     def click_tab(self):
         """Hover never opens the tab - only a click does."""
         if self.state == TAB:
-            self.state = OPEN
-            self.hovering = True  # the click landed on the card; the cursor is right there
-            self._busyChanged()
+            self._reopen()
+
+    def click_compact(self):
+        """Same click-to-reopen affordance as the tab, for a folded puck -
+        whether it got there by idle retreat or the minimize button."""
+        if self.state == COMPACT:
+            self._reopen()
+
+    def minimize(self):
+        """Header button: fold immediately, and - unlike the idle/leave
+        retreat - stay at COMPACT rather than continuing on to HIDDEN or
+        being pulled back open by streaming/composer focus. Only click_compact()
+        undoes it."""
+        if self.state == OPEN:
+            self._foldToCompact(manual=True)
 
     # --- timers, fired by the driver once its QTimer elapses ---
 
@@ -91,23 +104,35 @@ class EdgeDock:
         self._retreat()
 
     def compact_hide_timeout(self):
-        if self.state == COMPACT and not self.busy():
+        if self.state == COMPACT and not self.manually_minimized and not self.busy():
             self.state = HIDDEN
             self.pending_timer = None
 
     # --- internals ---
 
+    def _reopen(self):
+        self.state = OPEN
+        self.manually_minimized = False
+        self.hovering = True  # the click landed on the card; the cursor is right there
+        self._busyChanged()
+
+    def _foldToCompact(self, manual):
+        self.state = COMPACT
+        self.manually_minimized = manual
+        self.pending_timer = None if manual else ("compact_hide", style.DOCK_COMPACT_TO_HIDE_DELAY_MS)
+
     def _retreat(self):
         if self.state == OPEN and not self.busy():
-            self.state = COMPACT
-            self.pending_timer = ("compact_hide", style.DOCK_COMPACT_TO_HIDE_DELAY_MS)
+            self._foldToCompact(manual=False)
 
     def _busyChanged(self):
         if self.busy():
             self.ever_interacted = True
-            if self.state == COMPACT and (self.streaming or self.composer_focused):
+            if self.state == COMPACT and not self.manually_minimized and (self.streaming or self.composer_focused):
                 # Genuinely busy, not just a passing hover - reopen it rather
                 # than let it finish retreating out from under a live reply.
+                # A manual minimize overrides even this - it stays put until
+                # explicitly reopened.
                 self.state = OPEN
             self.pending_timer = None  # a plain hover still pauses the hide countdown
             return
@@ -115,7 +140,7 @@ class EdgeDock:
         if self.state == OPEN:
             duration = style.DOCK_LEAVE_MS if self.ever_interacted else style.DOCK_IDLE_MS
             self.pending_timer = ("leave" if self.ever_interacted else "idle", duration)
-        elif self.state == COMPACT:
+        elif self.state == COMPACT and not self.manually_minimized:
             # A hover that didn't turn out to be genuine business (streaming,
             # composer focus) just grazed the puck - resume the countdown to
             # HIDDEN rather than sitting compact forever.
@@ -140,10 +165,11 @@ class EdgeDockDriver:
         "compact_hide": "compact_hide_timeout",
     }
 
-    def __init__(self, parent, geometry_for, on_moved, on_state_changed=None, motion=True):
+    def __init__(self, parent, geometry_for, on_moved, on_state_changed=None, motion=True, on_landed=None):
         self.dock = EdgeDock()
         self.geometry_for = geometry_for
         self.on_state_changed = on_state_changed
+        self.on_landed = on_landed  # fires once a geometry tween reaches its target, not on every tick
         self.motion = motion
         self.current_rect = geometry_for(OPEN)
 
@@ -151,7 +177,7 @@ class EdgeDockDriver:
             self.current_rect = rect
             on_moved(rect)
 
-        self.tween = Tween(parent, tick)
+        self.tween = Tween(parent, tick, self._onTweenFinished)
         self.timer = QTimer(parent)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self._onTimeout)
@@ -179,6 +205,12 @@ class EdgeDockDriver:
     def clickTab(self):
         self._apply(self.dock.click_tab)
 
+    def clickCompact(self):
+        self._apply(self.dock.click_compact)
+
+    def minimize(self):
+        self._apply(self.dock.minimize)
+
     def refresh(self, duration_ms):
         """The current state's own geometry moved (e.g. a restack changed
         this card's slot) without the state itself changing - retarget the
@@ -189,6 +221,10 @@ class EdgeDockDriver:
             self.current_rect = target
             return
         self.tween.run(self.current_rect, target, duration_ms, curves.CHAT_FLIGHT)
+
+    def _onTweenFinished(self):
+        if self.on_landed:
+            self.on_landed()
 
     def _onTimeout(self):
         name, _ = self._armed_timer

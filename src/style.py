@@ -184,7 +184,27 @@ CARD_SHADOW_MARGIN = 28  # extra room a top-level card window needs on every sid
 TODO_ROW_HEIGHT = 36
 TODO_CHECKBOX = 17
 TODO_CHECKBOX_RADIUS = 4
-TODO_REMOVE_DELAY_MS = 2000  # a ticked row vanishes this long after being checked, unless unticked first
+TODO_REMOVE_DELAY_MS = 1000  # a ticked row vanishes this long after being checked, unless unticked first
+
+
+# --- Settings card. A short, fixed list of the ring's non-pinned wedges -
+# label, assigned action, reorder - same CHAT_* surface/shadow as
+# todo/note/chat so it reads as one family. No resize grip: the row count
+# never grows past wedge_config.DEFAULT_OTHER_WEDGES's length. ---
+
+SETTINGS_WIDTH = CHAT_SIZE
+SETTINGS_HEADER_HEIGHT = 24
+SETTINGS_ROW_HEIGHT = 32
+SETTINGS_ROW_GAP = 8
+SETTINGS_ARROW_SIZE = 22
+SETTINGS_ROWS = 3  # todo, note, claude - wedge_config.DEFAULT_OTHER_WEDGES's length
+SETTINGS_HEIGHT = (
+    SETTINGS_HEADER_HEIGHT
+    + 10
+    + SETTINGS_ROWS * SETTINGS_ROW_HEIGHT
+    + (SETTINGS_ROWS - 1) * SETTINGS_ROW_GAP
+    + 2 * CHAT_PADDING
+)
 
 
 # --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, folds
@@ -270,6 +290,33 @@ def chat_composer_stylesheet(warm):
         f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
         f"border: 1px solid {border}; border-radius: {CHAT_COMPOSER_HEIGHT // 2}px;"
         f"padding: 0 {CHAT_COMPOSER_PADDING}px;"
+    )
+
+
+def settings_field_stylesheet():
+    return (
+        f"background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
+        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"border: 1px solid {CHAT_INERT_HINT}; border-radius: 6px;"
+        "padding: 0 8px;"
+    )
+
+
+def settings_combo_stylesheet():
+    return (
+        f"QComboBox {{ background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
+        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"border: 1px solid {CHAT_INERT_HINT}; border-radius: 6px; padding: 0 8px; }}"
+        f"QComboBox QAbstractItemView {{ background: {CHAT_SURFACE}; color: {CHAT_BODY_TEXT};"
+        f"selection-background-color: {CHAT_USER_BUBBLE}; border: 1px solid {CHAT_BORDER}; }}"
+    )
+
+
+def settings_arrow_stylesheet():
+    return (
+        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; }}"
+        f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
+        f"QPushButton:disabled {{ color: {CHAT_INERT_HINT}; }}"
     )
 
 

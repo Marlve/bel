@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,9 +11,11 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
+import card_store
 from pie_menu import PieMenu, HIDDEN, OPEN, PROMPTING
 
-PROMPT_WEDGE = 3  # the one WEDGE_CONFIG gives a placeholder
+PROMPT_WEDGE = 3  # the one wedge_config's defaults give a placeholder (Claude)
+SETTINGS_WEDGE = 2  # wedge_config.bottom_pin_index(4) - where Settings lands by default
 
 
 def key(code, text=""):
@@ -55,6 +58,9 @@ class PieMenuFlowTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_path = card_store.STORE_PATH
+        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.menu = PieMenu()
         self.menu.motion = False
         self.calls = []
@@ -67,6 +73,8 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.cards.cards.clear()
         self.menu.close()
         self.menu.deleteLater()
+        card_store.STORE_PATH = self.original_path
+        self.tmp.cleanup()
 
     def openMenu(self):
         self.menu.openAtCursor()
@@ -251,6 +259,17 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.keyPressEvent(key(Qt.Key_Right))
         self.assertEqual(self.menu.phase, OPEN)
         self.assertEqual(self.menu.hovered_wedge, 0)
+
+    def test_up_key_jumps_straight_to_the_top_wedge(self):
+        self.openMenu()
+        self.menu.setHovered(2)
+        self.menu.keyPressEvent(key(Qt.Key_Up))
+        self.assertEqual(self.menu.hovered_wedge, 0)
+
+    def test_down_key_jumps_straight_to_the_bottom_wedge(self):
+        self.openMenu()
+        self.menu.keyPressEvent(key(Qt.Key_Down))
+        self.assertEqual(self.menu.hovered_wedge, SETTINGS_WEDGE)
 
     def test_a_cursor_past_the_ring_selects_nothing(self):
         from pie_menu import HIT_RADIUS, wedge_index

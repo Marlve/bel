@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen
+from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
 from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
+import wedge_config
 from anims import pose
 from anims.clock import Clock, HoverClock
 from overlay import OverlayWindow
@@ -97,29 +98,46 @@ def mix(a, b, t):
 
 @dataclass
 class Wedge:
+    id: str
     label: str
     action: Callable[..., None]
     placeholder: Optional[str] = None  # set = ask for text first, and pass it to the action
 
 
-# Which wedges the menu shows, in order. Each entry's "id" picks an action
-# factory from ACTIONS; any other key is that action's own config (e.g.
-# "claude" reads "prompt"). A "placeholder" sends the wedge through the
-# prompt bar first. Hardcoded for now - once there's a settings UI, this is
-# the shape it needs to produce.
-WEDGE_CONFIG = [
-    {"id": "todo", "label": "Todo"},
-    {"id": "note", "label": "Note"},
-    {"id": "announce", "label": "Down"},
-    {"id": "claude", "label": "Claude", "placeholder": "Ask Bel anything…"},
-]
+# Which wedges the menu shows, in order. Todo/Note/Claude are user-editable
+# via the Settings wedge (see wedge_config.py for persistence and
+# defaults); Settings itself is always pinned as close to the bottom of the
+# ring as the current wedge count allows, wherever the editable wedges land.
+# Each entry's "id" picks an action factory from ACTIONS; any other key is
+# that action's own config (e.g. "claude" reads "prompt", "settings" reads
+# "on_change"). A "placeholder" sends the wedge through the prompt bar first.
+def current_config(on_settings_change):
+    others = wedge_config.resolve(wedge_config.load_other_wedges())
+    config = wedge_config.full_config(others)
+    for entry in config:
+        if entry["id"] == "settings":
+            entry["on_change"] = on_settings_change
+    return config
 
 
-def build_wedges(config):
-    return [
-        Wedge(entry["label"], ACTIONS[entry["id"]](entry), entry.get("placeholder"))
-        for entry in config
-    ]
+def build_wedges(config, previous=()):
+    """Wedges for `config`, in order. A slot whose action id matches one in
+    `previous` reuses that Wedge's existing action object instead of
+    calling its factory again - a fresh call would build a brand new toggle
+    closure with no memory of an already-open Note/Todo card, silently
+    orphaning it. Only label/placeholder refresh on a reused wedge; those
+    are cheap to swap in place."""
+    by_id = {wedge.id: wedge for wedge in previous}
+    wedges = []
+    for entry in config:
+        existing = by_id.get(entry["id"])
+        if existing is not None:
+            existing.label = entry["label"]
+            existing.placeholder = entry.get("placeholder")
+            wedges.append(existing)
+        else:
+            wedges.append(Wedge(entry["id"], entry["label"], ACTIONS[entry["id"]](entry), entry.get("placeholder")))
+    return wedges
 
 
 class PieMenu(OverlayWindow):
@@ -134,7 +152,7 @@ class PieMenu(OverlayWindow):
         self.chosen_wedge = None
         self.prompt_text = None
         self.born_rect = None  # the prompt bar's last rect, which a card is born as
-        self.wedges = build_wedges(WEDGE_CONFIG)
+        self.wedges = build_wedges(current_config(self.applySettings))
         self.motion = not reduced_motion()
 
         # Elapsed ms into each phase. A phase that hasn't run sits at 0,
@@ -163,6 +181,13 @@ class PieMenu(OverlayWindow):
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setGeometry(QApplication.primaryScreen().virtualGeometry())
         self.show()
+
+    def applySettings(self, other_entries):
+        """Called by the Settings card after a relabel/reorder/reassign is
+        saved. The ring is always closed while that card is up - settings
+        is itself a wedge pick - so nothing keyed to len(self.wedges)
+        (hover_anims, prompt_flow) needs touching, only the wedges list."""
+        self.wedges = build_wedges(current_config(self.applySettings), self.wedges)
 
     # --- hover wiring ---
 
@@ -229,9 +254,7 @@ class PieMenu(OverlayWindow):
 
     def onOpenTick(self, ms):
         self.open_ms = ms
-        # The scrim covers the whole desktop but stops changing well before
-        # the wedges do; past that only the ring is dirty.
-        self.update() if ms <= style.SCRIM_MS else self.update(self.ringRect())
+        self.update(self.ringRect())
 
     def onOpened(self):
         self.phase = OPEN
@@ -332,7 +355,7 @@ class PieMenu(OverlayWindow):
 
     def onCloseTick(self, ms):
         self.close_ms = ms
-        self.update()  # the scrim is fading too, so the whole screen is dirty
+        self.update(self.ringRect())
 
     def onClosed(self):
         self.phase = HIDDEN
@@ -374,6 +397,10 @@ class PieMenu(OverlayWindow):
             self.activateHoveredWedge()
         elif key in CYCLE_STEP_BY_KEY:
             self.setHovered(cycle_wedge(self.hovered_wedge, len(self.wedges), CYCLE_STEP_BY_KEY[key]))
+        elif key == Qt.Key_Up:
+            self.setHovered(0)  # wedge 0 is compass-up by wedge_index()'s own convention
+        elif key == Qt.Key_Down:
+            self.setHovered(wedge_config.bottom_pin_index(len(self.wedges)))
         elif self.isTyping(event):
             self.jumpToPrompt(event.text())
 
@@ -399,10 +426,8 @@ class PieMenu(OverlayWindow):
         painter.setRenderHint(QPainter.Antialiasing)
 
         close_scale, close_alpha = pose.close_pose(self.close_ms)
-
-        scrim = QColor(style.SCRIM)
-        scrim.setAlphaF(style.SCRIM_ALPHA * pose.scrim_progress(self.open_ms) * close_alpha)
-        painter.fillRect(self.rect(), scrim)
+        open_scale, open_alpha = pose.open_pose(self.open_ms)
+        self.paintRingShadow(painter, open_scale * close_scale, open_alpha * close_alpha)
 
         # Hovered wedge last so its glow sits above its neighbours.
         order = [i for i in range(len(self.wedges)) if i != self.hovered_wedge]
@@ -410,6 +435,26 @@ class PieMenu(OverlayWindow):
             order.append(self.hovered_wedge)
         for i in order:
             self.paintWedge(painter, i, close_scale, close_alpha)
+
+    def paintRingShadow(self, painter, scale, alpha):
+        """A soft ambient shadow under the ring as a whole, echoing
+        shadow.py's card look (offset down, blurred) - approximated with a
+        radial gradient since a QGraphicsDropShadowEffect can't target a
+        shape hand-painted inside this full-screen overlay window."""
+        if alpha <= 0:
+            return
+        radius = style.RING_RADIUS * scale
+        outer = radius + style.CARD_SHADOW_BLUR
+        painter.save()
+        painter.translate(self.anchor.x(), self.anchor.y() + style.CARD_SHADOW_OFFSET_Y * scale)
+        color = QColor(0, 0, 0, round(style.CARD_SHADOW_ALPHA * alpha))
+        gradient = QRadialGradient(0, 0, outer)
+        gradient.setColorAt(radius / outer, color)
+        gradient.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(gradient)
+        painter.drawEllipse(QPointF(0, 0), outer, outer)
+        painter.restore()
 
     def paintWedge(self, painter, index, close_scale, close_alpha):
         count = len(self.wedges)

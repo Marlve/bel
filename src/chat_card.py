@@ -133,6 +133,12 @@ class ChatCard(QWidget):
         self.header_label.setFont(header_font)
         self.header_label.setStyleSheet(f"color: {style.CHAT_LABEL_MONO}; background: transparent;")
 
+        self.minimize_button = QPushButton("−", self)
+        self.minimize_button.setFixedSize(18, 18)
+        self.minimize_button.setCursor(Qt.PointingHandCursor)
+        self.minimize_button.setStyleSheet(style.chat_close_stylesheet())
+        self.minimize_button.clicked.connect(self.minimize)
+
         self.close_button = QPushButton("✕", self)
         self.close_button.setFixedSize(18, 18)
         self.close_button.setCursor(Qt.PointingHandCursor)
@@ -143,6 +149,7 @@ class ChatCard(QWidget):
         header.setSpacing(8)
         header.addWidget(self.header_label)
         header.addStretch(1)
+        header.addWidget(self.minimize_button)
         header.addWidget(self.close_button)
 
         self.transcript = QWidget()
@@ -178,12 +185,12 @@ class ChatCard(QWidget):
         root.addWidget(self.composer)
 
     def setContent(self, visible):
-        for widget in (self.header_label, self.close_button, self.scroll, self.composer):
+        for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(visible)
 
     def setCompactVisual(self, compact):
         """COMPACT, TAB and HIDDEN show the bare frame only."""
-        for widget in (self.header_label, self.close_button, self.scroll, self.composer):
+        for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(not compact)
 
     # --- the flight from the prompt bar ---
@@ -212,7 +219,8 @@ class ChatCard(QWidget):
         self.layout().activate()
 
         self.edge_driver = EdgeDockDriver(
-            self, self.geometryFor, self.onDockMoved, self.onDockStateChanged, self.motion
+            self, self.geometryFor, self.onDockMoved, self.onDockStateChanged, self.motion,
+            on_landed=self.onDockLanded,
         )
         if self.request is not None:
             self.edge_driver.setStreaming(True)
@@ -372,7 +380,13 @@ class ChatCard(QWidget):
         self.setGeometry(rect.toRect())
 
     def onDockStateChanged(self, dock_state):
-        self.setCompactVisual(dock_state in (COMPACT, TAB, HIDDEN))
+        # Reaching OPEN is the one transition where content becomes visible
+        # rather than hidden - deferred to onDockLanded() so the labels don't
+        # reflow every frame while the window is still growing from a
+        # COMPACT/TAB-sized footprint up to full size (same reasoning as
+        # onChunk() buffering text until the flight animation is done).
+        if dock_state != OPEN or not self.motion:
+            self.setCompactVisual(dock_state in (COMPACT, TAB, HIDDEN))
         self.radius = style.CHAT_RADIUS
         target_tilt = style.DOCK_TAB_ROTATION_DEG if dock_state == TAB else 0.0
         if self.motion:
@@ -381,6 +395,10 @@ class ChatCard(QWidget):
             self.tilt = target_tilt
         self.update()
 
+    def onDockLanded(self):
+        if self.edge_driver and self.edge_driver.dock.state == OPEN:
+            self.setCompactVisual(False)
+
     def onTiltTick(self, value):
         self.tilt = value
         self.update()
@@ -388,6 +406,10 @@ class ChatCard(QWidget):
     def onEdgeDistance(self, px):
         if self.edge_driver:
             self.edge_driver.cursorDistance(px)
+
+    def minimize(self):
+        if self.edge_driver:
+            self.edge_driver.minimize()
 
     def enterEvent(self, event):
         if self.edge_driver:
@@ -424,6 +446,9 @@ class ChatCard(QWidget):
 
     def isTabbed(self):
         return self.edge_driver is not None and self.edge_driver.dock.state == TAB
+
+    def isCompact(self):
+        return self.edge_driver is not None and self.edge_driver.dock.state == COMPACT
 
     def tabContains(self, pos):
         pivot = self.tabPivot()
@@ -465,6 +490,9 @@ class ChatCard(QWidget):
             if self.tabContains(event.position()) and self.edge_driver:
                 self.edge_driver.clickTab()
             return
+        if self.isCompact() and self.edge_driver:
+            self.edge_driver.clickCompact()
+            return
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -474,7 +502,7 @@ class ChatCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        if self.tilt:
+        if self.isTabbed():
             painter.save()
             pivot = self.tabPivot()
             painter.translate(pivot)
