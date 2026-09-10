@@ -11,7 +11,7 @@ class HotkeyListener(QObject):
 
     def __init__(self, hotkey):
         super().__init__()
-        self._hotkey = hotkey
+        self.hotkey = hotkey
 
     def start(self):
-        keyboard.add_hotkey(self._hotkey, self.triggered.emit)
+        keyboard.add_hotkey(self.hotkey, self.triggered.emit)

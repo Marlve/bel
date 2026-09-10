@@ -14,7 +14,7 @@ def main():
 
     pie_menu = PieMenu()
     hotkey = HotkeyListener(PIE_MENU_HOTKEY)
-    hotkey.triggered.connect(pie_menu.open_at_cursor)
+    hotkey.triggered.connect(pie_menu.onKeyPress)
     hotkey.start()
 
     sys.exit(app.exec())

@@ -8,8 +8,8 @@ BORDER = "#313244"
 FONT_FAMILY = "Segoe UI"
 FONT_SIZE = 11
 
-PIE_RADIUS = 90
-PIE_DEADZONE = 40
+PIE_RADIUS = 140
+PIE_DEADZONE = 80
 
 
 def overlay_stylesheet():

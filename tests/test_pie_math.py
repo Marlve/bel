@@ -29,6 +29,12 @@ class WedgeIndexTests(unittest.TestCase):
     def test_outside_deadzone_resolves(self):
         self.assertEqual(wedge_index(0, -50, 4, deadzone=20), 0)
 
+    def test_outside_radius_is_undecided(self):
+        self.assertIsNone(wedge_index(0, -150, 4, radius=90))
+
+    def test_inside_radius_resolves(self):
+        self.assertEqual(wedge_index(0, -50, 4, radius=90), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

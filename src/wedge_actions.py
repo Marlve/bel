@@ -22,65 +22,65 @@ class ClaudeAction(QObject):
     Two edge cases could otherwise leave the `claude` subprocess (and its
     QThread) running past when they should: a request that never returns
     (hung CLI), and the app quitting while a request is in flight. Both are
-    routed through `_cancel()`, which terminates the subprocess so it can't
+    routed through `cancel()`, which terminates the subprocess so it can't
     outlive this app.
     """
 
     def __init__(self):
         super().__init__()
-        self._thread = None
-        self._worker = None
+        self.thread = None
+        self.worker = None
 
-        self._timeout = QTimer(self)
-        self._timeout.setSingleShot(True)
-        self._timeout.timeout.connect(self._cancel)
+        self.timeout_timer = QTimer(self)
+        self.timeout_timer.setSingleShot(True)
+        self.timeout_timer.timeout.connect(self.cancel)
 
         app = QApplication.instance()
         if app is not None:
-            app.aboutToQuit.connect(self._cancel)
+            app.aboutToQuit.connect(self.cancel)
 
     def __call__(self):
-        if self._thread is not None:
+        if self.thread is not None:
             # A request is already in flight - reassigning these attributes
             # would drop the only Python reference to that QThread/worker,
             # letting Qt garbage-collect a thread that's still running.
             print("selected: Claude -> still waiting on the previous request")
             return
 
-        prompt = "Could you generate me a 200 word poem"  # placeholder until wedges have real input
+        prompt = "Can you make a todo for, ETW assignment, meet a friend"  # placeholder until wedges have real input
 
-        self._thread = QThread()
-        self._worker = ClaudeWorker(prompt)
-        self._worker.moveToThread(self._thread)
+        self.thread = QThread()
+        self.worker = ClaudeWorker(prompt)
+        self.worker.moveToThread(self.thread)
 
-        self._thread.started.connect(self._worker.run)
-        self._worker.chunk.connect(self._on_chunk)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
+        self.thread.started.connect(self.worker.run)
+        self.worker.chunk.connect(self.on_chunk)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
         print("selected: Claude -> ", end="", flush=True)
-        self._thread.start()
-        self._timeout.start(CLAUDE_TIMEOUT_MS)
+        self.thread.start()
+        self.timeout_timer.start(CLAUDE_TIMEOUT_MS)
 
-    def _cancel(self):
+    def cancel(self):
         # Terminates the subprocess so askBel()'s blocking read unblocks and
         # run() can finish normally instead of leaving the thread running
         # forever. Then quit()+wait() so the QThread is confirmed stopped
         # before this returns - matters most when called from aboutToQuit,
         # since the app may not get another event loop turn afterward.
-        if self._worker is not None:
-            self._worker.cancel()
-        if self._thread is not None:
-            self._thread.quit()
-            self._thread.wait(2000)
+        if self.worker is not None:
+            self.worker.cancel()
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait(2000)
 
-    def _on_chunk(self, text):
+    def on_chunk(self, text):
         print(text, end="", flush=True)
 
-    def _on_finished(self):
+    def on_finished(self):
         print()
-        self._timeout.stop()
-        self._thread = None
-        self._worker = None
+        self.timeout_timer.stop()
+        self.thread = None
+        self.worker = None

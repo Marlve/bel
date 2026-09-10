@@ -84,8 +84,8 @@ class ClaudeWorker(QObject):
 
   def __init__(self, prompt):
       super().__init__()
-      self._prompt = prompt
-      self._process = None
+      self.prompt = prompt
+      self.process = None
 
   def run(self):
       # `finished` must always fire, even on error - it's what tells the
@@ -93,15 +93,15 @@ class ClaudeWorker(QObject):
       # wedge_actions.py); otherwise a failed request leaves the wedge
       # permanently stuck and leaks this thread for the app's lifetime.
       try:
-          for text in askBel(self._prompt, on_process=self._track_process):
+          for text in askBel(self.prompt, on_process=self.track_process):
               self.chunk.emit(text)
       except Exception as error:
           self.chunk.emit(f"[error: {error}]")
       finally:
           self.finished.emit()
 
-  def _track_process(self, process):
-      self._process = process
+  def track_process(self, process):
+      self.process = process
 
   def cancel(self):
       """Terminates the underlying `claude` subprocess if one is running,
@@ -110,5 +110,5 @@ class ClaudeWorker(QObject):
       subprocess.Popen.terminate()/poll() don't touch Qt/Python threading
       state, just the OS process handle.
       """
-      if self._process is not None and self._process.poll() is None:
-          self._process.terminate()
+      if self.process is not None and self.process.poll() is None:
+          self.process.terminate()

@@ -17,12 +17,16 @@ from wedge_actions import announce, ClaudeAction
 INNER_RADIUS = style.PIE_DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
 
 
-def wedge_index(dx, dy, count, deadzone=0):
+def wedge_index(dx, dy, count, deadzone=0, radius=None):
     """Index of the wedge (0 = up, going clockwise) that (dx, dy) points
-    into, or None if the point is inside the deadzone. dx/dy are a screen
-    space offset from the menu's center - y grows downward.
+    into, or None if the point is inside the deadzone or outside radius.
+    dx/dy are a screen space offset from the menu's center - y grows
+    downward.
     """
-    if math.hypot(dx, dy) < deadzone:
+    dist = math.hypot(dx, dy)
+    if dist < deadzone:
+        return None
+    if radius is not None and dist > radius:
         return None
 
     math_angle = math.degrees(math.atan2(-dy, dx)) % 360  # 0=right, 90=up
@@ -44,9 +48,10 @@ class PieMenu(OverlayWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
-        self._anchor = QPointF(0, 0)
-        self._active = None
-        self._wedges = [
+        self.anchor = QPointF(0, 0)
+        self.status = False
+        self.hovered_wedge = None
+        self.wedges = [
             Wedge("Up", announce("Up")),
             Wedge("Right", announce("Right")),
             Wedge("Down", announce("Down")),
@@ -54,35 +59,47 @@ class PieMenu(OverlayWindow):
             Wedge("Claude", ClaudeAction()),
         ]
 
-    def open_at_cursor(self):
+    def onKeyPress(self):
+      self.status = not self.status
+      if self.status:
+        self.openAtCursor()
+      else:
+        self.closeMenu()
+
+
+    def openAtCursor(self):
         # Cover the whole virtual desktop (all monitors) so the mouse can never
         # leave the widget mid-gesture - direction is read from the anchor
         # point (where the hotkey was pressed), not from the widget's center.
         self.setGeometry(QApplication.primaryScreen().virtualGeometry())
-        self._anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
-        self._active = None
-        self.show() # Shows widget / calls paintEvent
+        self.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
+        self.hovered_wedge = None
+        self.show()
+        # show() only schedules a paint for the next event loop iteration - on
+        # reopen, that leaves the previous frame (rendered at the old anchor)
+        # visible for a moment. repaint() forces it to happen immediately.
+        self.repaint()
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-        dx = pos.x() - self._anchor.x()
-        dy = pos.y() - self._anchor.y()
-        self._active = wedge_index(dx, dy, len(self._wedges), style.PIE_DEADZONE)
+        dx = pos.x() - self.anchor.x()
+        dy = pos.y() - self.anchor.y()
+        self.hovered_wedge = wedge_index(dx, dy, len(self.wedges), style.PIE_DEADZONE, style.PIE_RADIUS)
         self.update()
 
     def mousePressEvent(self, event):
-        if self._active is not None:
-            self._wedges[self._active].action()
-        self._close()
+        if self.hovered_wedge is not None:
+            self.wedges[self.hovered_wedge].action()
+        self.closeMenu()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
-            self._close()
+            self.closeMenu()
 
-    def _close(self):
+    def closeMenu(self):
         self.releaseMouse()
         self.hide()
 
@@ -90,12 +107,12 @@ class PieMenu(OverlayWindow):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        wedge_width = 360 / len(self._wedges)
-        cx, cy = self._anchor.x(), self._anchor.y()
+        wedge_width = 360 / len(self.wedges)
+        cx, cy = self.anchor.x(), self.anchor.y()
         outer_rect = QRectF(cx - style.PIE_RADIUS, cy - style.PIE_RADIUS, style.PIE_RADIUS * 2, style.PIE_RADIUS * 2)
         inner_rect = QRectF(cx - INNER_RADIUS, cy - INNER_RADIUS, INNER_RADIUS * 2, INNER_RADIUS * 2)
 
-        for i, wedge in enumerate(self._wedges):
+        for i, wedge in enumerate(self.wedges):
             center_angle = (90 - i * wedge_width) % 360
             start_angle = center_angle - wedge_width / 2
 
@@ -106,7 +123,7 @@ class PieMenu(OverlayWindow):
             path.arcTo(inner_rect, start_angle + wedge_width, -wedge_width)
             path.closeSubpath()
 
-            painter.setBrush(QColor(style.ACCENT) if i == self._active else QColor(style.BACKGROUND))
+            painter.setBrush(QColor(style.ACCENT) if i == self.hovered_wedge else QColor(style.BACKGROUND))
             painter.setPen(QColor(style.BORDER))
             painter.drawPath(path)
 
