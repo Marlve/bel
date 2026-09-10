@@ -14,9 +14,7 @@ import style
 from overlay import OverlayWindow
 from wedge_actions import announce, ClaudeAction
 
-RADIUS = style.PIE_RADIUS
-DEADZONE = style.PIE_DEADZONE
-INNER_RADIUS = DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
+INNER_RADIUS = style.PIE_DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
 
 
 def wedge_index(dx, dy, count, deadzone=0):
@@ -72,7 +70,7 @@ class PieMenu(OverlayWindow):
         pos = event.position()
         dx = pos.x() - self._anchor.x()
         dy = pos.y() - self._anchor.y()
-        self._active = wedge_index(dx, dy, len(self._wedges), DEADZONE)
+        self._active = wedge_index(dx, dy, len(self._wedges), style.PIE_DEADZONE)
         self.update()
 
     def mousePressEvent(self, event):
@@ -94,7 +92,7 @@ class PieMenu(OverlayWindow):
 
         wedge_width = 360 / len(self._wedges)
         cx, cy = self._anchor.x(), self._anchor.y()
-        outer_rect = QRectF(cx - RADIUS, cy - RADIUS, RADIUS * 2, RADIUS * 2)
+        outer_rect = QRectF(cx - style.PIE_RADIUS, cy - style.PIE_RADIUS, style.PIE_RADIUS * 2, style.PIE_RADIUS * 2)
         inner_rect = QRectF(cx - INNER_RADIUS, cy - INNER_RADIUS, INNER_RADIUS * 2, INNER_RADIUS * 2)
 
         for i, wedge in enumerate(self._wedges):
@@ -113,7 +111,7 @@ class PieMenu(OverlayWindow):
             painter.drawPath(path)
 
             label_angle = math.radians(center_angle)
-            label_r = (RADIUS + INNER_RADIUS) / 2
+            label_r = (style.PIE_RADIUS + INNER_RADIUS) / 2
             lx = cx + label_r * math.cos(label_angle)
             ly = cy - label_r * math.sin(label_angle)
             painter.setPen(QColor(style.TEXT))
