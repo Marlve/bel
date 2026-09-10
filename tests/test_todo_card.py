@@ -1,0 +1,184 @@
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import Qt, QEvent, QPoint
+from PySide6.QtGui import QKeyEvent
+
+import style
+import card_store
+from todo_card import TodoCard, TodoList, MARGIN
+
+
+def key(code):
+    return QKeyEvent(QEvent.KeyPress, code, Qt.NoModifier)
+
+
+# TodoList's own constructor doubles as the Qt parent, so the stub has to be
+# a real QWidget rather than a plain object.
+class StubCard(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.saved = 0
+
+    def scheduleSave(self):
+        self.saved += 1
+
+
+class TodoListTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_row_at_maps_y_to_the_right_index(self):
+        card = TodoList(card=None)
+        card.setItems([{"text": "a", "done": False}, {"text": "b", "done": False}])
+        self.assertEqual(card.rowAt(0), 0)
+        self.assertEqual(card.rowAt(35), 0)
+        self.assertEqual(card.rowAt(36), 1)
+        self.assertIsNone(card.rowAt(1000))
+
+    def test_toggle_flips_done_and_schedules_a_save(self):
+        stub = StubCard()
+        list_widget = TodoList(stub)
+        list_widget.setItems([{"text": "a", "done": False}])
+        list_widget.toggle(0)
+        self.assertTrue(list_widget.items[0]["done"])
+        self.assertEqual(stub.saved, 1)
+
+    def test_ticking_a_row_schedules_its_removal(self):
+        stub = StubCard()
+        list_widget = TodoList(stub)
+        list_widget.setItems([{"text": "a", "done": False}])
+        list_widget.toggle(0)
+        self.assertIn(id(list_widget.items[0]), list_widget.remove_timers)
+
+    def test_a_row_still_ticked_is_gone_once_its_timer_fires(self):
+        stub = StubCard()
+        list_widget = TodoList(stub)
+        list_widget.setItems([{"text": "a", "done": False}, {"text": "b", "done": False}])
+        item = list_widget.items[0]
+        list_widget.toggle(0)
+        list_widget.removeIfStillDone(item)  # simulate the delay elapsing
+        self.assertEqual(list_widget.items, [{"text": "b", "done": False}])
+
+    def test_unticking_before_the_timer_fires_cancels_the_removal(self):
+        stub = StubCard()
+        list_widget = TodoList(stub)
+        list_widget.setItems([{"text": "a", "done": False}])
+        item = list_widget.items[0]
+        list_widget.toggle(0)  # done - removal scheduled
+        list_widget.toggle(0)  # undone again - should cancel it
+        self.assertNotIn(id(item), list_widget.remove_timers)
+        list_widget.removeIfStillDone(item)  # even if this still fires, it's a no-op now
+        self.assertEqual(list_widget.items, [{"text": "a", "done": False}])
+
+    def test_removal_only_drops_the_exact_ticked_item(self):
+        # Two rows with identical content are still distinct objects - the
+        # timer for one must never remove the other.
+        stub = StubCard()
+        list_widget = TodoList(stub)
+        list_widget.setItems([{"text": "a", "done": False}, {"text": "a", "done": False}])
+        first, second = list_widget.items
+        list_widget.toggle(0)
+        list_widget.removeIfStillDone(first)
+        self.assertEqual(list_widget.items, [{"text": "a", "done": False}])
+        self.assertIs(list_widget.items[0], second)
+
+
+class TodoCardTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_path = card_store.STORE_PATH
+        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.card = TodoCard()
+
+    def tearDown(self):
+        self.card.close()
+        self.card.deleteLater()
+        QApplication.processEvents()  # actually run the deferred delete, or it outlives this test file
+        card_store.STORE_PATH = self.original_path
+        self.tmp.cleanup()
+
+    def test_starts_with_no_items(self):
+        self.assertEqual(self.card.list.items, [])
+
+    def test_typing_and_enter_adds_an_item(self):
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        self.assertEqual(self.card.list.items, [{"text": "buy milk", "done": False}])
+        self.assertEqual(self.card.add_field.text(), "")
+
+    def test_blank_text_adds_nothing(self):
+        self.card.add_field.setText("   ")
+        self.card.addItem()
+        self.assertEqual(self.card.list.items, [])
+
+    def test_save_persists_items_and_size(self):
+        self.card.add_field.setText("water plants")
+        self.card.addItem()
+        self.card.resize(400, 385)
+        self.card.save()
+
+        saved = card_store.load("todo", None)
+        self.assertEqual(saved["items"], [{"text": "water plants", "done": False}])
+        self.assertEqual(saved["size"], [400 - 2 * MARGIN, 385 - 2 * MARGIN])
+
+    def test_a_fresh_card_picks_up_previously_saved_items_and_size(self):
+        card_store.save("todo", {"items": [{"text": "old item", "done": True}], "size": [300, 260]})
+        card = TodoCard()
+        try:
+            self.assertEqual(card.list.items, [{"text": "old item", "done": True}])
+            self.assertEqual((card.width(), card.height()), (300 + 2 * MARGIN, 260 + 2 * MARGIN))
+        finally:
+            card.close()
+            card.deleteLater()
+            QApplication.processEvents()
+
+    def test_open_lands_the_card_near_the_given_cursor_position(self):
+        # A cursor position safely away from every screen edge, so the
+        # available-geometry clamp in moveNear doesn't kick in and mask
+        # what's actually being tested here.
+        self.card.moveNear(QPoint(100, 100))
+        self.assertEqual(
+            (self.card.x(), self.card.y()),
+            (100 + style.CARD_SPAWN_OFFSET - MARGIN, 100 + style.CARD_SPAWN_OFFSET - MARGIN),
+        )
+
+    def test_close_button_hides_the_card(self):
+        self.card.show()
+        self.card.close_button.click()
+        self.assertFalse(self.card.isVisible())
+
+    def test_escape_hides_the_card(self):
+        self.card.show()
+        self.card.keyPressEvent(key(Qt.Key_Escape))
+        self.assertFalse(self.card.isVisible())
+
+    def test_escape_in_the_add_field_also_hides_the_card(self):
+        self.card.show()
+        handled = self.card.eventFilter(self.card.add_field, key(Qt.Key_Escape))
+        self.assertTrue(handled)
+        self.assertFalse(self.card.isVisible())
+
+    def test_hiding_flushes_a_pending_save(self):
+        self.card.show()  # hideEvent only fires when a visible widget is hidden
+        self.card.add_field.setText("urgent")
+        self.card.addItem()  # schedules a debounced save, not yet written
+        self.card.hide()
+        saved = card_store.load("todo", None)
+        self.assertEqual(saved["items"], [{"text": "urgent", "done": False}])
+
+
+if __name__ == "__main__":
+    unittest.main()
