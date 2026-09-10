@@ -41,12 +41,20 @@ class Tween(QVariantAnimation):
             self.finished.connect(on_done)
 
     def run(self, start, end, duration_ms, easing=None):
+        # stop() leaves currentTime at wherever the previous run ended, so
+        # setStartValue/setEndValue below recompute currentValue at that
+        # stale progress and fire a spurious valueChanged - jumping to the
+        # new end value, then snapping to the new start value once start()
+        # resets currentTime to 0. Block those two fake ticks; only the
+        # real, eased ones should reach on_tick.
         self.stop()
+        self.blockSignals(True)
         self.setStartValue(start)
         self.setEndValue(end)
         self.setDuration(duration_ms)
         if easing is not None:
             self.setEasingCurve(easing)
+        self.blockSignals(False)
         self.start()
 
 

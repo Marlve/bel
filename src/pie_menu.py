@@ -275,6 +275,14 @@ class PieMenu(OverlayWindow):
         self.chosen_wedge = self.hovered_wedge
         wedge = self.wedges[self.chosen_wedge]
         if wedge.placeholder is None:
+            # Run it now, not after the select/close animation finishes -
+            # that animation is just the ring's own visual follow-through,
+            # the card shouldn't wait on it to appear.
+            wedge.action()
+            self.beginSelect()
+        elif self.cards.reveal(wedge.id):
+            # A session for this wedge is already open - just resurface it,
+            # no prompt bar, no new message.
             self.beginSelect()
         else:
             self.beginHandoff(wedge)
@@ -339,15 +347,17 @@ class PieMenu(OverlayWindow):
         self.releaseMouse()
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-        # Fire at the start of the close, not the end - the user shouldn't
-        # wait on the fade. A prompt wedge's answer goes to a card born as
-        # the bar's own rect, so the card has to exist before the bar goes.
+        # A plain wedge's action already ran the instant it was picked (see
+        # activateHoveredWedge) - this only has the prompt-wedge case left,
+        # since that one needs the submitted text before it can run. Fired
+        # here rather than waiting for the fade so the card exists before
+        # the bar (born as its rect) goes.
         if self.chosen_wedge is not None:
             wedge = self.wedges[self.chosen_wedge]
-            if wedge.placeholder is None:
-                wedge.action()
-            else:
-                self.cards.open(self.born_rect, self.prompt_text, wedge.action)
+            if wedge.placeholder is not None and self.prompt_text is not None:
+                # None means activateHoveredWedge() already reused an open
+                # card for this wedge instead of asking for a prompt.
+                self.cards.open(self.born_rect, self.prompt_text, wedge.id, wedge.action)
         self.prompt_bar.hide()
 
         self.close_ms = 0
@@ -427,7 +437,15 @@ class PieMenu(OverlayWindow):
 
         close_scale, close_alpha = pose.close_pose(self.close_ms)
         open_scale, open_alpha = pose.open_pose(self.open_ms)
-        self.paintRingShadow(painter, open_scale * close_scale, open_alpha * close_alpha)
+        if self.chosen_wedge is None:
+            # Not the chosen wedge's own hold-then-crossfade curve - the
+            # shadow is one ambient blob under the whole ring, so it clears
+            # out with the rest of the ring rather than lingering through
+            # the handoff.
+            exit_scale, exit_alpha = pose.ring_exit_pose(self.prompt_flow.ms, False)
+            self.paintRingShadow(
+                painter, open_scale * exit_scale * close_scale, open_alpha * exit_alpha * close_alpha
+            )
 
         # Hovered wedge last so its glow sits above its neighbours.
         order = [i for i in range(len(self.wedges)) if i != self.hovered_wedge]
@@ -437,20 +455,28 @@ class PieMenu(OverlayWindow):
             self.paintWedge(painter, i, close_scale, close_alpha)
 
     def paintRingShadow(self, painter, scale, alpha):
-        """A soft ambient shadow under the ring as a whole, echoing
+        """A soft ambient shadow tracing the ring's own donut shape, echoing
         shadow.py's card look (offset down, blurred) - approximated with a
         radial gradient since a QGraphicsDropShadowEffect can't target a
-        shape hand-painted inside this full-screen overlay window."""
+        shape hand-painted inside this full-screen overlay window. Hollow
+        in the middle like the ring's own dead zone, and blurred on both
+        the inner and outer edge, rather than a solid disc that shows
+        straight through the ring's transparent hole."""
         if alpha <= 0:
             return
+        inner = INNER_RADIUS * scale
         radius = style.RING_RADIUS * scale
-        outer = radius + style.CARD_SHADOW_BLUR
+        blur = style.CARD_SHADOW_BLUR
+        outer = radius + blur
         painter.save()
         painter.translate(self.anchor.x(), self.anchor.y() + style.CARD_SHADOW_OFFSET_Y * scale)
         color = QColor(0, 0, 0, round(style.CARD_SHADOW_ALPHA * alpha))
+        transparent = QColor(0, 0, 0, 0)
         gradient = QRadialGradient(0, 0, outer)
+        gradient.setColorAt(max(0.0, inner - blur) / outer, transparent)
+        gradient.setColorAt(inner / outer, color)
         gradient.setColorAt(radius / outer, color)
-        gradient.setColorAt(1.0, QColor(0, 0, 0, 0))
+        gradient.setColorAt(1.0, transparent)
         painter.setPen(Qt.NoPen)
         painter.setBrush(gradient)
         painter.drawEllipse(QPointF(0, 0), outer, outer)

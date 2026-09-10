@@ -153,6 +153,54 @@ class EdgeDockTests(unittest.TestCase):
         dock.leave_card()
         self.assertEqual(dock.pending_timer, ("leave", style.DOCK_LEAVE_MS))
 
+    def test_reveal_reopens_from_wherever_it_folded_to(self):
+        dock = EdgeDock()
+        dock.idle_timeout()  # OPEN -> COMPACT
+        dock.reveal()
+        self.assertEqual(dock.state, OPEN)
+
+    def test_minimize_hides_the_card_fully_like_autohide(self):
+        dock = EdgeDock()
+        dock.minimize()
+        self.assertEqual(dock.state, HIDDEN)
+        self.assertIsNone(dock.pending_timer)
+
+    def test_minimize_hides_regardless_of_being_busy(self):
+        # An explicit "get it out of my sight" isn't a passing hover - it
+        # shouldn't wait for streaming/composer focus to end first.
+        dock = EdgeDock()
+        dock.start_streaming()
+        dock.minimize()
+        self.assertEqual(dock.state, HIDDEN)
+
+    def test_cursor_can_still_arm_the_tab_after_minimizing(self):
+        dock = EdgeDock()
+        dock.minimize()
+        dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, TAB)
+
+    def test_reveal_reopens_a_minimized_card(self):
+        dock = EdgeDock()
+        dock.minimize()
+        dock.reveal()
+        self.assertEqual(dock.state, OPEN)
+
+    def test_reveal_is_a_no_op_when_already_open(self):
+        dock = EdgeDock()
+        dock.reveal()
+        self.assertEqual(dock.state, OPEN)
+        self.assertEqual(dock.pending_timer, ("idle", style.DOCK_IDLE_MS))  # untouched
+
+    def test_reveal_does_not_claim_hovering_since_the_cursor_is_at_the_ring_not_the_card(self):
+        # Unlike click_tab()/click_compact(), reveal() is triggered from the
+        # ring - the cursor isn't on the card, so it must still arm its
+        # retreat timer rather than getting stuck "hovered" forever.
+        dock = EdgeDock()
+        dock.idle_timeout()  # OPEN -> COMPACT
+        dock.reveal()
+        self.assertFalse(dock.hovering)
+        self.assertIsNotNone(dock.pending_timer)
+
 
 class EdgeDockDriverTests(unittest.TestCase):
     """EdgeDockDriver owns the real QTimer - these guard against it being

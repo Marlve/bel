@@ -9,6 +9,13 @@ import card_store
 
 STORE_KEY = "wedges"
 
+# How many messages a Claude chat card lets its session accumulate before
+# starting over fresh - not a per-wedge field, but kept here alongside the
+# other settings-editable config for the same reason (chat_card.py needs it
+# without importing pie_menu/settings_card).
+CHAT_CONTEXT_LIMIT_KEY = "claude_context_limit"
+DEFAULT_CHAT_CONTEXT_LIMIT = 4
+
 # Extra per-action config merged into a slot's entry alongside the id/label
 # the user edits (e.g. the prompt bar placeholder Claude needs).
 ACTION_EXTRAS = {
@@ -36,6 +43,14 @@ def load_other_wedges():
 
 def save_other_wedges(entries):
     card_store.save(STORE_KEY, entries)
+
+
+def load_chat_context_limit():
+    return card_store.load(CHAT_CONTEXT_LIMIT_KEY, DEFAULT_CHAT_CONTEXT_LIMIT)
+
+
+def save_chat_context_limit(limit):
+    card_store.save(CHAT_CONTEXT_LIMIT_KEY, limit)
 
 
 def bottom_pin_index(count):

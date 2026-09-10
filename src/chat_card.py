@@ -20,6 +20,7 @@ from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTransform
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, QPointF, Signal
 
 import style
+import wedge_config
 from anims import curves, pose
 from anims.clock import Clock, Tween
 from edge_dock import EdgeDockDriver, OPEN, COMPACT, HIDDEN, TAB
@@ -103,8 +104,10 @@ class ChatCard(QWidget):
         self.screen = screen
         self.radius = min(born.width(), born.height()) / 2
         self.tilt = 0.0  # degrees, animated separately from the dock slide (claude-chat-flow.md's "260 ms rotation")
+        self.wedge_id = None
         self.action = None
         self.session_id = None
+        self.turn_count = 0  # messages sent in the current session; capped, see send()
         self.request = None
         self.buffered = ""
         self.turns = []  # {"role": "user"/"claude", "text": ...}, one per transcript row
@@ -239,6 +242,12 @@ class ChatCard(QWidget):
     def send(self, text):
         if self.request is not None or self.action is None:
             return
+        if self.turn_count >= wedge_config.load_chat_context_limit():
+            # The session has taken as much context as it's allowed to -
+            # this message starts a brand new one rather than resuming.
+            self.session_id = None
+            self.turn_count = 0
+        self.turn_count += 1
         self.appendUserTurn(text)
         self.streaming_label = self.appendClaudeTurn()
         self.streaming_text = ""
@@ -411,6 +420,13 @@ class ChatCard(QWidget):
         if self.edge_driver:
             self.edge_driver.minimize()
 
+    def reveal(self):
+        """Picking this card's wedge again while its session is still alive
+        just brings it back into view - no new session, no new message."""
+        self.raise_()
+        if self.edge_driver:
+            self.edge_driver.reveal()
+
     def enterEvent(self, event):
         if self.edge_driver:
             self.edge_driver.enterCard()
@@ -502,7 +518,18 @@ class ChatCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        if self.isTabbed():
+        dock_state = self.edge_driver.dock.state if self.edge_driver else None
+        if self.isTabbed() or (self.tilt != 0.0 and dock_state != OPEN):
+            # Rotation is gated on self.tilt, not just isTabbed(), so the
+            # untilt-back-to-0 animation stays visible after the state has
+            # already left TAB - otherwise painting would drop to the
+            # unrotated branch the instant TAB ends, and the still-running
+            # tilt_tween would keep updating self.tilt with nothing drawing
+            # it, making the tilt appear to vanish instantly. Excluded for
+            # OPEN specifically: reopening grows the window to full size
+            # while puckRect() stays clamped to its tiny footprint, so
+            # keeping this branch there would paint a stuck puck instead of
+            # the growing card until the tilt tween finished.
             painter.save()
             pivot = self.tabPivot()
             painter.translate(pivot)
@@ -538,11 +565,22 @@ class ChatStack:
             style.CHAT_SIZE,
         )
 
-    def open(self, born, prompt, action):
+    def reveal(self, wedge_id):
+        """If a card for this wedge is already open, bring it back into view
+        instead of starting another one - the session only resets once that
+        card is actually closed (see ChatCard.dismiss/forget below)."""
+        card = next((c for c in self.cards if c.wedge_id == wedge_id), None)
+        if card is None:
+            return False
+        card.reveal()
+        return True
+
+    def open(self, born, prompt, wedge_id, action):
         # The prompt bar was at the cursor, so its rect picks the monitor.
         screen = QApplication.screenAt(born.center().toPoint()) or QApplication.primaryScreen()
 
         card = ChatCard(born, self.dockRect(0, screen), screen)
+        card.wedge_id = wedge_id
         card.action = action
         card.dismissed.connect(self.forget)
         self.cards.insert(0, card)

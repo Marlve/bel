@@ -30,7 +30,7 @@ FONT_SIZE = 11
 
 # --- Pie menu ring. Sizes are ratios of RING_RADIUS so the ring scales as one. ---
 
-RING_RADIUS = 168
+RING_RADIUS = 152
 RING_INNER = 0.35  # donut hole; the cursor inside it selects nothing
 RING_HIT_OUTER = 1.3  # cursor past this selects nothing - a bit of slack past the ring's ink, not much
 RING_LABEL = 0.68  # label centroid distance from the center
@@ -44,39 +44,39 @@ LABEL_HOVER = INK
 SCRIM = "#000000"
 SCRIM_ALPHA = 0.55
 GLOW = ACCENT
-GLOW_ALPHA = 0.22
-GLOW_WIDTH = 18
+GLOW_ALPHA = 0.14
+GLOW_WIDTH = 8
 
 # Open: ring pops out of the cursor, all wedges arriving together.
-OPEN_MS = 430
+OPEN_MS = 345
 OPEN_SCALE_FROM = 0.30
 OPEN_EASING = "OutBack"
 OPEN_OVERSHOOT = 1.56
-OPEN_FADE_MS = 170  # opacity lands well before the scale does, so it reads as arriving
+OPEN_FADE_MS = 135  # opacity lands well before the scale does, so it reads as arriving
 OPEN_FADE_EASING = "OutCubic"
 SCRIM_MS = 220
 
 # Hover: only the hovered wedge moves - it slides outward and grows a little.
-HOVER_IN_MS = 140
+HOVER_IN_MS = 110
 HOVER_IN_EASING = "OutBack"
 HOVER_IN_OVERSHOOT = 1.15
-HOVER_OUT_MS = 110
+HOVER_OUT_MS = 90
 HOVER_OUT_EASING = "OutCubic"
 HOVER_PUSH = 0.07
 HOVER_GROW = 1.035
 LABEL_HOVER_SCALE = 1.08
 
 # Select: the others drop away fast, the chosen wedge pushes out and holds alone before closing.
-SELECT_OTHERS_MS = 120
+SELECT_OTHERS_MS = 95
 SELECT_OTHERS_SCALE = 0.88
 SELECT_OTHERS_ALPHA = 0.12
-SELECT_HOLD_MS = 150
+SELECT_HOLD_MS = 120
 SELECT_PUSH = 0.15
 SELECT_SCALE = 1.06
 SELECT_EASING = "OutCubic"
 
 # Close: whole ring shrinks back and fades, no bounce.
-CLOSE_MS = 150
+CLOSE_MS = 120
 CLOSE_SCALE_TO = 0.30
 CLOSE_EASING = "InQuad"
 
@@ -85,8 +85,8 @@ CLOSE_EASING = "InQuad"
 # instead of firing straight away, so the ring gets its own shorter exit and
 # one rounded rect grows out of the wedge into the field. ---
 
-RING_EXIT_MS = 130
-RING_EXIT_HOLD_MS = 60  # chosen wedge holds its hover pose this long first, so the click registers
+RING_EXIT_MS = 105
+RING_EXIT_HOLD_MS = 50  # chosen wedge holds its hover pose this long first, so the click registers
 RING_EXIT_SCALE = 0.30
 RING_EXIT_EASING = "InQuad"
 GROW_MS = 280
@@ -172,6 +172,7 @@ CARD_AUTOSAVE_MS = 400  # idle debounce before writing position/content to disk
 CARD_MIN_SIZE = 220  # never smaller than this in either dimension
 CARD_RESIZE_GRIP = 16  # bottom-right corner handle, square, px
 CARD_SPAWN_OFFSET = 16  # cursor lands this far inside the card's corner when it opens
+CARD_OPEN_MS = 160  # todo/note fade in over this long when picked from the ring
 
 CARD_SHADOW_BLUR = 24
 CARD_SHADOW_OFFSET_Y = 8
@@ -185,6 +186,7 @@ TODO_ROW_HEIGHT = 36
 TODO_CHECKBOX = 17
 TODO_CHECKBOX_RADIUS = 4
 TODO_REMOVE_DELAY_MS = 1000  # a ticked row vanishes this long after being checked, unless unticked first
+TODO_ITEM_FADE_MS = 180  # a ticked row fades out over this long before it's actually removed
 
 
 # --- Settings card. A short, fixed list of the ring's non-pinned wedges -
@@ -198,11 +200,13 @@ SETTINGS_ROW_HEIGHT = 32
 SETTINGS_ROW_GAP = 8
 SETTINGS_ARROW_SIZE = 22
 SETTINGS_ROWS = 3  # todo, note, claude - wedge_config.DEFAULT_OTHER_WEDGES's length
+SETTINGS_CONTEXT_FIELD_WIDTH = 48
 SETTINGS_HEIGHT = (
     SETTINGS_HEADER_HEIGHT
     + 10
     + SETTINGS_ROWS * SETTINGS_ROW_HEIGHT
     + (SETTINGS_ROWS - 1) * SETTINGS_ROW_GAP
+    + SETTINGS_ROW_GAP + SETTINGS_ROW_HEIGHT  # the Claude context-limit field below the rows
     + 2 * CHAT_PADDING
 )
 

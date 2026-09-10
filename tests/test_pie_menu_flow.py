@@ -12,6 +12,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
 import card_store
+import wedge_config
 from pie_menu import PieMenu, HIDDEN, OPEN, PROMPTING
 
 PROMPT_WEDGE = 3  # the one wedge_config's defaults give a placeholder (Claude)
@@ -87,6 +88,16 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.calls, [(0, ())])
         self.assertEqual(self.menu.phase, HIDDEN)
 
+    def test_a_plain_wedge_runs_before_the_select_animation_finishes(self):
+        # The card shouldn't wait on the ring's own select/close animation to
+        # play out before it appears.
+        self.openMenu()
+        self.menu.motion = True  # only turned on now - openMenu() needs the instant version to land on OPEN
+        self.menu.setHovered(0)
+        self.menu.activateHoveredWedge()
+        self.assertEqual(self.calls, [(0, ())])
+        self.assertNotEqual(self.menu.phase, HIDDEN)  # animation is still playing out
+
     def test_picking_a_wedge_never_runs_it_twice(self):
         # A select clock left running past its own phase used to re-enter
         # beginClose and fire the action a second time.
@@ -160,16 +171,25 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(second.left(), first.left())
 
     def ask(self, prompt):
-        """Open the ring, send `prompt`, and land the card it opens."""
+        """Open the ring and send `prompt` through the prompt bar - only
+        valid when no session is open yet for that wedge, since one already
+        open is reopened instead (see reopenClaude())."""
         self.openMenu()
         self.menu.setHovered(PROMPT_WEDGE)
         self.menu.activateHoveredWedge()
+        self.assertEqual(self.menu.phase, PROMPTING)
         self.menu.prompt_bar.field.setText(prompt)
         self.menu.prompt_bar.submit()
         card = self.menu.cards.cards[0]
         card.flight.stop()
         card.onLanded()
         return card
+
+    def reopenClaude(self):
+        """Re-pick the Claude wedge while its card is already open."""
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
 
     def test_chunks_arriving_mid_flight_wait_for_the_card_to_land(self):
         self.openMenu()
@@ -193,29 +213,86 @@ class PieMenuFlowTests(unittest.TestCase):
         request.chunk.emit("late straggler")
         self.assertEqual(card.turns[-1]["text"], "first answer")
 
-    def test_a_second_question_never_writes_into_the_first_card(self):
-        # Each call hands back its own request, so a prompt sent while an
-        # earlier one is still streaming cannot corrupt the earlier card.
+    def test_a_follow_up_message_never_writes_into_the_earlier_turn(self):
+        # A follow-up hands back its own request, so it can't corrupt the
+        # turn the previous, now-finished request was streaming into.
+        card = self.ask("first question")
+        first_request = card.request
+        first_request.chunk.emit("first answer")
+        first_request.finished.emit()
+
+        card.send("second question")
+        second_request = card.request
+        self.assertIsNot(first_request, second_request)
+
+        second_request.chunk.emit("second answer")
+        first_request.chunk.emit("late straggler")
+        self.assertEqual(card.turns[-1]["text"], "second answer")
+
+    def test_repicking_claude_while_open_reopens_the_same_card_without_asking(self):
         first = self.ask("first question")
-        second = self.ask("second question")
-        self.assertIsNot(first.request, second.request)
+        self.reopenClaude()
+        self.assertEqual(self.menu.phase, HIDDEN)
+        self.assertEqual(self.menu.cards.cards, [first])
+        self.assertEqual(self.calls, [(PROMPT_WEDGE, ("first question",))])  # no second send
 
-        second.request.chunk.emit("second answer")
-        first.request.chunk.emit("first answer")
-        self.assertEqual(first.turns[-1]["text"], "first answer")
-        self.assertEqual(second.turns[-1]["text"], "second answer")
+    def test_dismissing_then_repicking_claude_starts_a_fresh_session(self):
+        first = self.ask("first question")
+        first.dismiss()
+        first.fade.stop()
+        first.onFaded()
+        self.assertEqual(self.menu.cards.cards, [])
 
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        self.assertEqual(self.menu.phase, PROMPTING)  # the old card is gone, so it asks again
+
+    def test_the_session_resets_once_the_context_cap_is_reached(self):
+        cap = wedge_config.DEFAULT_CHAT_CONTEXT_LIMIT
+        card = self.ask("q1")
+        card.request.session_started.emit("session-a")
+        card.request.finished.emit()
+
+        for n in range(2, cap + 1):
+            card.send(f"q{n}")
+            card.request.session_started.emit("session-a")
+            card.request.finished.emit()
+        self.assertEqual(card.turn_count, cap)
+        self.assertEqual(card.session_id, "session-a")
+
+        card.send("one more")  # the (cap + 1)th message - too much context, starts over
+        self.assertEqual(card.turn_count, 1)
+        self.assertIsNone(card.session_id)
+
+    def test_a_lower_context_cap_resets_sooner(self):
+        wedge_config.save_chat_context_limit(1)
+        card = self.ask("q1")
+        card.request.session_started.emit("session-a")
+        card.request.finished.emit()
+
+        card.send("q2")
+        self.assertIsNone(card.session_id)
+
+    # The stack itself is exercised directly below, bypassing the ring - the
+    # only wedge with a placeholder (Claude) is now a singleton per
+    # reopenClaude() above, so more than one live card only ever happens
+    # across distinct wedges.
     def test_a_fourth_card_evicts_the_oldest(self):
+        rect = self.menu.prompt_bar.screenRect()
+        action = self.menu.wedges[PROMPT_WEDGE].action
         for number in range(4):
-            self.ask(f"question {number}")
+            self.menu.cards.open(rect, f"question {number}", f"wedge-{number}", action)
         self.assertEqual(
             [card.turns[0]["text"] for card in self.menu.cards.cards],
             ["question 3", "question 2", "question 1"],
         )
 
     def test_dismissing_a_card_takes_it_out_of_the_stack(self):
-        first = self.ask("first")
-        second = self.ask("second")
+        rect = self.menu.prompt_bar.screenRect()
+        action = self.menu.wedges[PROMPT_WEDGE].action
+        first = self.menu.cards.open(rect, "first", "wedge-a", action)
+        second = self.menu.cards.open(rect, "second", "wedge-b", action)
         second.dismiss()
         second.fade.stop()
         second.onFaded()

@@ -16,7 +16,10 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 import style
 import shadow
 import card_store
+from anims.clock import Tween
+from anims import curves
 from draggable import WindowDrag, ResizeGrip
+from util import reduced_motion
 
 STORE_KEY = "note"
 MARGIN = style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
@@ -35,6 +38,8 @@ class NoteCard(QWidget):
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self.save)
+        self.motion = not reduced_motion()
+        self.fade = Tween(self, self.onFadeTick)
         shadow.apply(self)
 
         saved = card_store.load(STORE_KEY, {})
@@ -50,8 +55,14 @@ class NoteCard(QWidget):
         always opening at the cursor, not wherever the card happened to be
         left after a previous drag or a previous session."""
         self.moveNear(QCursor.pos())
+        self.setWindowOpacity(0 if self.motion else 1)
         self.show()
         self.raise_()
+        if self.motion:
+            self.fade.run(0.0, 1.0, style.CARD_OPEN_MS, curves.CHAT_FLIGHT)
+
+    def onFadeTick(self, value):
+        self.setWindowOpacity(value)
 
     def moveNear(self, cursor_pos):
         screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
