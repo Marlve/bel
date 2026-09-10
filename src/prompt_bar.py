@@ -15,10 +15,12 @@
 import math
 
 from PySide6.QtWidgets import QWidget, QLineEdit
-from PySide6.QtGui import QPainter, QColor, QPen, QPalette
-from PySide6.QtCore import Qt, QRectF, QPoint, QPointF, QEvent, Signal, QVariantAnimation
+from PySide6.QtGui import QPainter, QColor, QPen, QPalette, QPixmap
+from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal
 
 import style
+import shadow
+from anims.clock import Tween
 from util import reduced_motion
 
 EMPTY, TYPING, SENDING, REJECTED = "empty", "typing", "sending", "rejected"
@@ -39,12 +41,12 @@ class PromptBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rect_opacity = 0.0  # the frame fades in as the wedge fades out
-        self.chrome_opacity = 0.0  # mark and hint follow, once the frame is at rest
+        self.chrome_opacity = 0.0  # the send hint follows, once the frame is at rest
         self.state = EMPTY
         self.rest_x = 0
         self.motion = not reduced_motion()
 
-        # A press on the frame's own chrome - the mark's inset, the send hint -
+        # A press on the frame's own chrome - the send hint's inset -
         # would otherwise reach the overlay behind it, which reads any click
         # as "cancel" and would throw away what the user had typed.
         self.setAttribute(Qt.WA_NoMousePropagation)
@@ -58,14 +60,27 @@ class PromptBar(QWidget):
         self.field.hide()
 
         # Rejected: the frame shakes in place, keeping whatever was typed.
-        self.shake = QVariantAnimation(self)
-        self.shake.setStartValue(0.0)
-        self.shake.setEndValue(1.0)
-        self.shake.setDuration(style.REJECT_MS)
-        self.shake.valueChanged.connect(self.onShakeTick)
-        self.shake.finished.connect(self.onShakeDone)
+        self.shake = Tween(self, self.onShakeTick, self.onShakeDone)
 
+        shadow.apply(self)
         self.hide()
+
+    def warmup(self):
+        """Pay two one-time-per-process Qt/Windows costs now, at silent
+        startup, instead of during the user's first handoff.
+
+        setStyleSheet's first call anywhere in the app bootstraps Qt's
+        QStyleSheetStyle proxy machinery; SEND_HINT is an uncommon glyph
+        (U+23CE) most fonts don't have, so its first draw makes Windows
+        search every installed font for a fallback. Both block the main
+        thread synchronously - done during launch() instead, either one can
+        stall the box's very first appearance for a second or more.
+        """
+        self.applyFieldPalette()
+        pixmap = QPixmap(1, 1)
+        painter = QPainter(pixmap)
+        painter.drawText(QRectF(0, 0, 1, 1), Qt.AlignCenter, SEND_HINT)
+        painter.end()
 
     # --- the flight, driven by PieMenu's handoff clock ---
 
@@ -143,7 +158,7 @@ class PromptBar(QWidget):
         self.state = REJECTED  # the border stays warned until the user changes the text
         self.update()
         if self.motion:
-            self.shake.start()
+            self.shake.run(0.0, 1.0, style.REJECT_MS)
 
     def onShakeTick(self, t):
         offset = math.sin(t * 2 * math.pi * style.REJECT_SHAKES) * style.REJECT_SHIFT
@@ -181,12 +196,6 @@ class PromptBar(QWidget):
         if self.chrome_opacity <= 0:
             return
         painter.setOpacity(self.rect_opacity * self.chrome_opacity)
-
-        mark = QRectF(0, 0, style.FIELD_MARK, style.FIELD_MARK)
-        mark.moveCenter(QPointF(style.FIELD_MARK_INSET + style.FIELD_MARK / 2, frame.center().y()))
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(style.ACCENT), 2))
-        painter.drawRoundedRect(mark, 7, 7)
 
         lit = self.state in (TYPING, SENDING)
         painter.setPen(QColor(style.FIELD_HINT_LIT if lit else style.FIELD_HINT_IDLE))

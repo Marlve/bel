@@ -16,7 +16,7 @@ class ClaudeRequest(QObject):
     freeze the Qt main thread/UI.
 
     The signals belong to this one request rather than to the wedge, so a
-    listener - a result card, say - follows the answer to its own question
+    listener - a chat card, say - follows the answer to its own question
     and nothing else. Two requests can be in flight at once, each feeding its
     own card.
 
@@ -29,15 +29,17 @@ class ClaudeRequest(QObject):
 
     chunk = Signal(str)
     finished = Signal()
+    session_started = Signal(str)
 
-    def __init__(self, prompt, parent=None):
+    def __init__(self, prompt, session_id=None, parent=None):
         super().__init__(parent)
         self.thread = QThread()
-        self.worker = ClaudeWorker(prompt)
+        self.worker = ClaudeWorker(prompt, session_id)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
         self.worker.chunk.connect(self.chunk)
+        self.worker.session_started.connect(self.session_started)
         self.worker.finished.connect(self.onWorkerFinished)
 
         self.timeout_timer = QTimer(self)
@@ -85,8 +87,8 @@ class ClaudeAction(QObject):
         if app is not None:
             app.aboutToQuit.connect(self.cancel)
 
-    def __call__(self, prompt=None):
-        request = ClaudeRequest(prompt or self.prompt, self)
+    def __call__(self, prompt=None, session_id=None):
+        request = ClaudeRequest(prompt or self.prompt, session_id, self)
         self.requests.append(request)
         request.chunk.connect(self.onChunk)
         request.finished.connect(lambda: self.forget(request))

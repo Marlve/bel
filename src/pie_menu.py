@@ -9,13 +9,14 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen
-from PySide6.QtCore import Qt, QPointF, QRectF, QVariantAnimation
+from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
-import pie_anim
+from anims import pose
+from anims.clock import Clock, HoverClock
 from overlay import OverlayWindow
-from prompt_bar import PromptBar
-from result_card import CardStack
+from prompt_flow import PromptFlow
+from chat_card import ChatStack
 from actions import ACTIONS
 from util import force_foreground, reduced_motion
 
@@ -27,7 +28,7 @@ HIT_RADIUS = style.RING_HIT_OUTER * style.RING_RADIUS
 # scale the open overshoot and select reach. Sizes dirty rects only - how far
 # out the cursor still counts as pointing at a wedge is HIT_RADIUS, a
 # separate question with a separate answer.
-OPEN_PEAK_SCALE = max(pie_anim.open_pose(ms, 0)[0] for ms in range(style.OPEN_MS + 1))
+OPEN_PEAK_SCALE = max(pose.open_pose(ms)[0] for ms in range(style.OPEN_MS + 1))
 PAINT_REACH = (
     (style.HOVER_GROW + style.HOVER_PUSH + style.SELECT_PUSH) * style.RING_RADIUS + style.GLOW_WIDTH / 2
 ) * OPEN_PEAK_SCALE * style.SELECT_SCALE
@@ -88,9 +89,9 @@ def ring_segment(outer, inner, start_angle, span):
 def mix(a, b, t):
     a, b = QColor(a), QColor(b)
     return QColor.fromRgbF(
-        pie_anim.lerp(a.redF(), b.redF(), t),
-        pie_anim.lerp(a.greenF(), b.greenF(), t),
-        pie_anim.lerp(a.blueF(), b.blueF(), t),
+        pose.lerp(a.redF(), b.redF(), t),
+        pose.lerp(a.greenF(), b.greenF(), t),
+        pose.lerp(a.blueF(), b.blueF(), t),
     )
 
 
@@ -107,8 +108,8 @@ class Wedge:
 # prompt bar first. Hardcoded for now - once there's a settings UI, this is
 # the shape it needs to produce.
 WEDGE_CONFIG = [
-    {"id": "announce", "label": "Todo"},
-    {"id": "announce", "label": "Note"},
+    {"id": "todo", "label": "Todo"},
+    {"id": "note", "label": "Note"},
     {"id": "announce", "label": "Down"},
     {"id": "claude", "label": "Claude", "placeholder": "Ask Bel anything…"},
 ]
@@ -141,44 +142,29 @@ class PieMenu(OverlayWindow):
         # together in paintWedge without any "has this started yet" branches.
         self.open_ms = 0
         self.select_ms = 0
-        self.handoff_ms = 0
         self.close_ms = 0
-        self.open_clock = self.makeClock(self.onOpenTick, self.onOpened)
-        self.select_clock = self.makeClock(self.onSelectTick, self.beginClose)
-        self.handoff_clock = self.makeClock(self.onHandoffTick, self.onHandoffDone)
-        self.close_clock = self.makeClock(self.onCloseTick, self.onClosed)
-        self.clocks = (self.open_clock, self.select_clock, self.handoff_clock, self.close_clock)
+        self.open_clock = Clock(self, self.onOpenTick, self.onOpened)
+        self.select_clock = Clock(self, self.onSelectTick, self.beginClose)
+        self.close_clock = Clock(self, self.onCloseTick, self.onClosed)
 
         # One 0..1 float per wedge drives every hover property, so a wedge
         # caught mid-retreat animates from wherever it actually is.
         self.hover_t = [0.0] * len(self.wedges)
-        self.hover_anims = [self.makeHoverAnimation(i) for i in range(len(self.wedges))]
+        self.hover_anims = [HoverClock(self, self.makeHoverTick(i)) for i in range(len(self.wedges))]
 
-        self.prompt_bar = PromptBar(self)
+        self.prompt_flow = PromptFlow(self, len(self.wedges), self.onHandoffTick, self.onHandoffDone)
+        self.prompt_bar = self.prompt_flow.bar
         self.prompt_bar.submitted.connect(self.onPromptSubmitted)
         self.prompt_bar.cancelled.connect(self.returnToRing)
-        self.cards = CardStack()  # cards are top-level windows; this is what keeps them alive
+        self.clocks = (self.open_clock, self.select_clock, self.prompt_flow.clock, self.close_clock)
+        self.cards = ChatStack()  # cards are top-level windows; this is what keeps them alive
 
         self.setWindowOpacity(0)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setGeometry(QApplication.primaryScreen().virtualGeometry())
         self.show()
 
-    # --- animation plumbing ---
-
-    def makeClock(self, on_tick, on_done):
-        clock = QVariantAnimation(self)
-        clock.setStartValue(0)
-        clock.valueChanged.connect(on_tick)
-        clock.finished.connect(on_done)
-        return clock
-
-    def runClock(self, clock, total_ms):
-        clock.setEndValue(total_ms)
-        clock.setDuration(total_ms)
-        clock.start()
-        if not self.motion:
-            clock.setCurrentTime(total_ms)  # jump straight to the resting pose
+    # --- hover wiring ---
 
     def stopClocks(self):
         # Every phase change calls this. A clock left running would keep
@@ -188,30 +174,15 @@ class PieMenu(OverlayWindow):
         for clock in self.clocks:
             clock.stop()
 
-    def makeHoverAnimation(self, index):
-        anim = QVariantAnimation(self)
-        anim.valueChanged.connect(lambda t: self.onHoverTick(index, t))
-        return anim
+    def makeHoverTick(self, index):
+        return lambda t: self.onHoverTick(index, t)
 
     def onHoverTick(self, index, t):
         self.hover_t[index] = t
         self.update(self.ringRect())
 
     def animateHover(self, index, target):
-        anim = self.hover_anims[index]
-        anim.stop()
-        if not self.motion:
-            self.onHoverTick(index, float(target))
-            return
-        anim.setStartValue(self.hover_t[index])
-        anim.setEndValue(float(target))
-        if target:
-            anim.setDuration(style.HOVER_IN_MS)
-            anim.setEasingCurve(pie_anim.HOVER_IN)
-        else:
-            anim.setDuration(style.HOVER_OUT_MS)
-            anim.setEasingCurve(pie_anim.HOVER_OUT)
-        anim.start()
+        self.hover_anims[index].animateTo(self.hover_t[index], target, self.motion)
 
     def clearHover(self):
         for anim in self.hover_anims:
@@ -224,22 +195,6 @@ class PieMenu(OverlayWindow):
         return QRectF(
             self.anchor.x() - PAINT_REACH, self.anchor.y() - PAINT_REACH, PAINT_REACH * 2, PAINT_REACH * 2
         ).toAlignedRect()
-
-    # --- geometry the prompt bar flies between ---
-
-    def wedgeBox(self, index):
-        """The square the prompt bar's rect grows out of, centered on the
-        wedge's label."""
-        bx, by = pie_anim.bisector(index, len(self.wedges))
-        reach = style.RING_LABEL * style.RING_RADIUS
-        box = QRectF(0, 0, style.WEDGE_BOX, style.WEDGE_BOX)
-        box.moveCenter(QPointF(self.anchor.x() + reach * bx, self.anchor.y() + reach * by))
-        return box
-
-    def fieldRect(self):
-        rect = QRectF(0, 0, style.FIELD_WIDTH, style.FIELD_HEIGHT)
-        rect.moveCenter(self.anchor)
-        return rect
 
     # --- phases ---
 
@@ -259,7 +214,7 @@ class PieMenu(OverlayWindow):
         self.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
         self.chosen_wedge = None
         self.prompt_text = None
-        self.open_ms = self.select_ms = self.handoff_ms = self.close_ms = 0
+        self.open_ms = self.select_ms = self.close_ms = self.prompt_flow.ms = 0
         self.clearHover()
         self.prompt_bar.hide()
 
@@ -270,7 +225,7 @@ class PieMenu(OverlayWindow):
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
-        self.runClock(self.open_clock, pie_anim.open_total_ms(len(self.wedges)))
+        self.open_clock.run(pose.open_total_ms(), self.motion)
 
     def onOpenTick(self, ms):
         self.open_ms = ms
@@ -305,7 +260,7 @@ class PieMenu(OverlayWindow):
         self.stopClocks()
         self.phase = SELECTING
         self.select_ms = 0
-        self.runClock(self.select_clock, pie_anim.select_total_ms())
+        self.select_clock.run(pose.select_total_ms(), self.motion)
 
     def onSelectTick(self, ms):
         self.select_ms = ms
@@ -316,7 +271,6 @@ class PieMenu(OverlayWindow):
         rounded rect grows from the chosen wedge into the text field."""
         self.stopClocks()
         self.phase = HANDOFF
-        self.handoff_ms = 0
         self.releaseMouse()  # the field has to be able to receive its own clicks
 
         # However the wedge was picked, it holds a full hover pose while the
@@ -325,24 +279,13 @@ class PieMenu(OverlayWindow):
         self.hover_t[self.chosen_wedge] = 1.0
         self.hovered_wedge = self.chosen_wedge
 
-        self.prompt_bar.launch(wedge.placeholder, seed)
-        self.prompt_bar.setGeometry(self.wedgeBox(self.chosen_wedge).toRect())
-        self.prompt_bar.raise_()
-        self.runClock(self.handoff_clock, pie_anim.handoff_total_ms())
+        self.prompt_flow.begin(self.anchor, self.chosen_wedge, wedge, seed, self.motion)
 
-    def onHandoffTick(self, ms):
-        self.handoff_ms = ms
-        grown = pie_anim.lerp_rect(self.wedgeBox(self.chosen_wedge), self.fieldRect(), pie_anim.grow_progress(ms))
-        self.prompt_bar.setGeometry(grown.toRect())
-        self.prompt_bar.setFlight(pie_anim.crossfade_progress(ms), pie_anim.field_progress(ms))
-        if ms >= pie_anim.geometry_rest_ms():
-            self.prompt_bar.place()  # only now that the rect has stopped moving
+    def onHandoffTick(self):
         self.update(self.ringRect())
 
     def onHandoffDone(self):
         self.phase = PROMPTING
-        self.prompt_bar.place()
-        self.prompt_bar.takeFocus()
 
     def returnToRing(self):
         """Escape out of the prompt bar steps back to the ring, not straight
@@ -352,11 +295,11 @@ class PieMenu(OverlayWindow):
         self.prompt_bar.hide()
         self.chosen_wedge = None
         self.prompt_text = None
-        self.open_ms = self.handoff_ms = 0
+        self.open_ms = self.prompt_flow.ms = 0
         self.clearHover()
         self.setFocus()
         self.grabMouse()
-        self.runClock(self.open_clock, pie_anim.open_total_ms(len(self.wedges)))
+        self.open_clock.run(pose.open_total_ms(), self.motion)
 
     def onPromptSubmitted(self, text):
         self.prompt_text = text
@@ -385,7 +328,7 @@ class PieMenu(OverlayWindow):
         self.prompt_bar.hide()
 
         self.close_ms = 0
-        self.runClock(self.close_clock, style.CLOSE_MS)
+        self.close_clock.run(style.CLOSE_MS, self.motion)
 
     def onCloseTick(self, ms):
         self.close_ms = ms
@@ -455,10 +398,10 @@ class PieMenu(OverlayWindow):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        close_scale, close_alpha = pie_anim.close_pose(self.close_ms)
+        close_scale, close_alpha = pose.close_pose(self.close_ms)
 
         scrim = QColor(style.SCRIM)
-        scrim.setAlphaF(style.SCRIM_ALPHA * pie_anim.scrim_progress(self.open_ms) * close_alpha)
+        scrim.setAlphaF(style.SCRIM_ALPHA * pose.scrim_progress(self.open_ms) * close_alpha)
         painter.fillRect(self.rect(), scrim)
 
         # Hovered wedge last so its glow sits above its neighbours.
@@ -476,16 +419,16 @@ class PieMenu(OverlayWindow):
 
         # Each exit sits at its resting pose until its own clock runs, so
         # they compose without caring which one is actually in play.
-        open_scale, open_alpha = pie_anim.open_pose(self.open_ms, index)
-        select_scale, select_alpha, select_push = pie_anim.select_pose(self.select_ms, chosen)
-        exit_scale, exit_alpha = pie_anim.ring_exit_pose(self.handoff_ms, chosen)
-        hover_push, outer, label_scale = pie_anim.hover_pose(t)
+        open_scale, open_alpha = pose.open_pose(self.open_ms)
+        select_scale, select_alpha, select_push = pose.select_pose(self.select_ms, chosen)
+        exit_scale, exit_alpha = pose.ring_exit_pose(self.prompt_flow.ms, chosen)
+        hover_push, outer, label_scale = pose.hover_pose(t)
 
         alpha = open_alpha * select_alpha * exit_alpha * close_alpha
         if alpha <= 0:
             return
         scale = open_scale * select_scale * exit_scale * close_scale
-        bx, by = pie_anim.bisector(index, count)
+        bx, by = pose.bisector(index, count)
         push = hover_push + select_push
 
         painter.save()

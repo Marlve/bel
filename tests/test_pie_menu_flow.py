@@ -20,10 +20,11 @@ def key(code, text=""):
 
 
 class StubRequest(QObject):
-    """One call's worth of signals - what a result card follows."""
+    """One call's worth of signals - what a chat card follows."""
 
     chunk = Signal(str)
     finished = Signal()
+    session_started = Signal(str)
 
 
 class StubAction(QObject):
@@ -37,7 +38,7 @@ class StubAction(QObject):
         self.calls = calls
         self.requests = []
 
-    def __call__(self, *args):
+    def __call__(self, *args, **kwargs):
         self.calls.append((self.index, args))
         request = StubRequest()
         self.requests.append(request)
@@ -132,9 +133,9 @@ class PieMenuFlowTests(unittest.TestCase):
 
         self.assertEqual(len(self.menu.cards.cards), 1)
         card = self.menu.cards.cards[0]
-        self.assertEqual(card.prompt, "what is on my plate today")
+        self.assertEqual(card.turns[0]["text"], "what is on my plate today")
         self.assertEqual(card.born, born)
-        self.assertEqual(card.dock.size().toSize().width(), 340)
+        self.assertEqual(card.dock_rect.size().toSize().width(), 340)
 
     def test_a_card_docks_against_the_top_right_of_the_work_area(self):
         screen = QApplication.primaryScreen()
@@ -171,10 +172,10 @@ class PieMenuFlowTests(unittest.TestCase):
 
         card = self.menu.cards.cards[0]
         card.request.chunk.emit("in flight")
-        self.assertEqual(card.body.toPlainText(), "")
+        self.assertEqual(card.turns[-1]["text"], "")
         card.flight.stop()
         card.onLanded()
-        self.assertEqual(card.body.toPlainText(), "in flight")
+        self.assertEqual(card.turns[-1]["text"], "in flight")
 
     def test_a_finished_request_stops_feeding_its_card(self):
         card = self.ask("hello")
@@ -182,7 +183,7 @@ class PieMenuFlowTests(unittest.TestCase):
         request.chunk.emit("first answer")
         request.finished.emit()
         request.chunk.emit("late straggler")
-        self.assertEqual(card.body.toPlainText(), "first answer")
+        self.assertEqual(card.turns[-1]["text"], "first answer")
 
     def test_a_second_question_never_writes_into_the_first_card(self):
         # Each call hands back its own request, so a prompt sent while an
@@ -193,14 +194,14 @@ class PieMenuFlowTests(unittest.TestCase):
 
         second.request.chunk.emit("second answer")
         first.request.chunk.emit("first answer")
-        self.assertEqual(first.body.toPlainText(), "first answer")
-        self.assertEqual(second.body.toPlainText(), "second answer")
+        self.assertEqual(first.turns[-1]["text"], "first answer")
+        self.assertEqual(second.turns[-1]["text"], "second answer")
 
     def test_a_fourth_card_evicts_the_oldest(self):
         for number in range(4):
             self.ask(f"question {number}")
         self.assertEqual(
-            [card.prompt for card in self.menu.cards.cards],
+            [card.turns[0]["text"] for card in self.menu.cards.cards],
             ["question 3", "question 2", "question 1"],
         )
 

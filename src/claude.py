@@ -7,9 +7,9 @@ from PySide6.QtCore import QObject, Signal
 SYSTEM_PROMPT = """
 You're a personal helper tool called Bel.
 
+- answer as short and concise as you can, if its a command, don't put too much details except needed.
 - you live as an overlay that could help the user organize calender schedule, check for assignments, remind certain todo list.
 - ignore any git/repository status context you were given, only respond to the user's actual message.
-- whenever the user asks to create a todo, write it to C:\\Users\\deric\\Code\\bel\\extra\\todo.md
 """
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -18,34 +18,40 @@ if hasattr(sys.stdout, "reconfigure"):
   # imports this module rather than only running it as a standalone script.
   sys.stdout.reconfigure(encoding="utf-8")
 
-def askBel(prompt, on_process=None):
+def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of
   returning the full response at once - callers can react to partial
   output rather than waiting for the whole thing.
+
+  `session_id`, if given, is passed as `--resume` so this call continues an
+  earlier conversation instead of starting a fresh one - what lets the chat
+  card's composer send real follow-ups, not just independent questions.
 
   `on_process`, if given, is called with the spawned subprocess as soon as
   it starts, so a caller (e.g. ClaudeWorker) can terminate it from outside
   this generator - otherwise a hung or abandoned request has no way to be
   cancelled short of killing the whole app.
+
+  `on_session`, if given, is called once with the CLI's own session id, read
+  off the first event of the stream - a caller keeps it and passes it back
+  as `session_id` on the conversation's next turn.
   """
-  process = subprocess.Popen(
-      [
-          "claude", "-p", prompt,
-          "--output-format", "stream-json",
-          "--include-partial-messages",
-          "--verbose",
-          "--append-system-prompt",
-          SYSTEM_PROMPT,
-          "--allowedTools", "Write",
-          "--permission-mode", "acceptEdits",
-      ],
-      stdout=subprocess.PIPE,
-      text=True,
-      encoding="utf-8",
-  )
+  args = [
+      "claude", "-p", prompt,
+      "--output-format", "stream-json",
+      "--include-partial-messages",
+      "--verbose",
+      "--append-system-prompt",
+      SYSTEM_PROMPT,
+  ]
+  if session_id:
+      args += ["--resume", session_id]
+
+  process = subprocess.Popen(args, stdout=subprocess.PIPE, text=True, encoding="utf-8")
   if on_process is not None:
       on_process(process)
 
+  seen_session = False
   try:
       for line in process.stdout:
           line = line.strip()
@@ -53,6 +59,13 @@ def askBel(prompt, on_process=None):
               continue
 
           event = json.loads(line)
+
+          if not seen_session:
+              new_session_id = event.get("session_id")
+              if new_session_id and on_session is not None:
+                  on_session(new_session_id)
+              seen_session = True
+
           if event.get("type") != "stream_event":
               continue
 
@@ -81,10 +94,12 @@ class ClaudeWorker(QObject):
 
   chunk = Signal(str)
   finished = Signal()
+  session_started = Signal(str)
 
-  def __init__(self, prompt):
+  def __init__(self, prompt, session_id=None):
       super().__init__()
       self.prompt = prompt
+      self.session_id = session_id
       self.process = None
 
   def run(self):
@@ -93,7 +108,12 @@ class ClaudeWorker(QObject):
       # actions/claude_action.py); otherwise a failed request leaves the wedge
       # permanently stuck and leaks this thread for the app's lifetime.
       try:
-          for text in askBel(self.prompt, on_process=self.track_process):
+          for text in askBel(
+              self.prompt,
+              session_id=self.session_id,
+              on_process=self.track_process,
+              on_session=self.session_started.emit,
+          ):
               self.chunk.emit(text)
       except Exception as error:
           self.chunk.emit(f"[error: {error}]")
