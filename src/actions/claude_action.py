@@ -33,7 +33,8 @@ class ClaudeAction(QObject):
         if app is not None:
             app.aboutToQuit.connect(self.cancel)
 
-    def __call__(self):
+    def __call__(self, prompt=None):
+        prompt = prompt or self.prompt
         if self.thread is not None:
             # A request is already in flight - reassigning these attributes
             # would drop the only Python reference to that QThread/worker,
@@ -42,7 +43,7 @@ class ClaudeAction(QObject):
             return
 
         self.thread = QThread()
-        self.worker = ClaudeWorker(self.prompt)
+        self.worker = ClaudeWorker(prompt)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)

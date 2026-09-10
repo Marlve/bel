@@ -1,5 +1,14 @@
 import ctypes
 
+SPI_GETCLIENTAREAANIMATION = 0x1042
+
+
+def reduced_motion():
+    """True when Windows' "Show animations" accessibility setting is off."""
+    enabled = ctypes.c_int(1)
+    ctypes.windll.user32.SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, ctypes.byref(enabled), 0)
+    return not enabled.value
+
 
 def force_foreground(hwnd):
     """Force window `hwnd` to the OS foreground so it actually receives
