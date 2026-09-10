@@ -12,14 +12,14 @@
 # `session_id` kwarg and emits `session_started(str)` once per request, so a
 # card can resume the same conversation on its next send.
 
-from actions.announce import announce
 from actions.claude_action import ClaudeAction, DEFAULT_PROMPT
 from actions.todo_action import todo
 from actions.note_action import note
+from actions.settings_action import settings
 
 ACTIONS = {
-    "announce": lambda config: announce(config["label"]),
     "claude": lambda config: ClaudeAction(prompt=config.get("prompt", DEFAULT_PROMPT)),
     "todo": todo,
     "note": note,
+    "settings": settings,
 }

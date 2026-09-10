@@ -1,0 +1,63 @@
+# The ring's editable wedges - the ones the Settings card lets you relabel,
+# reorder, or reassign - plus the placement rule for the Settings wedge
+# itself. Kept out of pie_menu.py so settings_card.py can read the same
+# defaults and action list without importing pie_menu, which imports the
+# actions registry, which is what builds the Settings wedge in the first
+# place - that path back to pie_menu would be circular.
+
+import card_store
+
+STORE_KEY = "wedges"
+
+# Extra per-action config merged into a slot's entry alongside the id/label
+# the user edits (e.g. the prompt bar placeholder Claude needs).
+ACTION_EXTRAS = {
+    "todo": {},
+    "note": {},
+    "claude": {"placeholder": "Ask Bel anything…"},
+}
+
+# (id, display name), in the order offered in the settings dropdown.
+ACTION_CHOICES = [("todo", "Todo"), ("note", "Note"), ("claude", "Claude")]
+
+DEFAULT_OTHER_WEDGES = [
+    {"id": "todo", "label": "Todo"},
+    {"id": "note", "label": "Note"},
+    {"id": "claude", "label": "Claude"},
+]
+
+SETTINGS_ENTRY = {"id": "settings", "label": "Settings"}
+
+
+def load_other_wedges():
+    saved = card_store.load(STORE_KEY, None)
+    return saved if saved else [dict(entry) for entry in DEFAULT_OTHER_WEDGES]
+
+
+def save_other_wedges(entries):
+    card_store.save(STORE_KEY, entries)
+
+
+def bottom_pin_index(count):
+    """Index closest to compass-down (180°) for a ring of this many wedges -
+    see wedge_index() in pie_menu.py for the same 0=up, clockwise
+    convention. Exact whenever count is even; for an odd count no wedge
+    sits exactly at 180° so this picks whichever of the two neighbors is
+    nearer (ties round to the lower index)."""
+    return round(count / 2) % count
+
+
+def full_config(other_entries):
+    """The complete, ordered wedge list: the editable wedges plus Settings
+    pinned as close to the bottom as the current count allows, wherever the
+    editable wedges themselves land."""
+    count = len(other_entries) + 1
+    config = list(other_entries)
+    config.insert(bottom_pin_index(count), dict(SETTINGS_ENTRY))
+    return config
+
+
+def resolve(entries):
+    """Editable entries (just id + label) with each action's own extra
+    config merged in, ready for pie_menu.build_wedges()."""
+    return [{**entry, **ACTION_EXTRAS.get(entry["id"], {})} for entry in entries]
