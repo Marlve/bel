@@ -90,7 +90,7 @@ class ClaudeWorker(QObject):
   def run(self):
       # `finished` must always fire, even on error - it's what tells the
       # caller the request is over (see ClaudeAction's in-flight guard in
-      # wedge_actions.py); otherwise a failed request leaves the wedge
+      # actions/claude_action.py); otherwise a failed request leaves the wedge
       # permanently stuck and leaks this thread for the app's lifetime.
       try:
           for text in askBel(self.prompt, on_process=self.track_process):

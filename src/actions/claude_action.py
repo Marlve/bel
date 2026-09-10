@@ -1,17 +1,10 @@
-# What each pie menu wedge does when selected. Kept separate from
-# pie_menu.py so the menu's geometry/rendering code doesn't have to know
-# about action-specific concerns (e.g. the Claude wedge's background thread).
-
 from PySide6.QtCore import QObject, QThread, QTimer
 from PySide6.QtWidgets import QApplication
 
 from claude import ClaudeWorker
 
 CLAUDE_TIMEOUT_MS = 60_000  # give up on a hung request rather than staying stuck forever
-
-
-def announce(label):
-    return lambda: print(f"selected: {label}")
+DEFAULT_PROMPT = "Can you make a todo for, ETW assignment, meet a friend"  # placeholder until wedges have real input
 
 
 class ClaudeAction(QObject):
@@ -26,8 +19,9 @@ class ClaudeAction(QObject):
     outlive this app.
     """
 
-    def __init__(self):
+    def __init__(self, prompt=DEFAULT_PROMPT):
         super().__init__()
+        self.prompt = prompt
         self.thread = None
         self.worker = None
 
@@ -47,10 +41,8 @@ class ClaudeAction(QObject):
             print("selected: Claude -> still waiting on the previous request")
             return
 
-        prompt = "Can you make a todo for, ETW assignment, meet a friend"  # placeholder until wedges have real input
-
         self.thread = QThread()
-        self.worker = ClaudeWorker(prompt)
+        self.worker = ClaudeWorker(self.prompt)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)

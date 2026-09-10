@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
 from overlay import OverlayWindow
-from wedge_actions import announce, ClaudeAction
+from actions import ACTIONS
 
 INNER_RADIUS = style.PIE_DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
 
@@ -42,6 +42,23 @@ class Wedge:
     action: Callable[[], None]
 
 
+# Which wedges the menu shows, in order. Each entry's "id" picks an action
+# factory from ACTIONS; any other key is that action's own config (e.g.
+# "claude" reads "prompt"). Hardcoded for now - once there's a settings UI,
+# this is the shape it needs to produce.
+WEDGE_CONFIG = [
+    {"id": "announce", "label": "Up"},
+    {"id": "announce", "label": "Right"},
+    {"id": "announce", "label": "Down"},
+    {"id": "announce", "label": "Left"},
+    {"id": "claude", "label": "Claude"},
+]
+
+
+def build_wedges(config):
+    return [Wedge(entry["label"], ACTIONS[entry["id"]](entry)) for entry in config]
+
+
 class PieMenu(OverlayWindow):
     def __init__(self):
         super().__init__()
@@ -51,34 +68,27 @@ class PieMenu(OverlayWindow):
         self.anchor = QPointF(0, 0)
         self.status = False
         self.hovered_wedge = None
-        self.wedges = [
-            Wedge("Up", announce("Up")),
-            Wedge("Right", announce("Right")),
-            Wedge("Down", announce("Down")),
-            Wedge("Left", announce("Left")),
-            Wedge("Claude", ClaudeAction()),
-        ]
+        self.wedges = build_wedges(WEDGE_CONFIG)
+
+        self.setWindowOpacity(0)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setGeometry(QApplication.primaryScreen().virtualGeometry())
+        self.show()
 
     def onKeyPress(self):
-      self.status = not self.status
       if self.status:
-        self.openAtCursor()
-      else:
         self.closeMenu()
+      else:
+        self.openAtCursor()
 
 
     def openAtCursor(self):
-        # Cover the whole virtual desktop (all monitors) so the mouse can never
-        # leave the widget mid-gesture - direction is read from the anchor
-        # point (where the hotkey was pressed), not from the widget's center.
-        self.setGeometry(QApplication.primaryScreen().virtualGeometry())
+        self.status = True
         self.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
         self.hovered_wedge = None
-        self.show()
-        # show() only schedules a paint for the next event loop iteration - on
-        # reopen, that leaves the previous frame (rendered at the old anchor)
-        # visible for a moment. repaint() forces it to happen immediately.
-        self.repaint()
+        self.repaint()  # bake the new anchor's frame in before revealing it
+        self.setWindowOpacity(1)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
@@ -87,8 +97,10 @@ class PieMenu(OverlayWindow):
         pos = event.position()
         dx = pos.x() - self.anchor.x()
         dy = pos.y() - self.anchor.y()
-        self.hovered_wedge = wedge_index(dx, dy, len(self.wedges), style.PIE_DEADZONE, style.PIE_RADIUS)
-        self.update()
+        current_index = wedge_index(dx, dy, len(self.wedges), style.PIE_DEADZONE, style.PIE_RADIUS)
+        if self.hovered_wedge != current_index:
+          self.hovered_wedge = current_index
+          self.update()
 
     def mousePressEvent(self, event):
         if self.hovered_wedge is not None:
@@ -100,10 +112,13 @@ class PieMenu(OverlayWindow):
             self.closeMenu()
 
     def closeMenu(self):
+        self.status = False
         self.releaseMouse()
-        self.hide()
+        self.setWindowOpacity(0)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
     def paintEvent(self, event):
+        print("painting")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
