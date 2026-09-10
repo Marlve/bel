@@ -1,9 +1,28 @@
 # Centralized colors, sizes and motion for every overlay. Change a value here, not per-window.
 
-BACKGROUND = "#1e1e2edd"
-TEXT = "#f5f5f5"
-ACCENT = "#89b4fa"
-BORDER = "#313244"
+# --- Shared neutral palette. One grayscale system - ring, prompt bar, and
+# chat card all read from these same primitives, the way claude-chat-flow.md
+# specified for the chat card alone. No hue anywhere; "accent" is near-white,
+# not a color. ---
+
+SURFACE = "#17181A"  # darkest surface: wedge idle fill, chat card body
+SURFACE_RAISED = "#1B1C1F"  # one step up: prompt field, composer
+SURFACE_BUBBLE = "#24252A"  # user bubble, pressed wedge fill
+BORDER_DIM = "#2D2E31"  # resting border, one step lighter than its surface
+BORDER_WARM = "#3E3F44"  # border once there's content/typing
+BORDER_STRONG = "#4C4D52"  # strongest border (tabbed-out dock state)
+HINT = "#3C3D41"  # inert icons/hints
+MUTED = "#6B6C70"  # placeholder text, dimmed secondary text
+LABEL = "#86878B"  # mono labels, muted body text
+BODY_DIM = "#C8C9CD"  # secondary/idle text
+BODY = "#E8E8EA"  # primary text
+INK = "#0B0C10"  # near-black, for text on top of the accent
+ACCENT_NEUTRAL = "#D8D9DC"  # the one accent - near-white, not a hue
+
+BACKGROUND = SURFACE + "dd"
+TEXT = BODY
+ACCENT = ACCENT_NEUTRAL
+BORDER = BORDER_DIM
 
 FONT_FAMILY = "Segoe UI"
 FONT_SIZE = 11
@@ -16,26 +35,25 @@ RING_INNER = 0.35  # donut hole; the cursor inside it selects nothing
 RING_HIT_OUTER = 1.3  # cursor past this selects nothing - a bit of slack past the ring's ink, not much
 RING_LABEL = 0.68  # label centroid distance from the center
 
-WEDGE_IDLE = "#171B24"
-WEDGE_BORDER = "#242C3A"
-WEDGE_HOVER = "#8AB4FF"
-WEDGE_PRESSED = "#6E97E3"
-LABEL_IDLE = "#B4BDD0"
-LABEL_HOVER = "#0B0C10"
+WEDGE_IDLE = SURFACE
+WEDGE_BORDER = BORDER_DIM
+WEDGE_HOVER = ACCENT
+WEDGE_PRESSED = BODY_DIM
+LABEL_IDLE = BODY_DIM
+LABEL_HOVER = INK
 SCRIM = "#000000"
 SCRIM_ALPHA = 0.55
-GLOW = "#8AB4FF"
+GLOW = ACCENT
 GLOW_ALPHA = 0.22
 GLOW_WIDTH = 18
 
-# Open: ring pops out of the cursor, wedges arriving one after another.
+# Open: ring pops out of the cursor, all wedges arriving together.
 OPEN_MS = 430
 OPEN_SCALE_FROM = 0.30
 OPEN_EASING = "OutBack"
 OPEN_OVERSHOOT = 1.56
 OPEN_FADE_MS = 170  # opacity lands well before the scale does, so it reads as arriving
 OPEN_FADE_EASING = "OutCubic"
-OPEN_STAGGER_MS = 26
 SCRIM_MS = 220
 
 # Hover: only the hovered wedge moves - it slides outward and grows a little.
@@ -79,21 +97,19 @@ FIELD_ARRIVE_MS = 90
 WEDGE_BOX = 96  # square the rect grows out of, centered on the wedge's label
 FIELD_WIDTH = 520
 FIELD_HEIGHT = 56
-FIELD_INSET_LEFT = 58  # the mark sits in here
-FIELD_INSET_RIGHT = 44  # so does the send hint
-FIELD_MARK = 24
-FIELD_MARK_INSET = 26  # from the field's left cap
+FIELD_INSET_LEFT = 24
+FIELD_INSET_RIGHT = 44  # the send hint sits in here
 FIELD_FONT_SIZE = 12
 
-FIELD_SURFACE = "#141924"
-FIELD_BORDER = "#2A3243"
-FIELD_BORDER_TYPING = "#37415A"  # one step warmer than idle
+FIELD_SURFACE = SURFACE_RAISED
+FIELD_BORDER = BORDER_DIM
+FIELD_BORDER_TYPING = BORDER_WARM  # one step warmer than idle
 FIELD_BORDER_SENDING = ACCENT
-FIELD_BORDER_REJECTED = "#8A5A5A"
-FIELD_TEXT = "#E6EAF2"
-FIELD_TEXT_SENDING = "#8B93A5"
-FIELD_PLACEHOLDER = "#6B7488"
-FIELD_HINT_IDLE = "#454E63"
+FIELD_BORDER_REJECTED = "#8A5A5A"  # kept off the neutral ramp on purpose - the one functional error color, not decorative
+FIELD_TEXT = BODY
+FIELD_TEXT_SENDING = LABEL
+FIELD_PLACEHOLDER = MUTED
+FIELD_HINT_IDLE = HINT
 FIELD_HINT_LIT = ACCENT
 
 REJECT_MS = 90
@@ -101,30 +117,98 @@ REJECT_SHIFT = 4
 REJECT_SHAKES = 2
 
 
-# --- Result card. On send, the prompt bar's rect keeps flying: out of the
-# ring's way and into the top-right corner, where the answer streams in. ---
+# --- Claude chat card. claude-chat-flow.md's own palette and numbers - now
+# also the app's palette everywhere else (see the shared primitives above),
+# so the chat card no longer reads as a different surface from the ring. ---
 
-CARD_FLIGHT_MS = 420
-CARD_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
-CARD_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same curve
-CARD_RADIUS = 12
-CARD_SIZE = 340
-CARD_MARGIN = 24  # from the work area's edges, so the card never hides under the taskbar
-CARD_GAP = 12  # between stacked cards
-CARD_MAX = 3
-CARD_RESTACK_MS = 220  # an older card getting out of a newer one's way
-CARD_DISMISS_MS = 140
-CARD_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
+CHAT_MONO_FAMILY = "Consolas"
 
-CARD_PADDING = 18
-CARD_MARK = 14
-CARD_ECHO_SIZE = 11
-CARD_BODY_SIZE = 13
-CARD_SURFACE = "#141924"
-CARD_BORDER = "#2A3243"
-CARD_ECHO = "#6B7488"
-CARD_BODY = "#D7DCE6"
-CARD_SCROLLBAR = "#2A3243"
+CHAT_SURFACE = SURFACE  # card surface
+CHAT_BORDER = BORDER_DIM  # card border, open
+CHAT_BORDER_TAB = BORDER_STRONG  # card border, tabbed out at the edge
+CHAT_COMPOSER_FIELD = SURFACE_RAISED
+CHAT_COMPOSER_BORDER_WARM = BORDER_WARM  # on content
+CHAT_ACCENT = ACCENT
+CHAT_USER_BUBBLE = SURFACE_BUBBLE
+CHAT_BODY_TEXT = BODY
+CHAT_TURN_TEXT = BODY_DIM  # claude's own turns - plain text, no bubble
+CHAT_LABEL_MONO = LABEL
+CHAT_INERT_HINT = HINT
+
+CHAT_BODY_SIZE = 12.5  # px, per claude-chat-flow.md's own px units
+CHAT_HEADER_SIZE = 9.5  # px mono, 0.14em tracking (applied via QFont.setLetterSpacing, not CSS)
+CHAT_HEADER_TRACKING_PERCENT = 114  # 1 + 0.14em, as QFont.PercentageSpacing wants it
+
+CHAT_SIZE = 340
+CHAT_MARGIN = 24  # from the work area's edges
+CHAT_GAP = 12  # between stacked cards - 340 + 12 = 352 px per slot
+CHAT_MAX = 3
+CHAT_PADDING = 14
+
+CHAT_FLIGHT_MS = 420
+CHAT_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
+CHAT_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same curve
+CHAT_RADIUS = 10
+CHAT_RESTACK_MS = 220  # an older card getting out of a newer one's way
+CHAT_DISMISS_MS = 140
+CHAT_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
+
+CHAT_BUBBLE_RADIUS = (9, 9, 3, 9)  # top-left, top-right, bottom-right, bottom-left
+CHAT_BUBBLE_PADDING_H = 9
+CHAT_BUBBLE_PADDING_V = 7
+CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
+
+CHAT_COMPOSER_HEIGHT = 32
+CHAT_COMPOSER_PADDING = 11
+
+
+# --- Todo & note cards. Persistent, draggable squares toggled from the
+# ring - same footprint, type, and neutral surface as the chat card (CHAT_*
+# above) so all three read as one family; only their content differs. ---
+
+CARD_DRAG_THRESHOLD_PX = 4  # design.md's "press and move more than 4 px" - drag vs click/tick
+CARD_AUTOSAVE_MS = 400  # idle debounce before writing position/content to disk
+
+CARD_MIN_SIZE = 220  # never smaller than this in either dimension
+CARD_RESIZE_GRIP = 16  # bottom-right corner handle, square, px
+CARD_SPAWN_OFFSET = 16  # cursor lands this far inside the card's corner when it opens
+
+CARD_SHADOW_BLUR = 24
+CARD_SHADOW_OFFSET_Y = 8
+CARD_SHADOW_ALPHA = 115  # ~0.45, softened from design.md's result-card 0.55 to fit a modest CARD_SHADOW_MARGIN
+CARD_SHADOW_MARGIN = 28  # extra room a top-level card window needs on every side so its own
+# QGraphicsDropShadowEffect isn't clipped at the window's edge - unlike a shadow on a child
+# widget (prompt_bar.py's, which bleeds into its parent overlay), a top-level window's effect
+# can only paint within that window's own pixels.
+
+TODO_ROW_HEIGHT = 36
+TODO_CHECKBOX = 17
+TODO_CHECKBOX_RADIUS = 4
+TODO_REMOVE_DELAY_MS = 2000  # a ticked row vanishes this long after being checked, unless unticked first
+
+
+# --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, folds
+# to a COMPACT puck, then slides fully HIDDEN; a TAB peeks back out on
+# approach. Kept separate from CHAT_* above since these drive edge_dock.py's
+# pure state machine, not the card's own paint. ---
+
+DOCK_COMPACT_SIZE = 64
+DOCK_TAB_VISIBLE_PX = 26  # how much of the puck still shows in TAB
+DOCK_TAB_ROTATION_DEG = -9.0  # float: must match self.tilt's type or QVariantAnimation won't interpolate
+DOCK_TAB_SLIDE_MS = 300
+DOCK_TAB_ROTATE_MS = 260
+
+DOCK_COMPACT_MS = 300  # OPEN -> COMPACT, folding in place
+DOCK_COMPACT_TO_HIDE_DELAY_MS = 220  # pause between folding and sliding off
+DOCK_HIDE_MS = 300  # COMPACT -> HIDDEN, sliding fully past the edge
+
+DOCK_ARM_PX = 180  # cursor closer than this to the right edge arms the tab
+DOCK_DISARM_PX = 260  # and must retreat past this to disarm - the hysteresis gap
+
+DOCK_IDLE_MS = 6_000  # before the compact step, with nothing else going on
+DOCK_LEAVE_MS = 2_500  # after the cursor leaves an open card
+
+DOCK_TRIGGER_WIDTH = 180  # EdgeTrigger's width along the right edge
 
 
 def prompt_field_stylesheet(text_color):
@@ -139,27 +223,53 @@ def prompt_field_stylesheet(text_color):
     )
 
 
-def card_echo_stylesheet():
-    return f"color: {CARD_ECHO}; font-family: {FONT_FAMILY}; font-size: {CARD_ECHO_SIZE}pt; background: transparent;"
-
-
-def card_close_stylesheet():
+def chat_close_stylesheet():
     return (
-        f"QPushButton {{ color: {CARD_ECHO}; background: transparent; border: none;"
-        f" font-family: {FONT_FAMILY}; font-size: {CARD_ECHO_SIZE}pt; }}"
-        f"QPushButton:hover {{ color: {TEXT}; }}"
+        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; }}"
+        f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
     )
 
 
-def card_body_stylesheet():
+def chat_scrollbar_stylesheet():
     return (
-        f"QTextBrowser {{ background: transparent; border: none; color: {CARD_BODY};"
-        f" font-family: {FONT_FAMILY}; font-size: {CARD_BODY_SIZE}pt;"
-        f" selection-background-color: {ACCENT}; selection-color: {LABEL_HOVER}; }}"
+        "QScrollArea { background: transparent; border: none; }"
+        "QScrollArea > QWidget > QWidget { background: transparent; }"
         "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
-        f"QScrollBar::handle:vertical {{ background: {CARD_SCROLLBAR}; border-radius: 3px; min-height: 24px; }}"
+        f"QScrollBar::handle:vertical {{ background: {CHAT_BORDER}; border-radius: 3px; min-height: 24px; }}"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
         "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+    )
+
+
+def chat_turn_stylesheet():
+    return f"color: {CHAT_TURN_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
+
+
+def chat_bubble_stylesheet():
+    tl, tr, br, bl = CHAT_BUBBLE_RADIUS
+    return (
+        f"background: {CHAT_USER_BUBBLE}; color: {CHAT_BODY_TEXT};"
+        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"padding: {CHAT_BUBBLE_PADDING_V}px {CHAT_BUBBLE_PADDING_H}px;"
+        f"border-top-left-radius: {tl}px; border-top-right-radius: {tr}px;"
+        f"border-bottom-right-radius: {br}px; border-bottom-left-radius: {bl}px;"
+    )
+
+
+def note_body_stylesheet():
+    return (
+        "background: transparent; border: none;"
+        f"color: {CHAT_BODY_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+    )
+
+
+def chat_composer_stylesheet(warm):
+    border = CHAT_COMPOSER_BORDER_WARM if warm else CHAT_INERT_HINT
+    return (
+        f"background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
+        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"border: 1px solid {border}; border-radius: {CHAT_COMPOSER_HEIGHT // 2}px;"
+        f"padding: 0 {CHAT_COMPOSER_PADDING}px;"
     )
 
 
