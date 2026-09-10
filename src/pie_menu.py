@@ -5,15 +5,17 @@
 
 import math
 
-from PySide6.QtGui import QPainter, QColor, QCursor
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath
+from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
 from overlay import OverlayWindow
 
 LABELS = ["Up", "Right", "Down", "Left"]
 RADIUS = 90
-DEADZONE = 20
+DEADZONE = 40
+INNER_RADIUS = DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
 
 
 def wedge_index(dx, dy, count, deadzone=0):
@@ -37,23 +39,25 @@ class PieMenu(OverlayWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
-        size = RADIUS * 2 + 20
-        self.resize(size, size)
+        self._anchor = QPointF(0, 0)
         self._active = None
 
     def open_at_cursor(self):
-        cursor = QCursor.pos()
-        self.move(cursor.x() - self.width() // 2, cursor.y() - self.height() // 2)
+        # Cover the whole virtual desktop (all monitors) so the mouse can never
+        # leave the widget mid-gesture - direction is read from the anchor
+        # point (where the hotkey was pressed), not from the widget's center.
+        self.setGeometry(QApplication.primaryScreen().virtualGeometry())
+        self._anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
         self._active = None
-        self.show()
+        self.show() # Shows widget / calls paintEvent
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-        dx = pos.x() - self.width() / 2
-        dy = pos.y() - self.height() / 2
+        dx = pos.x() - self._anchor.x()
+        dy = pos.y() - self._anchor.y()
         self._active = wedge_index(dx, dy, len(LABELS), DEADZONE)
         self.update()
 
@@ -75,21 +79,27 @@ class PieMenu(OverlayWindow):
         painter.setRenderHint(QPainter.Antialiasing)
 
         wedge_width = 360 / len(LABELS)
-        cx, cy = self.width() / 2, self.height() / 2
+        cx, cy = self._anchor.x(), self._anchor.y()
+        outer_rect = QRectF(cx - RADIUS, cy - RADIUS, RADIUS * 2, RADIUS * 2)
+        inner_rect = QRectF(cx - INNER_RADIUS, cy - INNER_RADIUS, INNER_RADIUS * 2, INNER_RADIUS * 2)
 
         for i, label in enumerate(LABELS):
             center_angle = (90 - i * wedge_width) % 360
             start_angle = center_angle - wedge_width / 2
 
+            # Ring segment: outer arc, straight edge in, inner arc back, straight edge out.
+            path = QPainterPath()
+            path.arcMoveTo(outer_rect, start_angle)
+            path.arcTo(outer_rect, start_angle, wedge_width)
+            path.arcTo(inner_rect, start_angle + wedge_width, -wedge_width)
+            path.closeSubpath()
+
             painter.setBrush(QColor(style.ACCENT) if i == self._active else QColor(style.BACKGROUND))
             painter.setPen(QColor(style.BORDER))
-            painter.drawPie(
-                int(cx - RADIUS), int(cy - RADIUS), RADIUS * 2, RADIUS * 2,
-                int(start_angle * 16), int(wedge_width * 16),
-            )
+            painter.drawPath(path)
 
             label_angle = math.radians(center_angle)
-            label_r = RADIUS * 0.6
+            label_r = (RADIUS + INNER_RADIUS) / 2
             lx = cx + label_r * math.cos(label_angle)
             ly = cy - label_r * math.sin(label_angle)
             painter.setPen(QColor(style.TEXT))
