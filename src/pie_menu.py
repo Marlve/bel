@@ -13,8 +13,11 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 import style
 from overlay import OverlayWindow
 from actions import ACTIONS
+from util import force_foreground
 
-INNER_RADIUS = style.PIE_DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
+INNER_RADIUS = style.PIE_DEADZONE  # hollow center matches the dead zone - nothing's selectable in there
+CYCLE_STEP_BY_KEY = {Qt.Key_Right: 1, Qt.Key_Left: -1}
+ACTIVATE_WIDGET_KEYS = (Qt.Key_Return, Qt.Key_Enter)
 
 
 def wedge_index(dx, dy, count, deadzone=0, radius=None):
@@ -34,6 +37,16 @@ def wedge_index(dx, dy, count, deadzone=0, radius=None):
     wedge_width = 360 / count
     shifted = (compass_angle + wedge_width / 2) % 360
     return int(shifted // wedge_width)
+
+
+def cycle_wedge(current, count, step):
+    """Index of the wedge step (+1 = right/next, -1 = left/previous) away
+    from current, wrapping around. current=None starts from just before the
+    first wedge (step=+1) or just after the last (step=-1).
+    """
+    if current is None:
+        current = -1 if step > 0 else 0
+    return (current + step) % count
 
 
 @dataclass
@@ -89,6 +102,7 @@ class PieMenu(OverlayWindow):
         self.repaint()  # bake the new anchor's frame in before revealing it
         self.setWindowOpacity(1)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        force_foreground(int(self.winId()))
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
@@ -103,13 +117,29 @@ class PieMenu(OverlayWindow):
           self.update()
 
     def mousePressEvent(self, event):
+        self.activateHoveredWedge()
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key_Escape:
+            self.closeMenu()
+            return
+        if not self.status:
+            return
+
+        if key in ACTIVATE_WIDGET_KEYS:
+            self.activateHoveredWedge()
+            return
+
+        step = CYCLE_STEP_BY_KEY.get(key)
+        if step is not None:
+            self.hovered_wedge = cycle_wedge(self.hovered_wedge, len(self.wedges), step)
+            self.update()
+
+    def activateHoveredWedge(self):
         if self.hovered_wedge is not None:
             self.wedges[self.hovered_wedge].action()
         self.closeMenu()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            self.closeMenu()
 
     def closeMenu(self):
         self.status = False
