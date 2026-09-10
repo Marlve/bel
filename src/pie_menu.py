@@ -1,9 +1,10 @@
 # Concept for ADR-0006: hotkey opens a circle around the cursor, split into
-# wedges; moving the mouse toward one highlights it, clicking selects it and
-# prints the choice. Wedges aren't wired to real features yet - this only
-# proves the keybind -> menu -> selection mechanism works.
+# wedges; moving the mouse toward one highlights it, clicking runs that
+# wedge's action.
 
 import math
+from dataclasses import dataclass
+from typing import Callable
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath
@@ -11,10 +12,10 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
 from overlay import OverlayWindow
+from wedge_actions import announce, ClaudeAction
 
-LABELS = ["Up", "Right", "Down", "Left"]
-RADIUS = 90
-DEADZONE = 40
+RADIUS = style.PIE_RADIUS
+DEADZONE = style.PIE_DEADZONE
 INNER_RADIUS = DEADZONE  # hollow center matches the dead zone - nothing's selectable in there anyway
 
 
@@ -33,6 +34,12 @@ def wedge_index(dx, dy, count, deadzone=0):
     return int(shifted // wedge_width)
 
 
+@dataclass
+class Wedge:
+    label: str
+    action: Callable[[], None]
+
+
 class PieMenu(OverlayWindow):
     def __init__(self):
         super().__init__()
@@ -41,6 +48,13 @@ class PieMenu(OverlayWindow):
 
         self._anchor = QPointF(0, 0)
         self._active = None
+        self._wedges = [
+            Wedge("Up", announce("Up")),
+            Wedge("Right", announce("Right")),
+            Wedge("Down", announce("Down")),
+            Wedge("Left", announce("Left")),
+            Wedge("Claude", ClaudeAction()),
+        ]
 
     def open_at_cursor(self):
         # Cover the whole virtual desktop (all monitors) so the mouse can never
@@ -58,12 +72,12 @@ class PieMenu(OverlayWindow):
         pos = event.position()
         dx = pos.x() - self._anchor.x()
         dy = pos.y() - self._anchor.y()
-        self._active = wedge_index(dx, dy, len(LABELS), DEADZONE)
+        self._active = wedge_index(dx, dy, len(self._wedges), DEADZONE)
         self.update()
 
     def mousePressEvent(self, event):
         if self._active is not None:
-            print(f"selected: {LABELS[self._active]}")
+            self._wedges[self._active].action()
         self._close()
 
     def keyPressEvent(self, event):
@@ -78,12 +92,12 @@ class PieMenu(OverlayWindow):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        wedge_width = 360 / len(LABELS)
+        wedge_width = 360 / len(self._wedges)
         cx, cy = self._anchor.x(), self._anchor.y()
         outer_rect = QRectF(cx - RADIUS, cy - RADIUS, RADIUS * 2, RADIUS * 2)
         inner_rect = QRectF(cx - INNER_RADIUS, cy - INNER_RADIUS, INNER_RADIUS * 2, INNER_RADIUS * 2)
 
-        for i, label in enumerate(LABELS):
+        for i, wedge in enumerate(self._wedges):
             center_angle = (90 - i * wedge_width) % 360
             start_angle = center_angle - wedge_width / 2
 
@@ -103,4 +117,4 @@ class PieMenu(OverlayWindow):
             lx = cx + label_r * math.cos(label_angle)
             ly = cy - label_r * math.sin(label_angle)
             painter.setPen(QColor(style.TEXT))
-            painter.drawText(QPointF(lx - 12, ly + 5), label)
+            painter.drawText(QPointF(lx - 12, ly + 5), wedge.label)
