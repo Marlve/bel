@@ -19,21 +19,29 @@ def key(code, text=""):
     return QKeyEvent(QEvent.KeyPress, code, Qt.NoModifier, text)
 
 
-class StubAction(QObject):
-    """Stands in for a wedge's action, recording its calls. Carries the
-    chunk/finished signals a wedge with a placeholder has to expose, since
-    that's what a result card wires itself to."""
+class StubRequest(QObject):
+    """One call's worth of signals - what a result card follows."""
 
     chunk = Signal(str)
     finished = Signal()
+
+
+class StubAction(QObject):
+    """Stands in for a wedge's action, recording its calls and handing back a
+    fresh request each time, the way an action for a wedge with a placeholder
+    has to."""
 
     def __init__(self, index, calls):
         super().__init__()
         self.index = index
         self.calls = calls
+        self.requests = []
 
     def __call__(self, *args):
         self.calls.append((self.index, args))
+        request = StubRequest()
+        self.requests.append(request)
+        return request
 
 
 class PieMenuFlowTests(unittest.TestCase):
@@ -142,6 +150,18 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(second.top() - first.top(), 352)
         self.assertEqual(second.left(), first.left())
 
+    def ask(self, prompt):
+        """Open the ring, send `prompt`, and land the card it opens."""
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        self.menu.prompt_bar.field.setText(prompt)
+        self.menu.prompt_bar.submit()
+        card = self.menu.cards.cards[0]
+        card.flight.stop()
+        card.onLanded()
+        return card
+
     def test_chunks_arriving_mid_flight_wait_for_the_card_to_land(self):
         self.openMenu()
         self.menu.setHovered(PROMPT_WEDGE)
@@ -150,27 +170,48 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.prompt_bar.submit()
 
         card = self.menu.cards.cards[0]
-        self.menu.wedges[PROMPT_WEDGE].action.chunk.emit("in flight")
+        card.request.chunk.emit("in flight")
         self.assertEqual(card.body.toPlainText(), "")
         card.flight.stop()
         card.onLanded()
         self.assertEqual(card.body.toPlainText(), "in flight")
 
     def test_a_finished_request_stops_feeding_its_card(self):
-        self.openMenu()
-        self.menu.setHovered(PROMPT_WEDGE)
-        self.menu.activateHoveredWedge()
-        self.menu.prompt_bar.field.setText("hello")
-        self.menu.prompt_bar.submit()
-
-        card = self.menu.cards.cards[0]
-        card.flight.stop()
-        card.onLanded()
-        action = self.menu.wedges[PROMPT_WEDGE].action
-        action.chunk.emit("first answer")
-        action.finished.emit()
-        action.chunk.emit("second question's answer")
+        card = self.ask("hello")
+        request = card.request
+        request.chunk.emit("first answer")
+        request.finished.emit()
+        request.chunk.emit("late straggler")
         self.assertEqual(card.body.toPlainText(), "first answer")
+
+    def test_a_second_question_never_writes_into_the_first_card(self):
+        # Each call hands back its own request, so a prompt sent while an
+        # earlier one is still streaming cannot corrupt the earlier card.
+        first = self.ask("first question")
+        second = self.ask("second question")
+        self.assertIsNot(first.request, second.request)
+
+        second.request.chunk.emit("second answer")
+        first.request.chunk.emit("first answer")
+        self.assertEqual(first.body.toPlainText(), "first answer")
+        self.assertEqual(second.body.toPlainText(), "second answer")
+
+    def test_a_fourth_card_evicts_the_oldest(self):
+        for number in range(4):
+            self.ask(f"question {number}")
+        self.assertEqual(
+            [card.prompt for card in self.menu.cards.cards],
+            ["question 3", "question 2", "question 1"],
+        )
+
+    def test_dismissing_a_card_takes_it_out_of_the_stack(self):
+        first = self.ask("first")
+        second = self.ask("second")
+        second.dismiss()
+        second.fade.stop()
+        second.onFaded()
+        self.assertEqual(self.menu.cards.cards, [first])
+        self.assertIsNone(second.request)
 
     def test_an_empty_prompt_is_rejected_rather_than_sent(self):
         self.openMenu()

@@ -9,10 +9,11 @@
 
 from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QTextBrowser, QVBoxLayout, QHBoxLayout, QApplication
 from PySide6.QtGui import QPainter, QColor, QPen, QTextCursor
-from PySide6.QtCore import Qt, QRect, QRectF, QVariantAnimation, Signal
+from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import style
 import pie_anim
+from util import reduced_motion
 
 
 class ResultCard(QWidget):
@@ -28,8 +29,9 @@ class ResultCard(QWidget):
         self.born = born
         self.dock = dock
         self.radius = min(born.width(), born.height()) / 2
-        self.action = None
+        self.request = None
         self.buffered = ""  # chunks that arrive mid-flight wait their turn
+        self.motion = not reduced_motion()
 
         self.buildContent()
         self.setContent(False)
@@ -87,10 +89,16 @@ class ResultCard(QWidget):
 
     # --- the flight ---
 
+    def flying(self):
+        return self.flight.state() == QVariantAnimation.Running
+
     def fly(self):
         self.setGeometry(self.born.toRect())
         self.show()
         self.raise_()
+        if not self.motion:
+            self.onLanded()  # straight to the corner, and don't withhold the answer
+            return
         self.flight.setEndValue(style.CARD_FLIGHT_MS)
         self.flight.setDuration(style.CARD_FLIGHT_MS)
         self.flight.start()
@@ -114,8 +122,11 @@ class ResultCard(QWidget):
     def slideTo(self, dock):
         """Move out of a newer card's way."""
         self.dock = dock
-        if not self.isVisible() or self.flight.state() == QVariantAnimation.Running:
+        if not self.isVisible() or self.flying():
             return  # still flying - onFlightTick already aims at the new dock
+        if not self.motion:
+            self.setGeometry(dock.toRect())
+            return
         self.slide.stop()
         self.slide.setStartValue(QRectF(self.geometry()))
         self.slide.setEndValue(dock)
@@ -129,18 +140,16 @@ class ResultCard(QWidget):
     # --- streaming ---
 
     def stream(self, action, prompt):
-        """Wire this card to one request and start it. The card owns the
-        connection for the request's lifetime so a later prompt's chunks
-        can't leak into this card."""
-        self.action = action
-        action.chunk.connect(self.onChunk)
-        action.finished.connect(self.onStreamFinished)
-        action(prompt)
+        """Ask, and follow the answer. The signals belong to this one
+        request, so another prompt's output can never land in this card."""
+        self.request = action(prompt)
+        self.request.chunk.connect(self.onChunk)
+        self.request.finished.connect(self.onStreamFinished)
 
     def onChunk(self, text):
         # Content only streams once the geometry is at rest - text reflowing
         # inside a widget that is still resizing re-hints every glyph.
-        if self.flight.state() == QVariantAnimation.Running:
+        if self.flying():
             self.buffered += text
         else:
             self.write(text)
@@ -155,11 +164,11 @@ class ResultCard(QWidget):
         self.unwire()
 
     def unwire(self):
-        if self.action is None:
+        if self.request is None:
             return
-        self.action.chunk.disconnect(self.onChunk)
-        self.action.finished.disconnect(self.onStreamFinished)
-        self.action = None
+        self.request.chunk.disconnect(self.onChunk)
+        self.request.finished.disconnect(self.onStreamFinished)
+        self.request = None
 
     # --- leaving ---
 
@@ -167,6 +176,9 @@ class ResultCard(QWidget):
         if self.fade.state() == QVariantAnimation.Running:
             return
         self.unwire()
+        if not self.motion:
+            self.onFaded()
+            return
         self.fade.start()
 
     def onFadeTick(self, t):
@@ -175,9 +187,11 @@ class ResultCard(QWidget):
         self.move(self.dock.toRect().x() + travelled, self.dock.toRect().y())
 
     def onFaded(self):
+        # Only hide and announce. Tearing the widget down here would destroy
+        # the very animation that is still emitting into this slot - the
+        # stack holds the card until the event loop has unwound.
+        self.hide()
         self.dismissed.emit(self)
-        self.close()
-        self.deleteLater()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -198,6 +212,7 @@ class CardStack:
 
     def __init__(self):
         self.cards = []
+        self.closing = []  # torn down on the next event loop turn, not mid-signal
 
     def dockRect(self, slot, screen):
         area = screen.availableGeometry()  # work area, not monitor bounds
@@ -215,10 +230,10 @@ class CardStack:
         card = ResultCard(prompt, born, self.dockRect(0, screen))
         card.dismissed.connect(self.forget)
         self.cards.insert(0, card)
+        while len(self.cards) > style.CARD_MAX:
+            self.retire(self.cards.pop())  # evict before re-docking, so nothing slides to a slot it loses
         for slot, older in enumerate(self.cards[1:], start=1):
             older.slideTo(self.dockRect(slot, screen))
-        while len(self.cards) > style.CARD_MAX:
-            self.cards.pop().close()
 
         card.fly()  # before the request starts, so early chunks buffer instead of landing early
         card.stream(action, prompt)
@@ -227,6 +242,23 @@ class CardStack:
     def forget(self, card):
         if card in self.cards:
             self.cards.remove(card)
+        self.retire(card)
         screen = QApplication.screenAt(card.dock.center().toPoint()) or QApplication.primaryScreen()
         for slot, remaining in enumerate(self.cards):
             remaining.slideTo(self.dockRect(slot, screen))
+
+    def retire(self, card):
+        """Take a card out of service. It stays referenced until the next
+        event loop turn: this can be reached from inside the card's own fade
+        animation, and dropping the last reference to the card there would
+        destroy that animation mid-emit."""
+        card.unwire()
+        card.hide()
+        self.closing.append(card)
+        QTimer.singleShot(0, self.dropRetired)
+
+    def dropRetired(self):
+        for card in self.closing:
+            card.close()
+            card.deleteLater()
+        self.closing.clear()

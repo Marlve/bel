@@ -19,6 +19,7 @@ from PySide6.QtGui import QPainter, QColor, QPen, QPalette
 from PySide6.QtCore import Qt, QRectF, QPoint, QPointF, QEvent, Signal, QVariantAnimation
 
 import style
+from util import reduced_motion
 
 EMPTY, TYPING, SENDING, REJECTED = "empty", "typing", "sending", "rejected"
 
@@ -41,6 +42,12 @@ class PromptBar(QWidget):
         self.chrome_opacity = 0.0  # mark and hint follow, once the frame is at rest
         self.state = EMPTY
         self.rest_x = 0
+        self.motion = not reduced_motion()
+
+        # A press on the frame's own chrome - the mark's inset, the send hint -
+        # would otherwise reach the overlay behind it, which reads any click
+        # as "cancel" and would throw away what the user had typed.
+        self.setAttribute(Qt.WA_NoMousePropagation)
 
         self.field = QLineEdit(self)
         self.field.setFrame(False)
@@ -111,10 +118,14 @@ class PromptBar(QWidget):
 
     # --- state ---
 
+    def mousePressEvent(self, event):
+        if self.field.isVisible():
+            self.field.setFocus()
+
     def onTextChanged(self, text):
-        if self.state in (SENDING, REJECTED):
+        if self.state == SENDING:
             return
-        self.state = TYPING if text.strip() else EMPTY
+        self.state = TYPING if text.strip() else EMPTY  # also clears a rejection - the user is fixing it
         self.update()
 
     def submit(self):
@@ -129,9 +140,10 @@ class PromptBar(QWidget):
         self.submitted.emit(text)
 
     def reject(self):
-        self.state = REJECTED
+        self.state = REJECTED  # the border stays warned until the user changes the text
         self.update()
-        self.shake.start()
+        if self.motion:
+            self.shake.start()
 
     def onShakeTick(self, t):
         offset = math.sin(t * 2 * math.pi * style.REJECT_SHAKES) * style.REJECT_SHIFT
@@ -139,8 +151,6 @@ class PromptBar(QWidget):
 
     def onShakeDone(self):
         self.move(self.rest_x, self.y())
-        self.state = TYPING if self.field.text().strip() else EMPTY
-        self.update()
 
     def eventFilter(self, watched, event):
         if watched is self.field and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
