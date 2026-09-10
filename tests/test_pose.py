@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from PySide6.QtCore import QRectF
 
 import style
-from pie_anim import (
+from anims.pose import (
     bisector,
     open_pose,
     open_total_ms,
@@ -57,37 +57,29 @@ class BisectorTests(unittest.TestCase):
 
 class OpenPoseTests(unittest.TestCase):
     def test_starts_small_and_invisible(self):
-        scale, alpha = open_pose(0, 0)
+        scale, alpha = open_pose(0)
         self.assertAlmostEqual(scale, style.OPEN_SCALE_FROM)
         self.assertAlmostEqual(alpha, 0)
 
     def test_ends_at_rest(self):
-        scale, alpha = open_pose(style.OPEN_MS, 0)
+        scale, alpha = open_pose(style.OPEN_MS)
         self.assertAlmostEqual(scale, 1)
         self.assertAlmostEqual(alpha, 1)
 
     def test_clamps_past_the_end(self):
-        self.assertEqual(open_pose(style.OPEN_MS * 3, 0), (1, 1))
+        self.assertEqual(open_pose(style.OPEN_MS * 3), (1, 1))
 
     def test_opacity_lands_before_scale(self):
-        scale, alpha = open_pose(style.OPEN_FADE_MS, 0)
+        scale, alpha = open_pose(style.OPEN_FADE_MS)
         self.assertAlmostEqual(alpha, 1)
         self.assertNotAlmostEqual(scale, 1)
 
     def test_scale_overshoots_before_settling(self):
-        peak = max(open_pose(t, 0)[0] for t in range(0, style.OPEN_MS))
+        peak = max(open_pose(t)[0] for t in range(0, style.OPEN_MS))
         self.assertGreater(peak, 1)
 
-    def test_later_wedges_wait_their_stagger(self):
-        self.assertEqual(open_pose(style.OPEN_STAGGER_MS, 1), open_pose(0, 0))
-        self.assertEqual(open_pose(0, 1), open_pose(0, 0))
-
-    def test_later_wedges_finish_later(self):
-        self.assertEqual(open_pose(style.OPEN_MS + style.OPEN_STAGGER_MS * 2, 2), (1, 1))
-        self.assertNotEqual(open_pose(style.OPEN_MS, 2), (1, 1))
-
-    def test_total_covers_the_last_wedge(self):
-        self.assertEqual(open_total_ms(4), style.OPEN_MS + style.OPEN_STAGGER_MS * 3)
+    def test_total_is_just_the_open_duration(self):
+        self.assertEqual(open_total_ms(), style.OPEN_MS)
 
 
 class ScrimTests(unittest.TestCase):
@@ -227,16 +219,16 @@ class CardFlightTests(unittest.TestCase):
 
     def test_ends(self):
         self.assertAlmostEqual(card_flight_progress(0), 0)
-        self.assertAlmostEqual(card_flight_progress(style.CARD_FLIGHT_MS), 1)
+        self.assertAlmostEqual(card_flight_progress(style.CHAT_FLIGHT_MS), 1)
 
     def test_never_overshoots(self):
         # Overshoot next to a screen corner reads as an error, not as polish.
-        self.assertLessEqual(max(card_flight_progress(ms) for ms in range(style.CARD_FLIGHT_MS + 1)), 1)
+        self.assertLessEqual(max(card_flight_progress(ms) for ms in range(style.CHAT_FLIGHT_MS + 1)), 1)
 
     def test_radius_squares_off_before_the_flight_lands(self):
         self.assertAlmostEqual(card_radius(0, self.BORN_RADIUS), self.BORN_RADIUS)
-        self.assertAlmostEqual(card_radius(style.CARD_RADIUS_MS, self.BORN_RADIUS), style.CARD_RADIUS)
-        self.assertAlmostEqual(card_radius(style.CARD_FLIGHT_MS, self.BORN_RADIUS), style.CARD_RADIUS)
+        self.assertAlmostEqual(card_radius(style.CHAT_RADIUS_MS, self.BORN_RADIUS), style.CHAT_RADIUS)
+        self.assertAlmostEqual(card_radius(style.CHAT_FLIGHT_MS, self.BORN_RADIUS), style.CHAT_RADIUS)
 
 
 if __name__ == "__main__":
