@@ -93,3 +93,47 @@ start/end/duration, and only let it emit once `start()` is actually called.
 `src/edge_trigger.py::checkCursor`) and read the sequence of printed values
 around the transition - the "end value, then start value, then real ramp"
 pattern gave away the stale-currentTime cause immediately.
+
+## Alt+Tab away from the open ring left it stuck, Escape dead (pieMenu.py)
+
+**Symptom:** Open the ring, Alt+Tab to another window, and the ring stays
+floating on top, unresponsive - Escape no longer closes it. The ring forces
+itself into OS foreground on open (`util.force_foreground`, since a
+background hotkey-listener thread can't call `SetForegroundWindow`
+directly), but nothing handled the reverse: losing that foreground again.
+
+**First fix attempt (wrong):** added a `changeEvent()` override that closed
+the ring on `QEvent.WindowDeactivate`. It compiled, and a test calling
+`changeEvent()` directly with a synthetic `QEvent(QEvent.WindowDeactivate)`
+passed - but did nothing in the real app.
+
+**Root cause:** `PieMenu` is `Qt.FramelessWindowHint | WindowStaysOnTopHint
+| Qt.Tool`. For this combination, Qt/Windows never actually delivers the
+discrete `QEvent.WindowActivate`/`WindowDeactivate` events - only the
+generic `QEvent.ActivationChange`, which fires for *both* gaining and
+losing focus. `isActiveWindow()` is what tells you which direction it went.
+The `WindowDeactivate` check was watching for an event type that never
+occurred, so the guard always short-circuited before `beginClose()` could
+run - a silent no-op, not a crash. The test didn't catch this because it
+called `changeEvent()` directly with a hand-built event, bypassing the real
+Qt/Windows activation plumbing the live app depends on.
+
+**Fix:** listen for `QEvent.ActivationChange` instead, and use
+`self.isActiveWindow()` after `super().changeEvent(event)` to act only on
+the losing-focus direction.
+
+**Lesson:** a window's actual `QEvent` traffic depends on its flag
+combination (frameless/tool/topmost/translucent windows are the ones most
+likely to skip the "obvious" discrete event) - don't assume the
+documented/expected event fires for a given window without confirming it.
+A test that calls an event handler directly with a hand-built `QEvent`
+proves the handler's *logic* is correct, but proves nothing about whether
+the app ever actually receives that event type - that only shows up
+running the real thing.
+
+**How it was found:** added a `print()` in `changeEvent()` logging every
+`event.type()` plus `isActiveWindow()`, ran the real app, and had the user
+reproduce it live (open the ring, Alt+Tab) while watching the log. The
+printed sequence showed only `type=99` (`ActivationChange`) toggling
+`isActiveWindow` True/False - `WindowDeactivate` (`type=25`) never once
+appeared.

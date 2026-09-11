@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -367,17 +368,28 @@ class PieMenuFlowTests(unittest.TestCase):
     def test_alt_tabbing_away_closes_the_ring(self):
         # Losing OS focus (e.g. Alt+Tab) leaves the ring on top but no longer
         # able to receive Escape - it used to just sit there, stuck open.
+        # This window only ever gets the generic ActivationChange from Qt
+        # (never a plain WindowDeactivate), so that's what has to be handled.
         self.openMenu()
-        self.menu.changeEvent(QEvent(QEvent.WindowDeactivate))
+        self.menu.changeEvent(QEvent(QEvent.ActivationChange))
         self.assertEqual(self.menu.phase, HIDDEN)
 
     def test_alt_tabbing_away_from_the_prompt_cancels_it_without_running(self):
         self.openMenu()
         self.menu.setHovered(PROMPT_WEDGE)
         self.menu.activateHoveredWedge()
-        self.menu.changeEvent(QEvent(QEvent.WindowDeactivate))
+        self.menu.changeEvent(QEvent(QEvent.ActivationChange))
         self.assertEqual(self.menu.phase, HIDDEN)
         self.assertEqual(self.calls, [])
+
+    def test_activationchange_while_still_active_leaves_the_ring_open(self):
+        # ActivationChange also fires the moment the ring *gains* OS focus
+        # (e.g. openAtCursor()'s own activateWindow()) - only losing it
+        # should close the ring.
+        self.openMenu()
+        with unittest.mock.patch.object(self.menu, "isActiveWindow", return_value=True):
+            self.menu.changeEvent(QEvent(QEvent.ActivationChange))
+        self.assertEqual(self.menu.phase, OPEN)
 
     def test_typing_over_the_ring_jumps_into_the_prompt(self):
         self.openMenu()

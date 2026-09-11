@@ -319,10 +319,15 @@ class PieMenu(QWidget):
     def changeEvent(self, event):
         """Alt+Tabbing away leaves the ring on top but no longer able to
         receive keystrokes (see util.force_foreground) - Escape would
-        otherwise look like it stopped working. Treat losing OS focus the
-        same as the hotkey firing again: get whatever's up out of the way."""
+        otherwise look like it stopped working. This frameless/topmost/Tool
+        window never gets a plain WindowDeactivate from Qt - only the
+        generic ActivationChange, so isActiveWindow() is what says which way
+        it went. Treat losing OS focus the same as the hotkey firing again:
+        get whatever's up out of the way."""
         super().changeEvent(event)
-        if event.type() != QEvent.WindowDeactivate or self.state.phase in (HIDDEN, CLOSING):
+        if event.type() != QEvent.ActivationChange or self.isActiveWindow():
+            return
+        if self.state.phase in (HIDDEN, CLOSING):
             return
         if self.state.phase in (HANDOFF, PROMPTING):
             self.cancelPrompt()
