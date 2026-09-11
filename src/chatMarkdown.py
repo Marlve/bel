@@ -27,7 +27,12 @@ _CODE_TOKEN = "\x01%d\x01"
 def render(text):
     """raw Claude turn text -> safe Qt rich text. html.escape() runs first,
     always, so nothing in `text` can inject real markup - everything added
-    after that point is a tag this module put there itself."""
+    after that point is a tag this module put there itself.
+
+    A literal "\\n" between plain lines is this module's line-break - it
+    relies on its caller rendering the result in a white-space:pre-wrap
+    container (see claudeChatCard.setTurnHtml()), since Qt's rich text
+    otherwise collapses a bare "\\n" to a space."""
     escaped = html.escape(text)
 
     fences = []
@@ -38,11 +43,24 @@ def render(text):
 
     body = _FENCE_RE.sub(stash_fence, escaped)
     lines = [_render_line(line) for line in body.split("\n")]
-    body = "\n".join(_wrap_lists(lines))
+    body = _join(_wrap_lists(lines))
 
     for index, fence in enumerate(fences):
         body = body.replace(_FENCE_TOKEN % index, fence)
     return body
+
+
+def _join(pieces):
+    # ClaudeChatCard's label renders this in a white-space:pre-wrap span, so
+    # a literal "\n" here is a real line break - only put one between two
+    # plain text lines. A list/fence block already opens its own line, so a
+    # "\n" next to one would double up with its block margin.
+    out = []
+    for index, (is_block, text) in enumerate(pieces):
+        if index > 0 and not is_block and not pieces[index - 1][0]:
+            out.append("\n")
+        out.append(text)
+    return "".join(out)
 
 
 def _render_line(line):
@@ -58,6 +76,8 @@ def _render_line(line):
 
 
 def _wrap_lists(rendered_lines):
+    """-> [(is_block, html), ...]. A list or fenced-code placeholder is a
+    block (it opens its own line already); a plain line is not."""
     out = []
     group = []
 
@@ -66,7 +86,7 @@ def _wrap_lists(rendered_lines):
             return
         tag = "ol" if group[0][1] else "ul"
         items = "".join(f"<li>{content}</li>" for _, _, content in group)
-        out.append(f"<{tag}>{items}</{tag}>")
+        out.append((True, f"<{tag}>{items}</{tag}>"))
         group.clear()
 
     for item in rendered_lines:
@@ -76,7 +96,8 @@ def _wrap_lists(rendered_lines):
             group.append(item)
             continue
         flush()
-        out.append(item[1])
+        text = item[1]
+        out.append((bool(_FENCE_TOKEN_RE.match(text)), text))
     flush()
     return out
 

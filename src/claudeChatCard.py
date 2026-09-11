@@ -9,7 +9,6 @@
 # overlay - the ring closes as soon as the prompt is sent, so the card is
 # its own top-level window, and ChatSlot is what keeps it alive afterwards.
 
-import html
 import math
 
 from PySide6.QtWidgets import (
@@ -165,7 +164,7 @@ class ChatCard(QWidget):
 
         root = QVBoxLayout(self)
         # This card's size is managed entirely by the dock state machine
-        # (HIDDEN 64x64, TAB's puck, OPEN 340x340), not by Qt - left
+        # (HIDDEN 64x64, TAB's puck, OPEN style.CHAT_SIZE square), not by Qt - left
         # at Qt's default, activating the layout floors the widget's
         # minimumSize at whatever's visible *at that moment*, and it never
         # shrinks back down again even once content is hidden for a smaller
@@ -284,7 +283,14 @@ class ChatCard(QWidget):
     def appendUserTurn(self, text):
         self.turns.append({"role": "user", "text": text})
 
-        bubble = QLabel(html.escape(text))
+        bubble = QLabel(text)
+        # Qt.AutoText's rich-text sniff can't fire on html.escape()'d text
+        # (it never contains a literal "<tag>" once escaped), so it always
+        # renders as plain text anyway - meaning any escaped char (', &, <)
+        # showed up as its literal HTML entity instead of decoding back.
+        # PlainText makes the escaping unnecessary: nothing here is ever
+        # interpreted as markup, whatever the user typed.
+        bubble.setTextFormat(Qt.PlainText)
         bubble.setWordWrap(True)
         bubble.setStyleSheet(style.chat_bubble_stylesheet())
         bubble.setMaximumWidth(self.bubbleMaxWidth())
@@ -316,7 +322,11 @@ class ChatCard(QWidget):
         self.transcript_layout.insertLayout(self.transcript_layout.count() - 1, row)
 
     def setTurnHtml(self, label, text, caret):
-        body = chatMarkdown.render(text)
+        # QLabel's rich-text engine (Qt.RichText) collapses a literal "\n" to
+        # a space instead of breaking the line, unlike the user bubble
+        # (plain text) - pre-wrap makes it honor the newlines chatMarkdown
+        # joins lines/blocks with, while still word-wrapping.
+        body = f'<span style="white-space:pre-wrap;">{chatMarkdown.render(text)}</span>'
         if caret:
             body += f'<span style="color:{style.CHAT_ACCENT};">▏</span>'
         label.setText(body)

@@ -42,6 +42,17 @@ class ChatMarkdownTests(unittest.TestCase):
         rendered = chatMarkdown.render("- one\n- two")
         self.assertEqual(rendered, "<ul><li>one</li><li>two</li></ul>")
 
+    def test_intro_line_directly_followed_by_a_list_has_no_blank_line(self):
+        # The label renders this in a white-space:pre-wrap span, so a
+        # literal "\n" next to a list would show as a real, unwanted blank
+        # line stacked on top of <ul>'s own block margin.
+        rendered = chatMarkdown.render("Steps:\n- one\n- two")
+        self.assertEqual(rendered, "Steps:<ul><li>one</li><li>two</li></ul>")
+
+    def test_list_directly_followed_by_a_trailing_line_has_no_blank_line(self):
+        rendered = chatMarkdown.render("- one\n- two\nDone.")
+        self.assertEqual(rendered, "<ul><li>one</li><li>two</li></ul>Done.")
+
     def test_numbered_list(self):
         rendered = chatMarkdown.render("1. one\n2. two")
         self.assertEqual(rendered, "<ol><li>one</li><li>two</li></ol>")
@@ -73,12 +84,12 @@ class ChatMarkdownTests(unittest.TestCase):
     def test_bullet_directly_followed_by_numbered_list_stays_two_lists(self):
         rendered = chatMarkdown.render("- a\n1. b\n2. c")
         self.assertEqual(
-            rendered, "<ul><li>a</li></ul>\n<ol><li>b</li><li>c</li></ol>"
+            rendered, "<ul><li>a</li></ul><ol><li>b</li><li>c</li></ol>"
         )
 
     def test_numbered_directly_followed_by_bullet_stays_two_lists(self):
         rendered = chatMarkdown.render("1. a\n- b")
-        self.assertEqual(rendered, "<ol><li>a</li></ol>\n<ul><li>b</li></ul>")
+        self.assertEqual(rendered, "<ol><li>a</li></ol><ul><li>b</li></ul>")
 
 
 if __name__ == "__main__":
