@@ -1,9 +1,20 @@
 import subprocess
 import json
+import shutil
 import sys
-import tempfile
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
+
+# A dedicated, permanent cwd for the claude CLI subprocess (see askBel) -
+# never a git repo or somewhere a stray CLAUDE.md could live, so the CLI's
+# own project-context auto-loading has nothing to pick up. Because it's the
+# same path every launch, the CLI always buckets its session transcripts
+# under the same ~/.claude/projects/<encoded-cwd> folder rather than a new
+# one per run; resetClaudeHistory() wipes that bucket at startup so it can't
+# grow unbounded, since Bel never resumes a session across app restarts
+# anyway (ChatCard's session_id lives only in memory).
+CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
 SYSTEM_PROMPT = """
 You're a personal helper tool called Bel.
@@ -18,6 +29,21 @@ if hasattr(sys.stdout, "reconfigure"):
   # this method (e.g. a test runner's captured stdout) now that pieMenu.py
   # imports this module rather than only running it as a standalone script.
   sys.stdout.reconfigure(encoding="utf-8")
+
+def resetClaudeHistory():
+  """Call once at app startup. Deletes the claude CLI's own session
+  bucket for CLAUDE_CWD (transcripts + memory/) so it can't accumulate
+  across launches - the CLI never cleans these up itself. The encoding is
+  the CLI's own undocumented scheme; verified by actually invoking `claude`
+  with cwd=CLAUDE_CWD and inspecting the resulting ~/.claude/projects/ entry
+  rather than guessing - the drive colon, both slash kinds, and '.' (from
+  the leading dot in ".bel") all become '-', every other character
+  (including a literal '-') is left as-is.
+  """
+  CLAUDE_CWD.mkdir(parents=True, exist_ok=True)
+  encoded = str(CLAUDE_CWD).translate(str.maketrans(":\\/.", "----"))
+  bucket = Path.home() / ".claude" / "projects" / encoded
+  shutil.rmtree(bucket, ignore_errors=True)
 
 def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of
@@ -52,7 +78,7 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   # status) can't pick up whatever folder this process happens to be
   # launched from - it should only ever see SYSTEM_PROMPT above.
   process = subprocess.Popen(
-      args, stdout=subprocess.PIPE, text=True, encoding="utf-8", cwd=tempfile.gettempdir()
+      args, stdout=subprocess.PIPE, text=True, encoding="utf-8", cwd=CLAUDE_CWD
   )
   if on_process is not None:
       on_process(process)

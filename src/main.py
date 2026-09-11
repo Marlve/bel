@@ -5,11 +5,13 @@ from PySide6.QtWidgets import QApplication
 
 from pieMenu import PieMenu
 from hotkey import HotkeyListener
+from claude import resetClaudeHistory
 
 PIE_MENU_HOTKEY = "ctrl+shift+space"
 
 
 def main():
+    resetClaudeHistory()
     app = QApplication(sys.argv)
 
     pie_menu = PieMenu()
