@@ -5,19 +5,37 @@
 # specified for the chat card alone. No hue anywhere; "accent" is near-white,
 # not a color. ---
 
-SURFACE = "#17181A"  # darkest surface: wedge idle fill, chat card body
-SURFACE_RAISED = "#1B1C1F"  # one step up: prompt field, composer
-SURFACE_BUBBLE = "#24252A"  # user bubble, pressed wedge fill
-BORDER_DIM = "#2D2E31"  # resting border, one step lighter than its surface
-BORDER_WARM = "#3E3F44"  # border once there's content/typing
-BORDER_STRONG = "#4C4D52"  # strongest border (tabbed-out dock state)
-HINT = "#3C3D41"  # inert icons/hints
-MUTED = "#6B6C70"  # placeholder text, dimmed secondary text
-LABEL = "#86878B"  # mono labels, muted body text
-BODY_DIM = "#C8C9CD"  # secondary/idle text
-BODY = "#E8E8EA"  # primary text
-INK = "#0B0C10"  # near-black, for text on top of the accent
-ACCENT_NEUTRAL = "#D8D9DC"  # the one accent - near-white, not a hue
+PALETTE = {
+    "000": "#0D0D0E",
+    "050": "#111112",
+    "100": "#141416",
+    "150": "#191A1C",
+    "200": "#1D1E21",
+    "250": "#232427",
+    "300": "#2D2E31",
+    "350": "#3B3C40",
+    "400": "#4A4B4F",
+    "450": "#6E6F73",
+    "500": "#86878B",
+    "600": "#A3A4A8",
+    "700": "#C9CACD",
+    "800": "#E8E8EA",
+    "900": "#F2F3F5",
+}
+
+SURFACE = PALETTE["150"]  # darkest surface: wedge idle fill, chat card body
+SURFACE_RAISED = PALETTE["200"]  # one step up: prompt field, composer
+SURFACE_BUBBLE = PALETTE["250"]  # user bubble, pressed wedge fill
+BORDER_DIM = PALETTE["300"]  # resting border, one step lighter than its surface
+BORDER_WARM = PALETTE["350"]  # border once there's content/typing
+BORDER_STRONG = PALETTE["400"]  # strongest border (tabbed-out dock state)
+HINT = PALETTE["350"]  # inert icons/hints
+MUTED = PALETTE["450"]  # placeholder text, dimmed secondary text
+LABEL = PALETTE["500"]  # mono labels, muted body text
+BODY_DIM = PALETTE["700"]  # secondary/idle text
+BODY = PALETTE["800"]  # primary text
+INK = PALETTE["000"]  # near-black, for text on top of the accent
+ACCENT_NEUTRAL = PALETTE["800"]  # the one accent - near-white, not a hue
 
 BACKGROUND = SURFACE + "dd"
 TEXT = BODY
@@ -174,12 +192,12 @@ CARD_RESIZE_GRIP_PAINT = 14  # painted glyph, square, px, inside the hit zone
 CARD_RESIZE_GRIP_EDGE_OFFSET = 1  # hit zone sits this far inside the card's own corner (right/bottom)
 CARD_RESIZE_GRIP_PAINT_OFFSET = 5  # painted glyph sits this far inside the card's own corner
 CARD_RESIZE_GRIP_STROKE = 1.4  # logical px - never scaled by devicePixelRatio, see draggable.py
-CARD_RESIZE_GRIP_REST = "#4A4B4F"  # ink at rest
+CARD_RESIZE_GRIP_REST = PALETTE["400"]  # ink at rest
 CARD_RESIZE_GRIP_HOVER = LABEL  # ink on hover
 CARD_RESIZE_GRIP_DRAG = BODY  # ink while dragging - instant, reverts on release
 CARD_RESIZE_GRIP_HOVER_MS = 120
 CARD_RESIZE_GRIP_HOVER_EASING = "OutCubic"
-CARD_BORDER_DRAG = "#3B3C40"  # card border while the grip is being dragged
+CARD_BORDER_DRAG = PALETTE["350"]  # card border while the grip is being dragged
 
 CARD_SPAWN_OFFSET = 16  # cursor lands this far inside the card's corner when it opens
 CARD_OPEN_MS = 160  # todo/note fade in over this long when picked from the ring
