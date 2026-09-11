@@ -221,6 +221,7 @@ class ChatCard(QWidget):
             self.buffered = ""
         if self.focus_composer_on_land:
             self.focus_composer_on_land = False
+            self.activateWindow()  # see onDockLanded()'s comment on WA_ShowWithoutActivating
             self.composer.setFocus()
         self.update()
 
@@ -380,6 +381,12 @@ class ChatCard(QWidget):
             self.setCompactVisual(False)
             if self.focus_composer_on_land:
                 self.focus_composer_on_land = False
+                # WA_ShowWithoutActivating keeps this window from ever getting
+                # real OS keyboard focus on its own - setFocus() alone would
+                # only be Qt-internal. Safe to activate explicitly here since
+                # reveal() only reaches this from a wedge pick, which already
+                # forced OS foreground for this process (util.force_foreground).
+                self.activateWindow()
                 self.composer.setFocus()
 
     def onTiltTick(self, value):
@@ -409,6 +416,7 @@ class ChatCard(QWidget):
             if self.motion:
                 self.focus_composer_on_land = True
             else:
+                self.activateWindow()  # see onDockLanded()'s comment on WA_ShowWithoutActivating
                 self.composer.setFocus()
 
     def puckRect(self):

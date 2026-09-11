@@ -192,6 +192,14 @@ class TodoCard(QWidget):
         self.setWindowOpacity(0 if self.motion else 1)
         self.show()
         self.raise_()
+        # WA_ShowWithoutActivating keeps show() from stealing OS focus, so
+        # the field's setFocus() alone would be Qt-internal only - actual
+        # keystrokes need the window itself activated. Safe to do explicitly
+        # here (unlike a passive reveal) since this always follows the ring
+        # just having forced OS foreground for this process (util.force_foreground).
+        self.activateWindow()
+        self.add_field.setFocus()
+        self.add_field.end(False)  # caret after any text the field already holds
         if self.motion:
             self.fade.run(0.0, 1.0, style.CARD_OPEN_MS, curves.CHAT_FLIGHT)
 
@@ -316,6 +324,6 @@ class TodoCard(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         frame = QRectF(self.rect()).adjusted(MARGIN + 0.5, MARGIN + 0.5, -MARGIN - 0.5, -MARGIN - 0.5)
         painter.setBrush(QColor(style.CHAT_SURFACE))
-        border = style.CARD_BORDER_DRAG if hasattr(self, "grip") and self.grip.dragging else style.CHAT_BORDER
-        painter.setPen(QPen(QColor(border), 1))
+        dragging = hasattr(self, "grip") and self.grip.dragging
+        painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)

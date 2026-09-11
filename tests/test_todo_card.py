@@ -155,6 +155,23 @@ class TodoCardTests(unittest.TestCase):
             (100 + style.CARD_SPAWN_OFFSET - MARGIN, 100 + style.CARD_SPAWN_OFFSET - MARGIN),
         )
 
+    def test_open_focuses_the_add_field(self):
+        self.card.open()
+        self.card.activateWindow()
+        QApplication.processEvents()
+        self.assertTrue(self.card.add_field.hasFocus())
+
+    def test_reopening_after_hide_focuses_the_add_field_again(self):
+        self.card.open()
+        self.card.hide()
+        self.card.add_field.clearFocus()
+
+        self.card.open()
+
+        self.card.activateWindow()
+        QApplication.processEvents()
+        self.assertTrue(self.card.add_field.hasFocus())
+
     def test_close_button_hides_the_card(self):
         self.card.show()
         self.card.close_button.click()
