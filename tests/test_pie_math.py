@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pieMenu import wedge_index, cycle_wedge
+from pieMenuState import wedge_index, cycle_wedge
 
 
 class WedgeIndexTests(unittest.TestCase):

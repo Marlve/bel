@@ -3,10 +3,6 @@
 # wedge's action. A wedge whose action needs typed input hands off to the
 # prompt bar instead of firing straight away.
 
-import math
-from dataclasses import dataclass
-from typing import Callable, Optional
-
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
 from PySide6.QtCore import Qt, QPointF, QRectF
@@ -14,15 +10,25 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 import style
 import wedgeConfig
 from anims import pose
-from anims.clock import Clock, HoverClock
 from overlay import OverlayWindow
 from promptFlow import PromptFlow
 from chatCard import ChatSlot
-from actions import ACTIONS
-from util import force_foreground, reduced_motion
-
-INNER_RADIUS = style.RING_INNER * style.RING_RADIUS  # hollow center doubles as the dead zone
-HIT_RADIUS = style.RING_HIT_OUTER * style.RING_RADIUS
+from pieMenuState import (
+    PieMenuState,
+    wedge_index,
+    cycle_wedge,
+    INNER_RADIUS,
+    HIT_RADIUS,
+    HIDDEN,
+    OPENING,
+    OPEN,
+    SELECTING,
+    HANDOFF,
+    PROMPTING,
+    CLOSING,
+)
+from pieMenuAnimation import PieMenuAnimation
+from util import force_foreground
 
 # Furthest a wedge's ink can land from the anchor: grown by hover, pushed out
 # by hover and select together, plus half the glow's stroke, all at the peak
@@ -36,42 +42,6 @@ PAINT_REACH = (
 
 CYCLE_STEP_BY_KEY = {Qt.Key_Right: 1, Qt.Key_Left: -1}
 ACTIVATE_WIDGET_KEYS = (Qt.Key_Return, Qt.Key_Enter)
-
-# The menu's life cycle. Input only counts while opening or open (or, once
-# the prompt bar has arrived, while prompting); the exits play out untouched
-# once started.
-HIDDEN, OPENING, OPEN, SELECTING, HANDOFF, PROMPTING, CLOSING = (
-    "hidden", "opening", "open", "selecting", "handoff", "prompting", "closing",
-)
-
-
-def wedge_index(dx, dy, count, deadzone=0, radius=None):
-    """Index of the wedge (0 = up, going clockwise) that (dx, dy) points
-    into, or None if the point is inside the deadzone or outside radius.
-    dx/dy are a screen space offset from the menu's center - y grows
-    downward.
-    """
-    dist = math.hypot(dx, dy)
-    if dist < deadzone:
-        return None
-    if radius is not None and dist > radius:
-        return None
-
-    math_angle = math.degrees(math.atan2(-dy, dx)) % 360  # 0=right, 90=up
-    compass_angle = (90 - math_angle) % 360  # 0=up, 90=right, clockwise
-    wedge_width = 360 / count
-    shifted = (compass_angle + wedge_width / 2) % 360
-    return int(shifted // wedge_width)
-
-
-def cycle_wedge(current, count, step):
-    """Index of the wedge step (+1 = right/next, -1 = left/previous) away
-    from current, wrapping around. current=None starts from just before the
-    first wedge (step=+1) or just after the last (step=-1).
-    """
-    if current is None:
-        current = -1 if step > 0 else 0
-    return (current + step) % count
 
 
 def ring_segment(outer, inner, start_angle, span):
@@ -96,85 +66,30 @@ def mix(a, b, t):
     )
 
 
-@dataclass
-class Wedge:
-    id: str
-    label: str
-    action: Callable[..., None]
-    placeholder: Optional[str] = None  # set = ask for text first, and pass it to the action
-
-
-# Which wedges the menu shows, in order. Todo/Note/Claude are user-editable
-# via the Settings wedge (see wedgeConfig.py for persistence and
-# defaults); Settings itself is always pinned as close to the bottom of the
-# ring as the current wedge count allows, wherever the editable wedges land.
-# Each entry's "id" picks an action factory from ACTIONS; any other key is
-# that action's own config (e.g. "claude" reads "prompt", "settings" reads
-# "on_change"). A "placeholder" sends the wedge through the prompt bar first.
-def current_config(on_settings_change):
-    others = wedgeConfig.resolve(wedgeConfig.load_other_wedges())
-    config = wedgeConfig.full_config(others)
-    for entry in config:
-        if entry["id"] == "settings":
-            entry["on_change"] = on_settings_change
-    return config
-
-
-def build_wedges(config, previous=()):
-    """Wedges for `config`, in order. A slot whose action id matches one in
-    `previous` reuses that Wedge's existing action object instead of
-    calling its factory again - a fresh call would build a brand new toggle
-    closure with no memory of an already-open Note/Todo card, silently
-    orphaning it. Only label/placeholder refresh on a reused wedge; those
-    are cheap to swap in place."""
-    by_id = {wedge.id: wedge for wedge in previous}
-    wedges = []
-    for entry in config:
-        existing = by_id.get(entry["id"])
-        if existing is not None:
-            existing.label = entry["label"]
-            existing.placeholder = entry.get("placeholder")
-            wedges.append(existing)
-        else:
-            wedges.append(Wedge(entry["id"], entry["label"], ACTIONS[entry["id"]](entry), entry.get("placeholder")))
-    return wedges
-
-
 class PieMenu(OverlayWindow):
     def __init__(self):
         super().__init__()
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
-        self.anchor = QPointF(0, 0)
-        self.phase = HIDDEN
-        self.hovered_wedge = None
-        self.chosen_wedge = None
-        self.prompt_text = None
-        self.born_rect = None  # the prompt bar's last rect, which a card is born as
-        self.wedges = build_wedges(current_config(self.applySettings))
-        self.motion = not reduced_motion()
+        self.state = PieMenuState(self.applySettings)
 
-        # Elapsed ms into each phase. A phase that hasn't run sits at 0,
-        # where its pose is the resting one, so they all just multiply
-        # together in paintWedge without any "has this started yet" branches.
-        self.open_ms = 0
-        self.select_ms = 0
-        self.close_ms = 0
-        self.open_clock = Clock(self, self.onOpenTick, self.onOpened)
-        self.select_clock = Clock(self, self.onSelectTick, self.beginClose)
-        self.close_clock = Clock(self, self.onCloseTick, self.onClosed)
-
-        # One 0..1 float per wedge drives every hover property, so a wedge
-        # caught mid-retreat animates from wherever it actually is.
-        self.hover_t = [0.0] * len(self.wedges)
-        self.hover_anims = [HoverClock(self, self.makeHoverTick(i)) for i in range(len(self.wedges))]
-
-        self.prompt_flow = PromptFlow(self, len(self.wedges), self.onHandoffTick, self.onHandoffDone)
+        self.prompt_flow = PromptFlow(self, len(self.state.wedges), self.onHandoffTick, self.onHandoffDone)
         self.prompt_bar = self.prompt_flow.bar
         self.prompt_bar.submitted.connect(self.onPromptSubmitted)
         self.prompt_bar.cancelled.connect(self.returnToRing)
-        self.clocks = (self.open_clock, self.select_clock, self.prompt_flow.clock, self.close_clock)
+
+        self.animation = PieMenuAnimation(
+            self,
+            self.state,
+            len(self.state.wedges),
+            self.prompt_flow.clock,
+            request_repaint=lambda: self.update(self.ringRect()),
+            on_select_done=self.beginClose,
+            on_closed=lambda: self.setWindowOpacity(0),
+        )
+        self.clocks = self.animation.clocks
+        self.open_clock = self.animation.open_clock
         self.chat = ChatSlot()  # the card is a top-level window; this is what keeps it alive
 
         self.setWindowOpacity(0)
@@ -182,43 +97,53 @@ class PieMenu(OverlayWindow):
         self.setGeometry(QApplication.primaryScreen().virtualGeometry())
         self.show()
 
+    @property
+    def phase(self):
+        return self.state.phase
+
+    @property
+    def chosen_wedge(self):
+        return self.state.chosen_wedge
+
+    @property
+    def hovered_wedge(self):
+        return self.state.hovered_wedge
+
+    @property
+    def wedges(self):
+        return self.state.wedges
+
+    @property
+    def motion(self):
+        return self.animation.motion
+
+    @motion.setter
+    def motion(self, value):
+        self.animation.motion = value
+
     def applySettings(self, other_entries):
         """Called by the Settings card after a relabel/reorder/reassign is
-        saved. The ring is always closed while that card is up - settings
-        is itself a wedge pick - so nothing keyed to len(self.wedges)
-        (hover_anims, prompt_flow) needs touching, only the wedges list."""
-        self.wedges = build_wedges(current_config(self.applySettings), self.wedges)
+        saved."""
+        self.state.applySettings(self.applySettings)
 
     # --- hover wiring ---
 
-    def stopClocks(self):
-        # Every phase change calls this. A clock left running would keep
-        # ticking into the new phase and, worse, still fire its finished
-        # handler - which for select_clock means running the chosen wedge's
-        # action a second time.
-        for clock in self.clocks:
-            clock.stop()
-
-    def makeHoverTick(self, index):
-        return lambda t: self.onHoverTick(index, t)
-
-    def onHoverTick(self, index, t):
-        self.hover_t[index] = t
-        self.update(self.ringRect())
-
-    def animateHover(self, index, target):
-        self.hover_anims[index].animateTo(self.hover_t[index], target, self.motion)
-
-    def clearHover(self):
-        for anim in self.hover_anims:
-            anim.stop()
-        self.hover_t = [0.0] * len(self.wedges)
-        self.hovered_wedge = None
+    def setHovered(self, index):
+        if index == self.state.hovered_wedge:
+            return
+        previous, self.state.hovered_wedge = self.state.hovered_wedge, index
+        if previous is not None:
+            self.animation.animateHover(previous, 0)
+        if index is not None:
+            self.animation.animateHover(index, 1)
 
     def ringRect(self):
         """Screen area the ring's ink can reach."""
         return QRectF(
-            self.anchor.x() - PAINT_REACH, self.anchor.y() - PAINT_REACH, PAINT_REACH * 2, PAINT_REACH * 2
+            self.state.anchor.x() - PAINT_REACH,
+            self.state.anchor.y() - PAINT_REACH,
+            PAINT_REACH * 2,
+            PAINT_REACH * 2,
         ).toAlignedRect()
 
     # --- phases ---
@@ -226,21 +151,22 @@ class PieMenu(OverlayWindow):
     def onKeyPress(self):
         """The global hotkey. Always does something: it opens the ring, or
         gets whatever's up out of the way."""
-        if self.phase in (HIDDEN, CLOSING):
+        if self.state.phase in (HIDDEN, CLOSING):
             self.openAtCursor()
-        elif self.phase in (HANDOFF, PROMPTING):
+        elif self.state.phase in (HANDOFF, PROMPTING):
             self.cancelPrompt()
         else:
             self.beginClose()
 
     def openAtCursor(self):
-        self.stopClocks()
-        self.phase = OPENING
-        self.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
-        self.chosen_wedge = None
-        self.prompt_text = None
-        self.open_ms = self.select_ms = self.close_ms = self.prompt_flow.ms = 0
-        self.clearHover()
+        self.animation.stopClocks()
+        self.state.phase = OPENING
+        self.state.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
+        self.state.chosen_wedge = None
+        self.state.prompt_text = None
+        self.animation.open_ms = self.animation.select_ms = self.animation.close_ms = self.prompt_flow.ms = 0
+        self.animation.clearHover()
+        self.state.hovered_wedge = None
         self.prompt_bar.hide()
 
         self.repaint()  # bake the new anchor's frame in before revealing the window
@@ -250,30 +176,14 @@ class PieMenu(OverlayWindow):
         self.activateWindow()
         self.setFocus()
         self.grabMouse()
-        self.open_clock.run(pose.open_total_ms(), self.motion)
-
-    def onOpenTick(self, ms):
-        self.open_ms = ms
-        self.update(self.ringRect())
-
-    def onOpened(self):
-        self.phase = OPEN
-
-    def setHovered(self, index):
-        if index == self.hovered_wedge:
-            return
-        previous, self.hovered_wedge = self.hovered_wedge, index
-        if previous is not None:
-            self.animateHover(previous, 0)
-        if index is not None:
-            self.animateHover(index, 1)
+        self.animation.open_clock.run(pose.open_total_ms(), self.motion)
 
     def activateHoveredWedge(self):
-        if self.hovered_wedge is None:
+        if self.state.hovered_wedge is None:
             self.beginClose()
             return
-        self.chosen_wedge = self.hovered_wedge
-        wedge = self.wedges[self.chosen_wedge]
+        self.state.chosen_wedge = self.state.hovered_wedge
+        wedge = self.state.wedges[self.state.chosen_wedge]
         if wedge.placeholder is None:
             # Run it now, not after the select/close animation finishes -
             # that animation is just the ring's own visual follow-through,
@@ -288,62 +198,59 @@ class PieMenu(OverlayWindow):
             self.beginHandoff(wedge)
 
     def beginSelect(self):
-        self.stopClocks()
-        self.phase = SELECTING
-        self.select_ms = 0
-        self.select_clock.run(pose.select_total_ms(), self.motion)
-
-    def onSelectTick(self, ms):
-        self.select_ms = ms
-        self.update(self.ringRect())
+        self.animation.stopClocks()
+        self.state.phase = SELECTING
+        self.animation.select_ms = 0
+        self.animation.select_clock.run(pose.select_total_ms(), self.motion)
 
     def beginHandoff(self, wedge, seed=""):
         """Hand the ring off to the prompt bar: the ring clears out, then a
         rounded rect grows from the chosen wedge into the text field."""
-        self.stopClocks()
-        self.phase = HANDOFF
+        self.animation.stopClocks()
+        self.state.phase = HANDOFF
         self.releaseMouse()  # the field has to be able to receive its own clicks
 
         # However the wedge was picked, it holds a full hover pose while the
         # rest of the ring leaves - that hold is what makes the pick register.
-        self.hover_anims[self.chosen_wedge].stop()
-        self.hover_t[self.chosen_wedge] = 1.0
-        self.hovered_wedge = self.chosen_wedge
+        self.animation.hover_anims[self.state.chosen_wedge].stop()
+        self.animation.hover_t[self.state.chosen_wedge] = 1.0
+        self.state.hovered_wedge = self.state.chosen_wedge
 
-        self.prompt_flow.begin(self.anchor, self.chosen_wedge, wedge, seed, self.motion)
+        self.prompt_flow.begin(self.state.anchor, self.state.chosen_wedge, wedge, seed, self.motion)
 
     def onHandoffTick(self):
         self.update(self.ringRect())
 
     def onHandoffDone(self):
-        self.phase = PROMPTING
+        self.state.phase = PROMPTING
 
     def returnToRing(self):
         """Escape out of the prompt bar steps back to the ring, not straight
         to hidden."""
-        self.stopClocks()
-        self.phase = OPENING
+        self.animation.stopClocks()
+        self.state.phase = OPENING
         self.prompt_bar.hide()
-        self.chosen_wedge = None
-        self.prompt_text = None
-        self.open_ms = self.prompt_flow.ms = 0
-        self.clearHover()
+        self.state.chosen_wedge = None
+        self.state.prompt_text = None
+        self.animation.open_ms = self.prompt_flow.ms = 0
+        self.animation.clearHover()
+        self.state.hovered_wedge = None
         self.setFocus()
         self.grabMouse()
-        self.open_clock.run(pose.open_total_ms(), self.motion)
+        self.animation.open_clock.run(pose.open_total_ms(), self.motion)
 
     def onPromptSubmitted(self, text):
-        self.prompt_text = text
-        self.born_rect = self.prompt_bar.screenRect()  # capture before anything hides it
+        self.state.prompt_text = text
+        self.state.born_rect = self.prompt_bar.screenRect()  # capture before anything hides it
         self.beginClose()
 
     def cancelPrompt(self):
-        self.chosen_wedge = None  # nothing runs
+        self.state.chosen_wedge = None  # nothing runs
         self.beginClose()
 
     def beginClose(self):
-        self.stopClocks()
-        self.phase = CLOSING
+        self.animation.stopClocks()
+        self.state.phase = CLOSING
         self.releaseMouse()
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
@@ -352,43 +259,35 @@ class PieMenu(OverlayWindow):
         # since that one needs the submitted text before it can run. Fired
         # here rather than waiting for the fade so the card exists before
         # the bar (born as its rect) goes.
-        if self.chosen_wedge is not None:
-            wedge = self.wedges[self.chosen_wedge]
-            if wedge.placeholder is not None and self.prompt_text is not None:
+        if self.state.chosen_wedge is not None:
+            wedge = self.state.wedges[self.state.chosen_wedge]
+            if wedge.placeholder is not None and self.state.prompt_text is not None:
                 # None means activateHoveredWedge() already reused an open
                 # card for this wedge instead of asking for a prompt.
-                self.chat.open(self.born_rect, self.prompt_text, wedge.id, wedge.action)
+                self.chat.open(self.state.born_rect, self.state.prompt_text, wedge.id, wedge.action)
         self.prompt_bar.hide()
 
-        self.close_ms = 0
-        self.close_clock.run(style.CLOSE_MS, self.motion)
-
-    def onCloseTick(self, ms):
-        self.close_ms = ms
-        self.update(self.ringRect())
-
-    def onClosed(self):
-        self.phase = HIDDEN
-        self.setWindowOpacity(0)
+        self.animation.close_ms = 0
+        self.animation.close_clock.run(style.CLOSE_MS, self.motion)
 
     # --- input ---
 
     def mouseMoveEvent(self, event):
-        if self.phase not in (OPENING, OPEN):
+        if self.state.phase not in (OPENING, OPEN):
             return
         pos = event.position()
-        dx = pos.x() - self.anchor.x()
-        dy = pos.y() - self.anchor.y()
-        self.setHovered(wedge_index(dx, dy, len(self.wedges), INNER_RADIUS, HIT_RADIUS))
+        dx = pos.x() - self.state.anchor.x()
+        dy = pos.y() - self.state.anchor.y()
+        self.setHovered(wedge_index(dx, dy, len(self.state.wedges), INNER_RADIUS, HIT_RADIUS))
 
     def mousePressEvent(self, event):
-        if self.phase in (OPENING, OPEN):
+        if self.state.phase in (OPENING, OPEN):
             self.activateHoveredWedge()
-        elif self.phase == PROMPTING:
+        elif self.state.phase == PROMPTING:
             self.cancelPrompt()  # clicks on the field itself never reach here
 
     def keyPressEvent(self, event):
-        if self.phase == HANDOFF:
+        if self.state.phase == HANDOFF:
             # The field isn't focusable yet, but the user may already be
             # typing - keep the keystrokes rather than dropping them.
             if event.key() == Qt.Key_Escape:
@@ -397,7 +296,7 @@ class PieMenu(OverlayWindow):
                 self.prompt_bar.appendSeed(event.text())
             return
 
-        if self.phase not in (OPENING, OPEN):
+        if self.state.phase not in (OPENING, OPEN):
             return
 
         key = event.key()
@@ -406,11 +305,11 @@ class PieMenu(OverlayWindow):
         elif key in ACTIVATE_WIDGET_KEYS:
             self.activateHoveredWedge()
         elif key in CYCLE_STEP_BY_KEY:
-            self.setHovered(cycle_wedge(self.hovered_wedge, len(self.wedges), CYCLE_STEP_BY_KEY[key]))
+            self.setHovered(cycle_wedge(self.state.hovered_wedge, len(self.state.wedges), CYCLE_STEP_BY_KEY[key]))
         elif key == Qt.Key_Up:
             self.setHovered(0)  # wedge 0 is compass-up by wedge_index()'s own convention
         elif key == Qt.Key_Down:
-            self.setHovered(wedgeConfig.bottom_pin_index(len(self.wedges)))
+            self.setHovered(wedgeConfig.bottom_pin_index(len(self.state.wedges)))
         elif self.isTyping(event):
             self.jumpToPrompt(event.text())
 
@@ -421,23 +320,23 @@ class PieMenu(OverlayWindow):
     def jumpToPrompt(self, seed):
         """A printable keypress while the ring is up goes straight into the
         prompt, carrying the character that started it."""
-        index = next((i for i, wedge in enumerate(self.wedges) if wedge.placeholder is not None), None)
+        index = next((i for i, wedge in enumerate(self.state.wedges) if wedge.placeholder is not None), None)
         if index is None:
             return
-        self.chosen_wedge = index
-        self.beginHandoff(self.wedges[index], seed)
+        self.state.chosen_wedge = index
+        self.beginHandoff(self.state.wedges[index], seed)
 
     # --- painting ---
 
     def paintEvent(self, event):
-        if self.phase == HIDDEN:
+        if self.state.phase == HIDDEN:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        close_scale, close_alpha = pose.close_pose(self.close_ms)
-        open_scale, open_alpha = pose.open_pose(self.open_ms)
-        if self.chosen_wedge is None:
+        close_scale, close_alpha = pose.close_pose(self.animation.close_ms)
+        open_scale, open_alpha = pose.open_pose(self.animation.open_ms)
+        if self.state.chosen_wedge is None:
             # Not the chosen wedge's own hold-then-crossfade curve - the
             # shadow is one ambient blob under the whole ring, so it clears
             # out with the rest of the ring rather than lingering through
@@ -448,9 +347,9 @@ class PieMenu(OverlayWindow):
             )
 
         # Hovered wedge last so its glow sits above its neighbours.
-        order = [i for i in range(len(self.wedges)) if i != self.hovered_wedge]
-        if self.hovered_wedge is not None:
-            order.append(self.hovered_wedge)
+        order = [i for i in range(len(self.state.wedges)) if i != self.state.hovered_wedge]
+        if self.state.hovered_wedge is not None:
+            order.append(self.state.hovered_wedge)
         for i in order:
             self.paintWedge(painter, i, close_scale, close_alpha)
 
@@ -469,7 +368,7 @@ class PieMenu(OverlayWindow):
         blur = style.CARD_SHADOW_BLUR
         outer = radius + blur
         painter.save()
-        painter.translate(self.anchor.x(), self.anchor.y() + style.CARD_SHADOW_OFFSET_Y * scale)
+        painter.translate(self.state.anchor.x(), self.state.anchor.y() + style.CARD_SHADOW_OFFSET_Y * scale)
         color = QColor(0, 0, 0, round(style.CARD_SHADOW_ALPHA * alpha))
         transparent = QColor(0, 0, 0, 0)
         gradient = QRadialGradient(0, 0, outer)
@@ -483,15 +382,15 @@ class PieMenu(OverlayWindow):
         painter.restore()
 
     def paintWedge(self, painter, index, close_scale, close_alpha):
-        count = len(self.wedges)
+        count = len(self.state.wedges)
         span = 360 / count
-        t = self.hover_t[index]
-        chosen = index == self.chosen_wedge
+        t = self.animation.hover_t[index]
+        chosen = index == self.state.chosen_wedge
 
         # Each exit sits at its resting pose until its own clock runs, so
         # they compose without caring which one is actually in play.
-        open_scale, open_alpha = pose.open_pose(self.open_ms)
-        select_scale, select_alpha, select_push = pose.select_pose(self.select_ms, chosen)
+        open_scale, open_alpha = pose.open_pose(self.animation.open_ms)
+        select_scale, select_alpha, select_push = pose.select_pose(self.animation.select_ms, chosen)
         exit_scale, exit_alpha = pose.ring_exit_pose(self.prompt_flow.ms, chosen)
         hover_push, outer, label_scale = pose.hover_pose(t)
 
@@ -504,7 +403,7 @@ class PieMenu(OverlayWindow):
 
         painter.save()
         painter.setOpacity(alpha)
-        painter.translate(self.anchor)
+        painter.translate(self.state.anchor)
         painter.scale(scale, scale)
         painter.translate(push * bx, push * by)
 
@@ -525,5 +424,5 @@ class PieMenu(OverlayWindow):
         painter.translate(label_r * bx, label_r * by)
         painter.scale(label_scale, label_scale)
         painter.setPen(mix(style.LABEL_IDLE, style.LABEL_HOVER, t))
-        painter.drawText(QRectF(-50, -15, 100, 30), Qt.AlignCenter, self.wedges[index].label)
+        painter.drawText(QRectF(-50, -15, 100, 30), Qt.AlignCenter, self.state.wedges[index].label)
         painter.restore()

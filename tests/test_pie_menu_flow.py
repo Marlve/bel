@@ -13,7 +13,8 @@ from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
 import cardStore
 import wedgeConfig
-from pieMenu import PieMenu, HIDDEN, OPEN, PROMPTING
+from pieMenu import PieMenu
+from pieMenuState import HIDDEN, OPEN, PROMPTING
 
 PROMPT_WEDGE = 3  # the one wedgeConfig's defaults give a placeholder (Claude)
 SETTINGS_WEDGE = 2  # wedgeConfig.bottom_pin_index(4) - where Settings lands by default
@@ -340,7 +341,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.hovered_wedge, SETTINGS_WEDGE)
 
     def test_a_cursor_past_the_ring_selects_nothing(self):
-        from pieMenu import HIT_RADIUS, wedge_index
+        from pieMenuState import HIT_RADIUS, wedge_index
 
         self.assertIsNone(wedge_index(0, -(HIT_RADIUS + 1), 4, radius=HIT_RADIUS))
 
