@@ -254,6 +254,12 @@ def prompt_field_stylesheet(text_color):
     )
 
 
+def card_border_color(dragging):
+    """The resizable cards' (note/todo) frame border - shifts while the
+    resize grip is being dragged, per resize-handle/spec.md."""
+    return CARD_BORDER_DRAG if dragging else CHAT_BORDER
+
+
 def chat_close_stylesheet():
     return (
         f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; }}"

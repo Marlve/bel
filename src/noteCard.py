@@ -166,6 +166,6 @@ class NoteCard(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         frame = QRectF(self.rect()).adjusted(MARGIN + 0.5, MARGIN + 0.5, -MARGIN - 0.5, -MARGIN - 0.5)
         painter.setBrush(QColor(style.CHAT_SURFACE))
-        border = style.CARD_BORDER_DRAG if hasattr(self, "grip") and self.grip.dragging else style.CHAT_BORDER
-        painter.setPen(QPen(QColor(border), 1))
+        dragging = hasattr(self, "grip") and self.grip.dragging
+        painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)
