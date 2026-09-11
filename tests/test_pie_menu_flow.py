@@ -224,12 +224,31 @@ class PieMenuFlowTests(unittest.TestCase):
         first_request.chunk.emit("late straggler")
         self.assertEqual(card.turns[-1]["text"], "second answer")
 
-    def test_repicking_claude_while_open_reopens_the_same_card_without_asking(self):
+    def test_repicking_claude_while_open_minimizes_it_instead_of_asking_again(self):
         first = self.ask("first question")
+        self.assertTrue(first.isOpen())
         self.reopenClaude()
         self.assertEqual(self.menu.phase, HIDDEN)
-        self.assertIs(self.menu.chat.card, first)
+        self.assertIs(self.menu.chat.card, first)  # session stays alive, just tucked away
+        self.assertFalse(first.isOpen())
         self.assertEqual(self.calls, [(PROMPT_WEDGE, ("first question",))])  # no second send
+
+    def test_repicking_claude_while_hidden_reopens_it_and_focuses_the_composer(self):
+        first = self.ask("first question")
+        first.minimize()
+        self.assertFalse(first.isOpen())
+
+        self.reopenClaude()
+
+        self.assertEqual(self.menu.phase, HIDDEN)
+        self.assertIs(self.menu.chat.card, first)
+        self.assertTrue(first.isOpen())
+
+        first.edge_driver.tween.stop()  # land the dock tween without waiting on real animation time
+        first.onDockLanded()
+        first.activateWindow()
+        QApplication.processEvents()
+        self.assertTrue(first.composer.hasFocus())
 
     def test_dismissing_then_repicking_claude_starts_a_fresh_session(self):
         first = self.ask("first question")

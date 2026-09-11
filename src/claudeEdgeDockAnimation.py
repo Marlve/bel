@@ -51,6 +51,12 @@ class EdgeDockDriver:
     def reveal(self):
         self._apply(self.dock.reveal)
 
+    def stop(self):
+        """Cancel any in-flight geometry tween without landing - used when
+        the card is being torn down (see ChatCard.dismiss()) so a tween
+        started just before dismissal doesn't fire on_landed afterwards."""
+        self.tween.stop()
+
     def refresh(self, duration_ms):
         """The current state's own geometry moved (e.g. a restack changed
         this card's slot) without the state itself changing - retarget the

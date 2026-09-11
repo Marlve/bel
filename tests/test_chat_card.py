@@ -204,6 +204,34 @@ class ChatSlotTests(unittest.TestCase):
         self.slot.card.dismiss()
         self.assertIsNone(self.slot.card)
 
+    def test_revealing_the_same_wedge_while_open_minimizes_it_instead(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        self.assertTrue(card.isOpen())
+        handled = self.slot.reveal("wedge-1")
+        self.assertTrue(handled)
+        self.assertIs(self.slot.card, card)  # session stays alive, just tucked away
+        self.assertFalse(card.isOpen())
+
+    def test_revealing_the_same_wedge_while_hidden_reopens_and_focuses_the_composer(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.minimize()
+        self.assertFalse(card.isOpen())
+
+        handled = self.slot.reveal("wedge-1")
+
+        self.assertTrue(handled)
+        self.assertIs(self.slot.card, card)
+        self.assertTrue(card.isOpen())
+        card.activateWindow()
+        QApplication.processEvents()
+        self.assertTrue(card.composer.hasFocus())
+
+    def test_revealing_an_unknown_wedge_leaves_the_open_card_alone(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        handled = self.slot.reveal("wedge-2")
+        self.assertFalse(handled)
+        self.assertIs(self.slot.card, card)
+
 
 if __name__ == "__main__":
     unittest.main()

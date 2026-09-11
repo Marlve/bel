@@ -196,8 +196,10 @@ class PieMenu(QWidget):
             wedge.action()
             self.beginSelect()
         elif self.chat.reveal(wedge.id):
-            # A session for this wedge is already open - just resurface it,
-            # no prompt bar, no new message.
+            # A session for this wedge already exists - ChatSlot.reveal()
+            # splits by dock state: resurface + focus if tucked away,
+            # minimize if already on screen. Either way, no prompt bar, no
+            # new message.
             self.beginSelect()
         else:
             self.beginHandoff(wedge)

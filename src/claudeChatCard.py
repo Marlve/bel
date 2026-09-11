@@ -117,6 +117,7 @@ class ChatCard(QWidget):
 
         self.edge_driver = None
         self.edge_trigger = None
+        self.focus_composer_on_land = False
 
     def buildContent(self):
         self.header_label = QLabel("CLAUDE", self)
@@ -218,6 +219,9 @@ class ChatCard(QWidget):
         if self.buffered:
             self.write(self.buffered)
             self.buffered = ""
+        if self.focus_composer_on_land:
+            self.focus_composer_on_land = False
+            self.composer.setFocus()
         self.update()
 
     # --- the conversation ---
@@ -374,6 +378,9 @@ class ChatCard(QWidget):
     def onDockLanded(self):
         if self.edge_driver and self.edge_driver.dock.state == OPEN:
             self.setCompactVisual(False)
+            if self.focus_composer_on_land:
+                self.focus_composer_on_land = False
+                self.composer.setFocus()
 
     def onTiltTick(self, value):
         self.tilt = value
@@ -386,13 +393,23 @@ class ChatCard(QWidget):
     def minimize(self):
         if self.edge_driver:
             self.edge_driver.minimize()
+            self.focus_composer_on_land = False  # tucking it away - a still-pending reveal's focus shouldn't land later
 
-    def reveal(self):
+    def reveal(self, focus=False):
         """Picking this card's wedge again while its session is still alive
-        just brings it back into view - no new session, no new message."""
+        just brings it back into view - no new session, no new message.
+        `focus` additionally hands the composer the keyboard - deferred to
+        onDockLanded() when animated, since onDockStateChanged() itself
+        leaves the content hidden mid-tween (see its own comment), and
+        focusing a still-hidden composer wouldn't stick."""
         self.raise_()
         if self.edge_driver:
             self.edge_driver.reveal()
+        if focus:
+            if self.motion:
+                self.focus_composer_on_land = True
+            else:
+                self.composer.setFocus()
 
     def puckRect(self):
         """The puck's own rect within this widget. Scales the TAB insets by
@@ -414,6 +431,9 @@ class ChatCard(QWidget):
     def isTabbed(self):
         return self.edge_driver is not None and self.edge_driver.dock.state == TAB
 
+    def isOpen(self):
+        return self.edge_driver is not None and self.edge_driver.dock.state == OPEN
+
     def tabContains(self, pos):
         pivot = self.tabPivot()
         inverse, ok = QTransform().translate(pivot.x(), pivot.y()).rotate(-style.DOCK_TAB_ROTATION_DEG).translate(
@@ -430,6 +450,8 @@ class ChatCard(QWidget):
         self.unwire()
         if self.edge_trigger:
             self.edge_trigger.stop()
+        if self.edge_driver:
+            self.edge_driver.stop()  # a reveal's still-running tween must not land after teardown starts
         if not self.motion:
             self.onFaded()
             return
@@ -509,18 +531,29 @@ class ChatSlot:
             style.CHAT_SIZE,
         )
 
+    def cardFor(self, wedge_id):
+        """The live card if it belongs to this wedge, else None."""
+        return self.card if self.card is not None and self.card.wedge_id == wedge_id else None
+
     def reveal(self, wedge_id):
-        """If a card for this wedge is already open, bring it back into view
-        instead of starting another one - the session only resets once that
-        card is actually closed (see ChatCard.dismiss/forget below)."""
-        if self.card is None or self.card.wedge_id != wedge_id:
+        """Reselecting a wedge whose session is still alive: bring it back
+        into view (and focus the composer) if it's tucked away in HIDDEN/TAB,
+        or minimize it if it's already OPEN - a second pick of the same
+        wedge tucks it away again rather than ending the session."""
+        card = self.cardFor(wedge_id)
+        if card is None:
             return False
-        self.card.reveal()
+        if card.isOpen():
+            card.minimize()
+        else:
+            card.reveal(focus=True)
         return True
 
     def open(self, born, prompt, wedge_id, action):
-        if self.reveal(wedge_id):
-            return self.card  # e.g. a prompt-jump shortcut raced past activateHoveredWedge()'s own check
+        card = self.cardFor(wedge_id)
+        if card is not None:
+            card.reveal()  # e.g. a prompt-jump shortcut raced past activateHoveredWedge()'s own check
+            return card
 
         # The prompt bar was at the cursor, so its rect picks the monitor.
         screen = QApplication.screenAt(born.center().toPoint()) or QApplication.primaryScreen()
