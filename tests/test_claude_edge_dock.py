@@ -34,6 +34,7 @@ class EdgeDockTests(unittest.TestCase):
     def test_cursor_arms_the_tab_from_hidden(self):
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
         self.assertEqual(dock.state, TAB)
 
@@ -46,6 +47,7 @@ class EdgeDockTests(unittest.TestCase):
     def test_hysteresis_keeps_the_tab_out_between_the_two_thresholds(self):
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
         self.assertEqual(dock.state, TAB)
         midpoint = (style.DOCK_ARM_PX + style.DOCK_DISARM_PX) // 2
@@ -55,7 +57,9 @@ class EdgeDockTests(unittest.TestCase):
     def test_cursor_past_the_disarm_threshold_retracts_the_tab(self):
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, TAB)
         dock.cursor_distance(style.DOCK_DISARM_PX)
         self.assertEqual(dock.state, HIDDEN)
 
@@ -65,12 +69,14 @@ class EdgeDockTests(unittest.TestCase):
         # click on it.
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
         self.assertEqual(dock.state, TAB)
 
     def test_clicking_the_tab_opens_the_card(self):
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
         dock.click_tab()
         self.assertEqual(dock.state, OPEN)
@@ -89,7 +95,9 @@ class EdgeDockTests(unittest.TestCase):
     def test_reveal_reopens_from_the_tab(self):
         dock = EdgeDock()
         dock.minimize()
+        dock.cursor_distance(style.DOCK_DISARM_PX)  # clear the post-minimize latch
         dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, TAB)
         dock.reveal()
         self.assertEqual(dock.state, OPEN)
 
@@ -97,6 +105,21 @@ class EdgeDockTests(unittest.TestCase):
         dock = EdgeDock()
         dock.reveal()
         self.assertEqual(dock.state, OPEN)
+
+    def test_minimize_suppresses_arming_until_the_cursor_leaves_the_zone(self):
+        dock = EdgeDock()
+        dock.minimize()
+        dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, HIDDEN)
+
+    def test_minimize_then_leave_then_return_arms_normally(self):
+        dock = EdgeDock()
+        dock.minimize()
+        dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, HIDDEN)
+        dock.cursor_distance(style.DOCK_DISARM_PX)
+        dock.cursor_distance(style.DOCK_ARM_PX)
+        self.assertEqual(dock.state, TAB)
 
 
 class EdgeDockDriverTests(unittest.TestCase):

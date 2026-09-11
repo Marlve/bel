@@ -18,6 +18,7 @@ class EdgeDock:
 
     def __init__(self):
         self.state = OPEN
+        self.suppress_arm = False
 
     # --- inputs the driver feeds in ---
 
@@ -25,7 +26,18 @@ class EdgeDock:
         """Distance from the cursor to the dock's right edge, in px. Only
         meaningful while HIDDEN (arms the tab) or TAB (disarms it) - the
         180/260 gap between the two thresholds is the hysteresis that keeps
-        a cursor resting near the boundary from flickering the tab."""
+        a cursor resting near the boundary from flickering the tab.
+
+        Right after a manual minimize(), arming is suppressed until the
+        cursor has actually left the zone once - otherwise a minimize that
+        fires with the cursor still resting near the edge (the normal case,
+        since the header button that was just clicked lives inside the
+        docked card) arms TAB on the very next poll and the card flickers
+        straight back out."""
+        if self.suppress_arm:
+            if px < style.DOCK_DISARM_PX:
+                return
+            self.suppress_arm = False
         if self.state == HIDDEN and px <= style.DOCK_ARM_PX:
             self.state = TAB
         elif self.state == TAB and px >= style.DOCK_DISARM_PX:
@@ -40,6 +52,7 @@ class EdgeDock:
         """Header button: the only way OPEN becomes HIDDEN."""
         if self.state == OPEN:
             self.state = HIDDEN
+            self.suppress_arm = True
 
     def reveal(self):
         """Picking the wedge again while this card's session is still alive
