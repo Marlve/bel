@@ -322,11 +322,22 @@ class PieMenu(QWidget):
 
     def jumpToPrompt(self, seed):
         """A printable keypress while the ring is up goes straight into the
-        prompt, carrying the character that started it."""
+        prompt, carrying the character that started it - unless Claude's
+        session is already open, in which case this should behave like
+        picking its wedge normally (see activateHoveredWedge())."""
         index = next((i for i, wedge in enumerate(self.state.wedges) if wedge.placeholder is not None), None)
         if index is None:
             return
         self.state.chosen_wedge = index
+        if self.chat.reveal(self.state.wedges[index].id):
+            # Typing never actually hovered this wedge, so beginSelect() on
+            # its own would render it flat - force the same held hover pose
+            # beginHandoff() forces for a keyboard-driven pick.
+            self.animation.hover_anims[index].stop()
+            self.animation.hover_t[index] = 1.0
+            self.state.hovered_wedge = index
+            self.beginSelect()
+            return
         self.beginHandoff(self.state.wedges[index], seed)
 
     # --- painting ---

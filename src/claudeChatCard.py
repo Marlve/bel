@@ -552,7 +552,11 @@ class ChatSlot:
     def open(self, born, prompt, wedge_id, action):
         card = self.cardFor(wedge_id)
         if card is not None:
-            card.reveal()  # e.g. a prompt-jump shortcut raced past activateHoveredWedge()'s own check
+            # Defensive: both callers into beginHandoff() now check reveal()
+            # first (ticket 07), so this shouldn't be reachable - routed
+            # through reveal() itself rather than a bare card.reveal() so it
+            # degrades to the same open/minimize toggle if it ever is.
+            self.reveal(wedge_id)
             return card
 
         # The prompt bar was at the cursor, so its rect picks the monitor.

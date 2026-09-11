@@ -250,6 +250,34 @@ class PieMenuFlowTests(unittest.TestCase):
         QApplication.processEvents()
         self.assertTrue(first.composer.hasFocus())
 
+    def test_typing_over_the_ring_while_claude_is_open_reveals_it_instead_of_asking_again(self):
+        # jumpToPrompt() used to send Claude through beginHandoff() straight
+        # away, bypassing the same reveal() check activateHoveredWedge() runs
+        # - so starting a pie-menu pick by typing (instead of hovering onto
+        # the wedge and pressing Enter/clicking) reopened the prompt bar over
+        # an already-open session and silently dropped whatever got typed.
+        first = self.ask("first question")
+        self.assertTrue(first.isOpen())
+
+        self.openMenu()
+        self.menu.keyPressEvent(key(Qt.Key_W, "w"))
+
+        self.assertEqual(self.menu.phase, HIDDEN)
+        self.assertIs(self.menu.chat.card, first)
+        self.assertFalse(first.isOpen())
+        self.assertEqual(self.calls, [(PROMPT_WEDGE, ("first question",))])  # no second send
+
+    def test_typing_over_the_ring_while_claude_is_open_still_holds_the_hover_pose(self):
+        # jumpToPrompt() never actually hovers the wedge it targets, so its
+        # reveal branch has to force the same held pose beginHandoff() forces
+        # for a keyboard-driven pick - otherwise the wedge animates its
+        # select/close without ever looking selected.
+        self.ask("first question")
+        self.openMenu()
+        self.menu.keyPressEvent(key(Qt.Key_W, "w"))
+        self.assertEqual(self.menu.hovered_wedge, PROMPT_WEDGE)
+        self.assertEqual(self.menu.animation.hover_t[PROMPT_WEDGE], 1.0)
+
     def test_dismissing_then_repicking_claude_starts_a_fresh_session(self):
         first = self.ask("first question")
         first.dismiss()
