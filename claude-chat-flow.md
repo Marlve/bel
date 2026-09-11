@@ -15,7 +15,7 @@ Three separate top-level widgets. None is a child of another.
 | Widget | Role | Lifetime |
 |---|---|---|
 | `PromptBar` | single-line input, born from the wedge | closes on send or Escape |
-| `ChatCard` | 340×340 square, transcript + composer | outlives the overlay; user dismisses |
+| `ChatCard` | 400×400 square, transcript + composer | outlives the overlay; user dismisses |
 | `EdgeTrigger` | invisible proximity strip on the right edge | lives with the ChatCard |
 
 All are `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool` with `Qt.WA_TranslucentBackground`. `Qt.Tool` keeps them out of the taskbar.
@@ -56,13 +56,13 @@ The card is **born as the prompt bar's exact rectangle at its exact position**, 
 
 - Flight **420 ms `OutCubic`, no overshoot** — overshoot near a screen corner reads as an error
 - Corner radius 999 → 10 px over 300 ms on the same curve
-- Docks to **340 × 340 px, 24 px from the work-area edges**, top-right, on the monitor holding the cursor. Work area, not monitor bounds, so it never slides under the taskbar.
+- Docks to **400 × 400 px, 24 px from the work-area edges**, top-right, on the monitor holding the cursor. Work area, not monitor bounds, so it never slides under the taskbar.
 - The ring's scrim clears in parallel and finishes first — the desktop is interactive before the card lands
 - Content fades in only **after** geometry is at rest
 
 ## Step 3 — the card is a chat
 
-340 × 340 fixed, 14 px padding, three rows:
+400 × 400 fixed, 14 px padding, three rows:
 
 **Header (flex none).** 13 px accent mark, `CLAUDE` in 9.5 px mono, close `✕` on the right.
 
@@ -80,7 +80,7 @@ Four states, right edge of the work area.
 
 | State | Geometry |
 |---|---|
-| `OPEN` | 340 × 340, 24 px from top and right edges |
+| `OPEN` | 400 × 400, 24 px from top and right edges |
 | `COMPACT` | 64 × 64 puck, same corner, mark only |
 | `HIDDEN` | the puck fully past the right edge — **nothing visible** |
 | `TAB` | 26 px of the puck out, **rotated −9°**, hinged on its right edge |

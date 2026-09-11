@@ -157,7 +157,7 @@ CHAT_BODY_SIZE = 12.5  # px, per claude-chat-flow.md's own px units
 CHAT_HEADER_SIZE = 9.5  # px mono, 0.14em tracking (applied via QFont.setLetterSpacing, not CSS)
 CHAT_HEADER_TRACKING_PERCENT = 114  # 1 + 0.14em, as QFont.PercentageSpacing wants it
 
-CHAT_SIZE = 340
+CHAT_SIZE = 400
 CHAT_MARGIN = 24  # from the work area's edges
 CHAT_PADDING = 14
 
