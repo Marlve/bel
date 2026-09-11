@@ -70,6 +70,12 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
       "--verbose",
       "--append-system-prompt",
       SYSTEM_PROMPT,
+      # -p mode has no TTY to show a permission prompt, so an unlisted tool
+      # is silently denied rather than asked about - pre-allow the calendar
+      # MCP (already authenticated at the account level, see `claude mcp
+      # list`) so SYSTEM_PROMPT's "organize calendar schedule" is actually
+      # reachable instead of just aspirational.
+      "--allowedTools", "mcp__claude_ai_Google_Calendar",
   ]
   if session_id:
       args += ["--resume", session_id]
