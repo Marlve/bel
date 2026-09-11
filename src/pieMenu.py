@@ -12,7 +12,7 @@ import wedgeConfig
 from anims import pose
 from overlay import OverlayWindow
 from promptFlow import PromptFlow
-from chatCard import ChatSlot
+from claudeChatCard import ChatSlot
 from pieMenuState import (
     PieMenuState,
     wedge_index,

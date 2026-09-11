@@ -11,7 +11,7 @@ STORE_KEY = "wedges"
 
 # How many messages a Claude chat card lets its session accumulate before
 # starting over fresh - not a per-wedge field, but kept here alongside the
-# other settings-editable config for the same reason (chatCard.py needs it
+# other settings-editable config for the same reason (claudeChatCard.py needs it
 # without importing pieMenu/settingsCard).
 CHAT_CONTEXT_LIMIT_KEY = "claude_context_limit"
 DEFAULT_CHAT_CONTEXT_LIMIT = 4
