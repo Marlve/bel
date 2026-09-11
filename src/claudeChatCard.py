@@ -463,14 +463,20 @@ class ChatCard(QWidget):
 
     # --- leaving ---
 
+    def stopDynamics(self):
+        """Cancel the edge-dock timer and tween - shared by dismiss() and
+        ChatSlot.retire(), the two teardown paths, so a stray poll or a
+        reveal's still-running tween can't land after teardown starts."""
+        if self.edge_trigger:
+            self.edge_trigger.stop()
+        if self.edge_driver:
+            self.edge_driver.stop()
+
     def dismiss(self):
         if self.fade.state() == QVariantAnimation.Running:
             return
         self.unwire()
-        if self.edge_trigger:
-            self.edge_trigger.stop()
-        if self.edge_driver:
-            self.edge_driver.stop()  # a reveal's still-running tween must not land after teardown starts
+        self.stopDynamics()
         if not self.motion:
             self.onFaded()
             return
@@ -604,8 +610,7 @@ class ChatSlot:
         animation, and dropping the last reference to the card there would
         destroy that animation mid-emit."""
         card.unwire()
-        if card.edge_trigger:
-            card.edge_trigger.stop()
+        card.stopDynamics()
         card.hide()
         self.closing.append(card)
         QTimer.singleShot(0, self.dropRetired)

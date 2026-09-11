@@ -36,11 +36,11 @@ class FakeRequest(QObject):
 
 def teardownCard(card):
     """Mirrors ChatSlot.retire(): stop the real QTimer a landed card owns
-    (EdgeTrigger's 50ms cursor poll) before the widget goes away, or it
-    keeps firing into a torn-down test."""
+    (EdgeTrigger's 50ms cursor poll) and any in-flight edge-dock tween
+    before the widget goes away, or they keep firing into a torn-down
+    test."""
     card.unwire()
-    if card.edge_trigger:
-        card.edge_trigger.stop()
+    card.stopDynamics()
     card.close()
     card.deleteLater()
     QApplication.processEvents()
@@ -198,6 +198,20 @@ class ChatSlotTests(unittest.TestCase):
         self.assertIsNot(second, first)
         self.assertIs(self.slot.card, second)
         self.assertIn(first, self.slot.closing)
+
+    def test_opening_a_different_wedge_stops_the_old_cards_still_running_tween(self):
+        # ticket 04: retire() is reached directly from open() (a different
+        # wedge's session replacing this one), bypassing dismiss()'s own
+        # edge_driver.stop() - a tween left running past teardown can fire
+        # on_landed on an already-deleted card.
+        first = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        first.edge_driver.motion = True  # force a real tween instead of an instant snap
+        first.minimize()  # OPEN -> HIDDEN, starts a real geometry tween
+        self.assertEqual(first.edge_driver.tween.state(), QVariantAnimation.Running)
+
+        self.slot.open(self.born, "hi", "wedge-2", self.fakeAction)
+
+        self.assertEqual(first.edge_driver.tween.state(), QVariantAnimation.Stopped)
 
     def test_dismissing_the_card_forgets_it_from_the_slot(self):
         self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
