@@ -166,8 +166,21 @@ CHAT_COMPOSER_PADDING = 11
 CARD_DRAG_THRESHOLD_PX = 4  # design.md's "press and move more than 4 px" - drag vs click/tick
 CARD_AUTOSAVE_MS = 400  # idle debounce before writing position/content to disk
 
-CARD_MIN_SIZE = 220  # never smaller than this in either dimension
-CARD_RESIZE_GRIP = 16  # bottom-right corner handle, square, px
+CARD_MIN_WIDTH = 200  # hard clamp, no max - resize-handle/spec.md
+CARD_MIN_HEIGHT = 120  # hard clamp, no max
+
+CARD_RESIZE_GRIP_HIT = 20  # bottom-right hit zone, square, px - bigger than the paint so it's easy to grab
+CARD_RESIZE_GRIP_PAINT = 14  # painted glyph, square, px, inside the hit zone
+CARD_RESIZE_GRIP_EDGE_OFFSET = 1  # hit zone sits this far inside the card's own corner (right/bottom)
+CARD_RESIZE_GRIP_PAINT_OFFSET = 5  # painted glyph sits this far inside the card's own corner
+CARD_RESIZE_GRIP_STROKE = 1.4  # logical px - never scaled by devicePixelRatio, see draggable.py
+CARD_RESIZE_GRIP_REST = "#4A4B4F"  # ink at rest
+CARD_RESIZE_GRIP_HOVER = LABEL  # ink on hover
+CARD_RESIZE_GRIP_DRAG = BODY  # ink while dragging - instant, reverts on release
+CARD_RESIZE_GRIP_HOVER_MS = 120
+CARD_RESIZE_GRIP_HOVER_EASING = "OutCubic"
+CARD_BORDER_DRAG = "#3B3C40"  # card border while the grip is being dragged
+
 CARD_SPAWN_OFFSET = 16  # cursor lands this far inside the card's corner when it opens
 CARD_OPEN_MS = 160  # todo/note fade in over this long when picked from the ring
 

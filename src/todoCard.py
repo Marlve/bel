@@ -166,7 +166,7 @@ class TodoCard(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setMinimumSize(style.CARD_MIN_SIZE + 2 * MARGIN, style.CARD_MIN_SIZE + 2 * MARGIN)
+        self.setMinimumSize(style.CARD_MIN_WIDTH + 2 * MARGIN, style.CARD_MIN_HEIGHT + 2 * MARGIN)
 
         self.drag = WindowDrag(self)
         self.save_timer = QTimer(self)
@@ -316,5 +316,6 @@ class TodoCard(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         frame = QRectF(self.rect()).adjusted(MARGIN + 0.5, MARGIN + 0.5, -MARGIN - 0.5, -MARGIN - 0.5)
         painter.setBrush(QColor(style.CHAT_SURFACE))
-        painter.setPen(QPen(QColor(style.CHAT_BORDER), 1))
+        border = style.CARD_BORDER_DRAG if hasattr(self, "grip") and self.grip.dragging else style.CHAT_BORDER
+        painter.setPen(QPen(QColor(border), 1))
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)
