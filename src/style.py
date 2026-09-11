@@ -205,6 +205,10 @@ CARD_OPEN_MS = 160  # todo/note fade in over this long when picked from the ring
 CARD_SHADOW_BLUR = 24
 CARD_SHADOW_OFFSET_Y = 8
 CARD_SHADOW_ALPHA = 115  # ~0.45, softened from design.md's result-card 0.55 to fit a modest CARD_SHADOW_MARGIN
+RING_SHADOW_ALPHA = 60  # lower than CARD_SHADOW_ALPHA: a card's shadow only ever shows as a thin
+# blurred fringe outside its own opaque body, but the ring paints its shadow as a visible band
+# across the donut itself (gaps between wedges, the dead-zone hole), so the same alpha would read
+# far heavier than the cards' - toned down here to land at the same subtle-but-visible depth.
 CARD_SHADOW_MARGIN = 28  # extra room a top-level card window needs on every side so its own
 # QGraphicsDropShadowEffect isn't clipped at the window's edge - unlike a shadow on a child
 # widget (promptBar.py's, which bleeds into its parent overlay), a top-level window's effect

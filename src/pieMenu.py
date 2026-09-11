@@ -383,7 +383,7 @@ class PieMenu(QWidget):
         outer = radius + blur
         painter.save()
         painter.translate(self.state.anchor.x(), self.state.anchor.y() + style.CARD_SHADOW_OFFSET_Y * scale)
-        color = QColor(0, 0, 0, round(style.CARD_SHADOW_ALPHA * alpha))
+        color = QColor(0, 0, 0, round(style.RING_SHADOW_ALPHA * alpha))
         transparent = QColor(0, 0, 0, 0)
         gradient = QRadialGradient(0, 0, outer)
         gradient.setColorAt(max(0.0, inner - blur) / outer, transparent)
