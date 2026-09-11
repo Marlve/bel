@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTransform
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, QPointF, Signal
 
+import chatMarkdown
 import style
 import wedgeConfig
 from anims import curves, pose
@@ -315,7 +316,7 @@ class ChatCard(QWidget):
         self.transcript_layout.insertLayout(self.transcript_layout.count() - 1, row)
 
     def setTurnHtml(self, label, text, caret):
-        body = html.escape(text)
+        body = chatMarkdown.render(text)
         if caret:
             body += f'<span style="color:{style.CHAT_ACCENT};">▏</span>'
         label.setText(body)
