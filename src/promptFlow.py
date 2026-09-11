@@ -13,7 +13,7 @@ from PySide6.QtCore import QPointF, QRectF
 import style
 from anims import pose
 from anims.clock import Clock
-from prompt_bar import PromptBar
+from promptBar import PromptBar
 
 
 class PromptFlow:

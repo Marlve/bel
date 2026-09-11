@@ -1,9 +1,9 @@
 # Same toggle shape as the todo/note wedges. Reads an "on_change" callback
-# off this wedge's own config entry - pie_menu.py stashes its rebuild
-# callback there before building - so this module and settings_card.py never
-# need to import pie_menu themselves.
+# off this wedge's own config entry - pieMenu.py stashes its rebuild
+# callback there before building - so this module and settingsCard.py never
+# need to import pieMenu themselves.
 
-from settings_card import SettingsCard
+from settingsCard import SettingsCard
 
 
 def settings(config):

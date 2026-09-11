@@ -14,7 +14,7 @@ You're a personal helper tool called Bel.
 
 if hasattr(sys.stdout, "reconfigure"):
   # sys.stdout can be None (no console, e.g. launched via pythonw) or lack
-  # this method (e.g. a test runner's captured stdout) now that pie_menu.py
+  # this method (e.g. a test runner's captured stdout) now that pieMenu.py
   # imports this module rather than only running it as a standalone script.
   sys.stdout.reconfigure(encoding="utf-8")
 
@@ -105,7 +105,7 @@ class ClaudeWorker(QObject):
   def run(self):
       # `finished` must always fire, even on error - it's what tells the
       # caller the request is over (see ClaudeAction's in-flight guard in
-      # actions/claude_action.py); otherwise a failed request leaves the wedge
+      # actions/claudeAction.py); otherwise a failed request leaves the wedge
       # permanently stuck and leaks this thread for the app's lifetime.
       try:
           for text in askBel(

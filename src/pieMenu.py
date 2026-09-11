@@ -12,12 +12,12 @@ from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadial
 from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
-import wedge_config
+import wedgeConfig
 from anims import pose
 from anims.clock import Clock, HoverClock
 from overlay import OverlayWindow
-from prompt_flow import PromptFlow
-from chat_card import ChatStack
+from promptFlow import PromptFlow
+from chatCard import ChatSlot
 from actions import ACTIONS
 from util import force_foreground, reduced_motion
 
@@ -105,15 +105,15 @@ class Wedge:
 
 
 # Which wedges the menu shows, in order. Todo/Note/Claude are user-editable
-# via the Settings wedge (see wedge_config.py for persistence and
+# via the Settings wedge (see wedgeConfig.py for persistence and
 # defaults); Settings itself is always pinned as close to the bottom of the
 # ring as the current wedge count allows, wherever the editable wedges land.
 # Each entry's "id" picks an action factory from ACTIONS; any other key is
 # that action's own config (e.g. "claude" reads "prompt", "settings" reads
 # "on_change"). A "placeholder" sends the wedge through the prompt bar first.
 def current_config(on_settings_change):
-    others = wedge_config.resolve(wedge_config.load_other_wedges())
-    config = wedge_config.full_config(others)
+    others = wedgeConfig.resolve(wedgeConfig.load_other_wedges())
+    config = wedgeConfig.full_config(others)
     for entry in config:
         if entry["id"] == "settings":
             entry["on_change"] = on_settings_change
@@ -175,7 +175,7 @@ class PieMenu(OverlayWindow):
         self.prompt_bar.submitted.connect(self.onPromptSubmitted)
         self.prompt_bar.cancelled.connect(self.returnToRing)
         self.clocks = (self.open_clock, self.select_clock, self.prompt_flow.clock, self.close_clock)
-        self.cards = ChatStack()  # cards are top-level windows; this is what keeps them alive
+        self.chat = ChatSlot()  # the card is a top-level window; this is what keeps it alive
 
         self.setWindowOpacity(0)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -280,7 +280,7 @@ class PieMenu(OverlayWindow):
             # the card shouldn't wait on it to appear.
             wedge.action()
             self.beginSelect()
-        elif self.cards.reveal(wedge.id):
+        elif self.chat.reveal(wedge.id):
             # A session for this wedge is already open - just resurface it,
             # no prompt bar, no new message.
             self.beginSelect()
@@ -357,7 +357,7 @@ class PieMenu(OverlayWindow):
             if wedge.placeholder is not None and self.prompt_text is not None:
                 # None means activateHoveredWedge() already reused an open
                 # card for this wedge instead of asking for a prompt.
-                self.cards.open(self.born_rect, self.prompt_text, wedge.id, wedge.action)
+                self.chat.open(self.born_rect, self.prompt_text, wedge.id, wedge.action)
         self.prompt_bar.hide()
 
         self.close_ms = 0
@@ -410,7 +410,7 @@ class PieMenu(OverlayWindow):
         elif key == Qt.Key_Up:
             self.setHovered(0)  # wedge 0 is compass-up by wedge_index()'s own convention
         elif key == Qt.Key_Down:
-            self.setHovered(wedge_config.bottom_pin_index(len(self.wedges)))
+            self.setHovered(wedgeConfig.bottom_pin_index(len(self.wedges)))
         elif self.isTyping(event):
             self.jumpToPrompt(event.text())
 

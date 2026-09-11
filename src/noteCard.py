@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
-import card_store
+import cardStore
 from anims.clock import Tween
 from anims import curves
 from draggable import WindowDrag, ResizeGrip
@@ -42,7 +42,7 @@ class NoteCard(QWidget):
         self.fade = Tween(self, self.onFadeTick)
         shadow.apply(self)
 
-        saved = card_store.load(STORE_KEY, {})
+        saved = cardStore.load(STORE_KEY, {})
         face_w, face_h = saved.get("size", [style.CHAT_SIZE, style.CHAT_SIZE])
         self.resize(face_w + 2 * MARGIN, face_h + 2 * MARGIN)
 
@@ -57,6 +57,13 @@ class NoteCard(QWidget):
         self.moveNear(QCursor.pos())
         self.setWindowOpacity(0 if self.motion else 1)
         self.show()
+        # QPlainTextEdit lays out (and decides whether it needs a scrollbar)
+        # against whatever geometry it had while the window was still
+        # hidden, which can be stale - show()'s first real paint can flash
+        # a scrollbar that vanishes as soon as anything triggers a repaint.
+        # Flushing the pending layout here, before the card is actually
+        # visible, keeps that first paint already correct.
+        QApplication.processEvents()
         self.raise_()
         if self.motion:
             self.fade.run(0.0, 1.0, style.CARD_OPEN_MS, curves.CHAT_FLIGHT)
@@ -114,7 +121,7 @@ class NoteCard(QWidget):
         self.save_timer.start(style.CARD_AUTOSAVE_MS)
 
     def save(self):
-        card_store.save(
+        cardStore.save(
             STORE_KEY,
             {"text": self.body.toPlainText(), "size": [self.width() - 2 * MARGIN, self.height() - 2 * MARGIN]},
         )

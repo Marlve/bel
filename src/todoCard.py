@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
-import card_store
+import cardStore
 from anims.clock import Tween
 from anims import curves
 from draggable import WindowDrag, ResizeGrip
@@ -176,7 +176,7 @@ class TodoCard(QWidget):
         self.fade = Tween(self, self.onFadeTick)
         shadow.apply(self)
 
-        saved = card_store.load(STORE_KEY, {})
+        saved = cardStore.load(STORE_KEY, {})
         face_w, face_h = saved.get("size", [style.CHAT_SIZE, style.CHAT_SIZE])
         self.resize(face_w + 2 * MARGIN, face_h + 2 * MARGIN)
 
@@ -271,7 +271,7 @@ class TodoCard(QWidget):
         self.save_timer.start(style.CARD_AUTOSAVE_MS)
 
     def save(self):
-        card_store.save(
+        cardStore.save(
             STORE_KEY,
             {"items": self.list.items, "size": [self.width() - 2 * MARGIN, self.height() - 2 * MARGIN]},
         )

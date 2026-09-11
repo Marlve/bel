@@ -2,12 +2,12 @@
 # the prompt bar's exact rectangle, that flies to the top-right corner and
 # becomes a real chat - transcript plus composer, not a one-shot answer.
 # Docked, it also retreats and returns along the right edge (see
-# edge_dock.py / edge_trigger.py) unless it's busy: streaming, focused, or
+# edgeDock.py / edgeTrigger.py) unless it's busy: streaming, focused, or
 # hovered.
 #
 # design.md / claude-chat-flow.md: the card must NOT be a child of the
 # overlay - the ring closes as soon as the prompt is sent, so the card is
-# its own top-level window, and ChatStack is what keeps it alive afterwards.
+# its own top-level window, and ChatSlot is what keeps it alive afterwards.
 
 import html
 import math
@@ -20,11 +20,11 @@ from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTransform
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, QPointF, Signal
 
 import style
-import wedge_config
+import wedgeConfig
 from anims import curves, pose
 from anims.clock import Clock, Tween
-from edge_dock import EdgeDockDriver, OPEN, COMPACT, HIDDEN, TAB
-from edge_trigger import EdgeTrigger
+from edgeDock import EdgeDockDriver, OPEN, COMPACT, HIDDEN, TAB
+from edgeTrigger import EdgeTrigger
 from util import reduced_motion
 
 def _tabFootprint():
@@ -100,7 +100,7 @@ class ChatCard(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)  # never yank focus off whatever the user is doing
 
         self.born = born
-        self.dock_rect = dock_rect  # this card's OPEN slot; ChatStack moves it on restack
+        self.dock_rect = dock_rect  # this card's OPEN geometry, fixed for the card's life
         self.screen = screen
         self.radius = min(born.width(), born.height()) / 2
         self.tilt = 0.0  # degrees, animated separately from the dock slide (claude-chat-flow.md's "260 ms rotation")
@@ -121,7 +121,6 @@ class ChatCard(QWidget):
         self.setContent(False)
 
         self.flight = Clock(self, self.onFlightTick, self.onLanded)
-        self.slide_pending = None  # a restack requested before we've landed
         self.fade = Tween(self, self.onFadeTick, self.onFaded)
         self.tilt_tween = Tween(self, self.onTiltTick)
 
@@ -232,9 +231,6 @@ class ChatCard(QWidget):
         if self.buffered:
             self.write(self.buffered)
             self.buffered = ""
-        if self.slide_pending is not None:
-            self.slideTo(self.slide_pending)
-            self.slide_pending = None
         self.update()
 
     # --- the conversation ---
@@ -242,7 +238,7 @@ class ChatCard(QWidget):
     def send(self, text):
         if self.request is not None or self.action is None:
             return
-        if self.turn_count >= wedge_config.load_chat_context_limit():
+        if self.turn_count >= wedgeConfig.load_chat_context_limit():
             # The session has taken as much context as it's allowed to -
             # this message starts a brand new one rather than resuming.
             self.session_id = None
@@ -354,16 +350,6 @@ class ChatCard(QWidget):
         if self.auto_scroll:
             bar = self.scroll.verticalScrollBar()
             bar.setValue(bar.maximum())
-
-    def slideTo(self, dock_rect):
-        """Move out of a newer card's way."""
-        self.dock_rect = dock_rect
-        if self.edge_driver is None:
-            self.slide_pending = dock_rect  # not landed yet - onLanded() will pick this up
-            return
-        if not self.isVisible() or self.flying():
-            return
-        self.edge_driver.refresh(style.CHAT_RESTACK_MS)
 
     # --- the edge dock ---
 
@@ -548,19 +534,20 @@ class ChatCard(QWidget):
         painter.drawRoundedRect(frame, self.radius, self.radius)
 
 
-class ChatStack:
-    """The open chat cards, newest in the corner and older ones pushed down
-    below it."""
+class ChatSlot:
+    """Holds the one open chat card, if any - only one wedge can ever be
+    assigned Claude at a time (settingsCard.py's collision swap), so there
+    is never more than one live session to keep track of."""
 
     def __init__(self):
-        self.cards = []
+        self.card = None
         self.closing = []  # torn down on the next event loop turn, not mid-signal
 
-    def dockRect(self, slot, screen):
+    def dockRect(self, screen):
         area = screen.availableGeometry()  # work area, not monitor bounds
         return QRectF(
             area.x() + area.width() - style.CHAT_MARGIN - style.CHAT_SIZE,
-            area.y() + style.CHAT_MARGIN + slot * (style.CHAT_SIZE + style.CHAT_GAP),
+            area.y() + style.CHAT_MARGIN,
             style.CHAT_SIZE,
             style.CHAT_SIZE,
         )
@@ -569,37 +556,34 @@ class ChatStack:
         """If a card for this wedge is already open, bring it back into view
         instead of starting another one - the session only resets once that
         card is actually closed (see ChatCard.dismiss/forget below)."""
-        card = next((c for c in self.cards if c.wedge_id == wedge_id), None)
-        if card is None:
+        if self.card is None or self.card.wedge_id != wedge_id:
             return False
-        card.reveal()
+        self.card.reveal()
         return True
 
     def open(self, born, prompt, wedge_id, action):
+        if self.reveal(wedge_id):
+            return self.card  # e.g. a prompt-jump shortcut raced past activateHoveredWedge()'s own check
+
         # The prompt bar was at the cursor, so its rect picks the monitor.
         screen = QApplication.screenAt(born.center().toPoint()) or QApplication.primaryScreen()
+        if self.card is not None:
+            self.forget(self.card)
 
-        card = ChatCard(born, self.dockRect(0, screen), screen)
+        card = ChatCard(born, self.dockRect(screen), screen)
         card.wedge_id = wedge_id
         card.action = action
         card.dismissed.connect(self.forget)
-        self.cards.insert(0, card)
-        while len(self.cards) > style.CHAT_MAX:
-            self.retire(self.cards.pop())  # evict before re-docking, so nothing slides to a slot it loses
-        for slot, older in enumerate(self.cards[1:], start=1):
-            older.slideTo(self.dockRect(slot, screen))
+        self.card = card
 
         card.fly()  # before the request starts, so early chunks buffer instead of landing early
         card.send(prompt)
         return card
 
     def forget(self, card):
-        if card in self.cards:
-            self.cards.remove(card)
+        if self.card is card:
+            self.card = None
         self.retire(card)
-        screen = QApplication.screenAt(card.dock_rect.center().toPoint()) or QApplication.primaryScreen()
-        for slot, remaining in enumerate(self.cards):
-            remaining.slideTo(self.dockRect(slot, screen))
 
     def retire(self, card):
         """Take a card out of service. It stays referenced until the next

@@ -141,15 +141,12 @@ CHAT_HEADER_TRACKING_PERCENT = 114  # 1 + 0.14em, as QFont.PercentageSpacing wan
 
 CHAT_SIZE = 340
 CHAT_MARGIN = 24  # from the work area's edges
-CHAT_GAP = 12  # between stacked cards - 340 + 12 = 352 px per slot
-CHAT_MAX = 3
 CHAT_PADDING = 14
 
 CHAT_FLIGHT_MS = 420
 CHAT_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
 CHAT_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same curve
 CHAT_RADIUS = 10
-CHAT_RESTACK_MS = 220  # an older card getting out of a newer one's way
 CHAT_DISMISS_MS = 140
 CHAT_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
 
@@ -179,7 +176,7 @@ CARD_SHADOW_OFFSET_Y = 8
 CARD_SHADOW_ALPHA = 115  # ~0.45, softened from design.md's result-card 0.55 to fit a modest CARD_SHADOW_MARGIN
 CARD_SHADOW_MARGIN = 28  # extra room a top-level card window needs on every side so its own
 # QGraphicsDropShadowEffect isn't clipped at the window's edge - unlike a shadow on a child
-# widget (prompt_bar.py's, which bleeds into its parent overlay), a top-level window's effect
+# widget (promptBar.py's, which bleeds into its parent overlay), a top-level window's effect
 # can only paint within that window's own pixels.
 
 TODO_ROW_HEIGHT = 36
@@ -192,14 +189,14 @@ TODO_ITEM_FADE_MS = 180  # a ticked row fades out over this long before it's act
 # --- Settings card. A short, fixed list of the ring's non-pinned wedges -
 # label, assigned action, reorder - same CHAT_* surface/shadow as
 # todo/note/chat so it reads as one family. No resize grip: the row count
-# never grows past wedge_config.DEFAULT_OTHER_WEDGES's length. ---
+# never grows past wedgeConfig.DEFAULT_OTHER_WEDGES's length. ---
 
 SETTINGS_WIDTH = CHAT_SIZE
 SETTINGS_HEADER_HEIGHT = 24
 SETTINGS_ROW_HEIGHT = 32
 SETTINGS_ROW_GAP = 8
 SETTINGS_ARROW_SIZE = 22
-SETTINGS_ROWS = 3  # todo, note, claude - wedge_config.DEFAULT_OTHER_WEDGES's length
+SETTINGS_ROWS = 3  # todo, note, claude - wedgeConfig.DEFAULT_OTHER_WEDGES's length
 SETTINGS_CONTEXT_FIELD_WIDTH = 48
 SETTINGS_HEIGHT = (
     SETTINGS_HEADER_HEIGHT
@@ -213,7 +210,7 @@ SETTINGS_HEIGHT = (
 
 # --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, folds
 # to a COMPACT puck, then slides fully HIDDEN; a TAB peeks back out on
-# approach. Kept separate from CHAT_* above since these drive edge_dock.py's
+# approach. Kept separate from CHAT_* above since these drive edgeDock.py's
 # pure state machine, not the card's own paint. ---
 
 DOCK_COMPACT_SIZE = 64

@@ -2,7 +2,7 @@
 # lazily on first pick, then just shown/hidden after that so it keeps
 # whatever position and items the user left it with.
 
-from todo_card import TodoCard
+from todoCard import TodoCard
 
 
 def todo(config):

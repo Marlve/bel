@@ -1,6 +1,6 @@
 # Picking the todo/note wedges end-to-end through the real PieMenu wiring
 # (test_pie_menu_flow.py stubs every wedge's action, so it never exercises
-# actions/todo_action.py or note_action.py themselves).
+# actions/todoAction.py or noteAction.py themselves).
 #
 # Asserts on the *new* card that appears after a pick, not an absolute count -
 # other test files construct and deleteLater() their own TodoCard/NoteCard
@@ -18,11 +18,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import card_store
-from pie_menu import PieMenu, OPEN
-from todo_card import TodoCard
-from note_card import NoteCard
-from settings_card import SettingsCard
+import cardStore
+from pieMenu import PieMenu, OPEN
+from todoCard import TodoCard
+from noteCard import NoteCard
+from settingsCard import SettingsCard
 
 TODO_WEDGE = 0
 NOTE_WEDGE = 1
@@ -36,8 +36,8 @@ class WedgeToggleTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = card_store.STORE_PATH
-        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.menu = PieMenu()
         self.menu.motion = False
 
@@ -49,7 +49,7 @@ class WedgeToggleTests(unittest.TestCase):
         self.menu.close()
         self.menu.deleteLater()
         QApplication.processEvents()
-        card_store.STORE_PATH = self.original_path
+        cardStore.STORE_PATH = self.original_path
         self.tmp.cleanup()
 
     def pickWedge(self, index):

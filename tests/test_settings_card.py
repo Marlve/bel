@@ -14,9 +14,9 @@ from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
-import card_store
-import wedge_config
-from settings_card import SettingsCard
+import cardStore
+import wedgeConfig
+from settingsCard import SettingsCard
 
 
 def key(code):
@@ -30,15 +30,15 @@ class SettingsCardTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = card_store.STORE_PATH
-        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.changes = []
         self.card = SettingsCard(on_change=self.changes.append)
 
     def tearDown(self):
         self.card.close()
         self.card.deleteLater()
-        card_store.STORE_PATH = self.original_path
+        cardStore.STORE_PATH = self.original_path
         self.tmp.cleanup()
 
     def test_starts_with_the_default_rows_in_order(self):
@@ -49,7 +49,7 @@ class SettingsCardTests(unittest.TestCase):
         self.card.rows[0].label_field.setText("Tasks")
         self.card.save()
         self.assertEqual(self.changes[-1][0], {"id": "todo", "label": "Tasks"})
-        self.assertEqual(card_store.load("wedges", None)[0], {"id": "todo", "label": "Tasks"})
+        self.assertEqual(cardStore.load("wedges", None)[0], {"id": "todo", "label": "Tasks"})
 
     def test_blank_label_falls_back_to_untitled_rather_than_an_empty_wedge(self):
         self.card.rows[0].label_field.setText("   ")
@@ -85,20 +85,20 @@ class SettingsCardTests(unittest.TestCase):
         self.card.show()  # hideEvent only fires when a visible widget is hidden
         self.card.rows[0].label_field.setText("Tasks")  # only schedules a debounced save
         self.card.hide()
-        self.assertEqual(card_store.load("wedges", None)[0]["label"], "Tasks")
+        self.assertEqual(cardStore.load("wedges", None)[0]["label"], "Tasks")
 
     def test_context_limit_starts_at_the_default(self):
-        self.assertEqual(self.card.context_limit_field.text(), str(wedge_config.DEFAULT_CHAT_CONTEXT_LIMIT))
+        self.assertEqual(self.card.context_limit_field.text(), str(wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT))
 
     def test_editing_the_context_limit_saves_it(self):
         self.card.context_limit_field.setText("2")
         self.card.save()
-        self.assertEqual(wedge_config.load_chat_context_limit(), 2)
+        self.assertEqual(wedgeConfig.load_chat_context_limit(), 2)
 
     def test_an_emptied_context_limit_falls_back_to_the_default_rather_than_zero(self):
         self.card.context_limit_field.setText("")
         self.card.save()
-        self.assertEqual(wedge_config.load_chat_context_limit(), wedge_config.DEFAULT_CHAT_CONTEXT_LIMIT)
+        self.assertEqual(wedgeConfig.load_chat_context_limit(), wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT)
 
 
 if __name__ == "__main__":

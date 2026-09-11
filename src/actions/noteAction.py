@@ -1,6 +1,6 @@
-# Same toggle shape as the todo wedge - see todo_action.py.
+# Same toggle shape as the todo wedge - see todoAction.py.
 
-from note_card import NoteCard
+from noteCard import NoteCard
 
 
 def note(config):

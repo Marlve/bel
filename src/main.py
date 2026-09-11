@@ -3,7 +3,7 @@
 import sys
 from PySide6.QtWidgets import QApplication
 
-from pie_menu import PieMenu
+from pieMenu import PieMenu
 from hotkey import HotkeyListener
 
 PIE_MENU_HOTKEY = "ctrl+shift+space"

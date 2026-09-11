@@ -12,8 +12,8 @@ from PySide6.QtCore import Qt, QEvent, QPoint
 from PySide6.QtGui import QKeyEvent
 
 import style
-import card_store
-from note_card import NoteCard, MARGIN
+import cardStore
+from noteCard import NoteCard, MARGIN
 
 
 def key(code):
@@ -27,15 +27,15 @@ class NoteCardTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = card_store.STORE_PATH
-        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.card = NoteCard()
 
     def tearDown(self):
         self.card.close()
         self.card.deleteLater()
         QApplication.processEvents()  # actually run the deferred delete, or it outlives this test file
-        card_store.STORE_PATH = self.original_path
+        cardStore.STORE_PATH = self.original_path
         self.tmp.cleanup()
 
     def test_starts_empty(self):
@@ -46,12 +46,12 @@ class NoteCardTests(unittest.TestCase):
         self.card.resize(400, 385)
         self.card.save()
 
-        saved = card_store.load("note", None)
+        saved = cardStore.load("note", None)
         self.assertEqual(saved["text"], "pick up dry cleaning")
         self.assertEqual(saved["size"], [400 - 2 * MARGIN, 385 - 2 * MARGIN])
 
     def test_a_fresh_card_picks_up_previously_saved_text_and_size(self):
-        card_store.save("note", {"text": "remember this", "size": [300, 260]})
+        cardStore.save("note", {"text": "remember this", "size": [300, 260]})
         card = NoteCard()
         try:
             self.assertEqual(card.body.toPlainText(), "remember this")
@@ -91,7 +91,7 @@ class NoteCardTests(unittest.TestCase):
         self.card.show()  # hideEvent only fires when a visible widget is hidden
         self.card.body.setPlainText("last-minute note")  # schedules a debounced save
         self.card.hide()
-        saved = card_store.load("note", None)
+        saved = cardStore.load("note", None)
         self.assertEqual(saved["text"], "last-minute note")
 
     def test_typing_in_the_body_never_moves_the_window(self):

@@ -101,7 +101,7 @@ Born as the prompt bar's **exact rectangle at its exact position** the frame the
 - Scrim clears in parallel and finishes first — the desktop is interactive before the card lands
 - Content streams only **after** geometry is at rest; lines fade in on arrival, 200 ms each; caret at the end of the last line, gone on completion
 - Fixed frame with internal scroll — the square never grows to fit. Top/bottom fades when scrollable.
-- Stacking: a second prompt pushes the old card down 352 px (340 + 12), max 3, oldest closes
+- Not stackable: only one card is ever live (one wedge can hold a Claude session at a time); a second prompt for the same wedge reveals the existing card instead of opening another. Earlier drafts of this doc described push-down stacking up to 3 cards - that was removed from the code and is no longer the design.
 - No auto-hide. Dismiss slides 24 px right and fades over 140 ms — exits toward the edge it rested against.
 - Padding 18 px; header = 14 px mark + label + close; prompt echo 1 line elided at 11 px; body 13/20 px
 - Shadow `0 22 54 rgba(0,0,0,.55)`

@@ -1,7 +1,7 @@
 # Settings (wedge always pinned near the bottom of the ring, per
-# wedge_config.full_config) - lets you relabel, reorder, or reassign the
+# wedgeConfig.full_config) - lets you relabel, reorder, or reassign the
 # ring's other wedges. Same toggled-square shape as note/todo (see
-# note_card.py): built lazily on first pick, then just shown/hidden.
+# noteCard.py): built lazily on first pick, then just shown/hidden.
 
 from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QApplication
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor, QIntValidator
@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
-import wedge_config
+import wedgeConfig
 from draggable import WindowDrag
 
 MARGIN = style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
@@ -32,7 +32,7 @@ class SettingsRow(QWidget):
 
         self.action_combo = QComboBox(self)
         self.action_combo.setStyleSheet(style.settings_combo_stylesheet())
-        for action_id, display in wedge_config.ACTION_CHOICES:
+        for action_id, display in wedgeConfig.ACTION_CHOICES:
             self.action_combo.addItem(display, action_id)
         self.action_combo.setCurrentIndex(self.action_combo.findData(entry["id"]))
         self.action_combo.currentIndexChanged.connect(lambda: card.onActionChanged(self))
@@ -125,7 +125,7 @@ class SettingsCard(QWidget):
         self.rows_layout = QVBoxLayout()
         self.rows_layout.setSpacing(style.SETTINGS_ROW_GAP)
         self.rows = []
-        self.rebuildRows(wedge_config.load_other_wedges())
+        self.rebuildRows(wedgeConfig.load_other_wedges())
 
         self.context_limit_label = QLabel("Claude context limit", self)
         self.context_limit_label.setStyleSheet(
@@ -133,7 +133,7 @@ class SettingsCard(QWidget):
             f"font-family: {style.FONT_FAMILY}; font-size: {style.CHAT_BODY_SIZE}px;"
         )
 
-        self.context_limit_field = QLineEdit(str(wedge_config.load_chat_context_limit()), self)
+        self.context_limit_field = QLineEdit(str(wedgeConfig.load_chat_context_limit()), self)
         self.context_limit_field.setValidator(QIntValidator(CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, self))
         self.context_limit_field.setFixedWidth(style.SETTINGS_CONTEXT_FIELD_WIDTH)
         self.context_limit_field.setStyleSheet(style.settings_field_stylesheet())
@@ -195,14 +195,14 @@ class SettingsCard(QWidget):
     def save(self):
         self.save_timer.stop()
         entries = self.currentEntries()
-        wedge_config.save_other_wedges(entries)
-        wedge_config.save_chat_context_limit(self.contextLimit())
+        wedgeConfig.save_other_wedges(entries)
+        wedgeConfig.save_chat_context_limit(self.contextLimit())
         if self.on_change is not None:
             self.on_change(entries)
 
     def contextLimit(self):
         text = self.context_limit_field.text().strip()
-        return int(text) if text.isdigit() and int(text) >= CONTEXT_LIMIT_MIN else wedge_config.DEFAULT_CHAT_CONTEXT_LIMIT
+        return int(text) if text.isdigit() and int(text) >= CONTEXT_LIMIT_MIN else wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT
 
     def hideEvent(self, event):
         self.save_timer.stop()

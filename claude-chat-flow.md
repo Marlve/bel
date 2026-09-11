@@ -114,11 +114,11 @@ The tab arms at 180 px and disarms at 260 px. Without that gap, a cursor resting
 
 **What not to animate.** Font size or text metrics (reflows and re-hints every frame — place text only at rest). `QPainterPath` interpolation between the wedge and the pill. `windowOpacity` during the morph, which washes out the cross-fade; use it for the final fade-out only. `QGraphicsOpacityEffect` is fine on the small prompt frame but forces an offscreen pixmap — never apply it to the whole overlay.
 
-## Dismissal and stacking
+## Dismissal, and no stacking
 
 No auto-close on something the user asked for and may still be reading. Dismiss via the `✕`, or Escape while the card holds focus. On dismiss it slides 24 px right and fades over 140 ms, exiting toward the edge it rested against.
 
-A second prompt while a card is open pushes the existing card **down 352 px** (340 + 12) rather than replacing it, up to three cards; past that the oldest closes.
+Only one card is ever live - one wedge holds a Claude session at a time. A second prompt for that wedge reveals the existing card instead of opening another. This doc previously described push-down stacking up to three cards; that was removed from the code (`ChatStack` became `ChatSlot`, holding a single card) and is no longer the design.
 
 ## Deliverables
 

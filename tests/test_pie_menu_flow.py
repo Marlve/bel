@@ -11,12 +11,12 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
-import card_store
-import wedge_config
-from pie_menu import PieMenu, HIDDEN, OPEN, PROMPTING
+import cardStore
+import wedgeConfig
+from pieMenu import PieMenu, HIDDEN, OPEN, PROMPTING
 
-PROMPT_WEDGE = 3  # the one wedge_config's defaults give a placeholder (Claude)
-SETTINGS_WEDGE = 2  # wedge_config.bottom_pin_index(4) - where Settings lands by default
+PROMPT_WEDGE = 3  # the one wedgeConfig's defaults give a placeholder (Claude)
+SETTINGS_WEDGE = 2  # wedgeConfig.bottom_pin_index(4) - where Settings lands by default
 
 
 def key(code, text=""):
@@ -60,8 +60,8 @@ class PieMenuFlowTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = card_store.STORE_PATH
-        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.menu = PieMenu()
         self.menu.motion = False
         self.calls = []
@@ -69,12 +69,13 @@ class PieMenuFlowTests(unittest.TestCase):
             wedge.action = StubAction(index, self.calls)
 
     def tearDown(self):
-        for card in list(self.menu.cards.cards):
+        if self.menu.chat.card is not None:
+            self.menu.chat.card.close()
+        for card in list(self.menu.chat.closing):
             card.close()
-        self.menu.cards.cards.clear()
         self.menu.close()
         self.menu.deleteLater()
-        card_store.STORE_PATH = self.original_path
+        cardStore.STORE_PATH = self.original_path
         self.tmp.cleanup()
 
     def openMenu(self):
@@ -150,8 +151,8 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.prompt_bar.field.setText("what is on my plate today")
         self.menu.prompt_bar.submit()
 
-        self.assertEqual(len(self.menu.cards.cards), 1)
-        card = self.menu.cards.cards[0]
+        card = self.menu.chat.card
+        self.assertIsNotNone(card)
         self.assertEqual(card.turns[0]["text"], "what is on my plate today")
         self.assertEqual(card.born, born)
         self.assertEqual(card.dock_rect.size().toSize().width(), 340)
@@ -159,16 +160,9 @@ class PieMenuFlowTests(unittest.TestCase):
     def test_a_card_docks_against_the_top_right_of_the_work_area(self):
         screen = QApplication.primaryScreen()
         area = screen.availableGeometry()
-        dock = self.menu.cards.dockRect(0, screen)
+        dock = self.menu.chat.dockRect(screen)
         self.assertEqual(dock.top(), area.y() + 24)
         self.assertEqual(dock.right(), area.x() + area.width() - 24)
-
-    def test_stacked_cards_sit_below_the_newest(self):
-        screen = QApplication.primaryScreen()
-        first = self.menu.cards.dockRect(0, screen)
-        second = self.menu.cards.dockRect(1, screen)
-        self.assertEqual(second.top() - first.top(), 352)
-        self.assertEqual(second.left(), first.left())
 
     def ask(self, prompt):
         """Open the ring and send `prompt` through the prompt bar - only
@@ -180,7 +174,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.phase, PROMPTING)
         self.menu.prompt_bar.field.setText(prompt)
         self.menu.prompt_bar.submit()
-        card = self.menu.cards.cards[0]
+        card = self.menu.chat.card
         card.flight.stop()
         card.onLanded()
         return card
@@ -198,7 +192,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.prompt_bar.field.setText("hello")
         self.menu.prompt_bar.submit()
 
-        card = self.menu.cards.cards[0]
+        card = self.menu.chat.card
         card.request.chunk.emit("in flight")
         self.assertEqual(card.turns[-1]["text"], "")
         card.flight.stop()
@@ -233,7 +227,7 @@ class PieMenuFlowTests(unittest.TestCase):
         first = self.ask("first question")
         self.reopenClaude()
         self.assertEqual(self.menu.phase, HIDDEN)
-        self.assertEqual(self.menu.cards.cards, [first])
+        self.assertIs(self.menu.chat.card, first)
         self.assertEqual(self.calls, [(PROMPT_WEDGE, ("first question",))])  # no second send
 
     def test_dismissing_then_repicking_claude_starts_a_fresh_session(self):
@@ -241,7 +235,7 @@ class PieMenuFlowTests(unittest.TestCase):
         first.dismiss()
         first.fade.stop()
         first.onFaded()
-        self.assertEqual(self.menu.cards.cards, [])
+        self.assertIsNone(self.menu.chat.card)
 
         self.openMenu()
         self.menu.setHovered(PROMPT_WEDGE)
@@ -249,7 +243,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.phase, PROMPTING)  # the old card is gone, so it asks again
 
     def test_the_session_resets_once_the_context_cap_is_reached(self):
-        cap = wedge_config.DEFAULT_CHAT_CONTEXT_LIMIT
+        cap = wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT
         card = self.ask("q1")
         card.request.session_started.emit("session-a")
         card.request.finished.emit()
@@ -266,7 +260,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertIsNone(card.session_id)
 
     def test_a_lower_context_cap_resets_sooner(self):
-        wedge_config.save_chat_context_limit(1)
+        wedgeConfig.save_chat_context_limit(1)
         card = self.ask("q1")
         card.request.session_started.emit("session-a")
         card.request.finished.emit()
@@ -274,30 +268,27 @@ class PieMenuFlowTests(unittest.TestCase):
         card.send("q2")
         self.assertIsNone(card.session_id)
 
-    # The stack itself is exercised directly below, bypassing the ring - the
-    # only wedge with a placeholder (Claude) is now a singleton per
-    # reopenClaude() above, so more than one live card only ever happens
-    # across distinct wedges.
-    def test_a_fourth_card_evicts_the_oldest(self):
+    # ChatSlot itself is exercised directly below, bypassing the ring - only
+    # one wedge can ever hold Claude at a time, but this drives the slot with
+    # two distinct wedge ids to confirm it never keeps more than one card
+    # live regardless of which wedge opened it.
+    def test_opening_a_different_wedges_card_replaces_the_current_one(self):
         rect = self.menu.prompt_bar.screenRect()
         action = self.menu.wedges[PROMPT_WEDGE].action
-        for number in range(4):
-            self.menu.cards.open(rect, f"question {number}", f"wedge-{number}", action)
-        self.assertEqual(
-            [card.turns[0]["text"] for card in self.menu.cards.cards],
-            ["question 3", "question 2", "question 1"],
-        )
+        first = self.menu.chat.open(rect, "first", "wedge-a", action)
+        second = self.menu.chat.open(rect, "second", "wedge-b", action)
+        self.assertIsNot(first, second)
+        self.assertIs(self.menu.chat.card, second)
 
-    def test_dismissing_a_card_takes_it_out_of_the_stack(self):
+    def test_dismissing_the_open_card_clears_the_slot(self):
         rect = self.menu.prompt_bar.screenRect()
         action = self.menu.wedges[PROMPT_WEDGE].action
-        first = self.menu.cards.open(rect, "first", "wedge-a", action)
-        second = self.menu.cards.open(rect, "second", "wedge-b", action)
-        second.dismiss()
-        second.fade.stop()
-        second.onFaded()
-        self.assertEqual(self.menu.cards.cards, [first])
-        self.assertIsNone(second.request)
+        card = self.menu.chat.open(rect, "first", "wedge-a", action)
+        card.dismiss()
+        card.fade.stop()
+        card.onFaded()
+        self.assertIsNone(self.menu.chat.card)
+        self.assertIsNone(card.request)
 
     def test_an_empty_prompt_is_rejected_rather_than_sent(self):
         self.openMenu()
@@ -349,7 +340,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.hovered_wedge, SETTINGS_WEDGE)
 
     def test_a_cursor_past_the_ring_selects_nothing(self):
-        from pie_menu import HIT_RADIUS, wedge_index
+        from pieMenu import HIT_RADIUS, wedge_index
 
         self.assertIsNone(wedge_index(0, -(HIT_RADIUS + 1), 4, radius=HIT_RADIUS))
 

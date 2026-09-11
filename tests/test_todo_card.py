@@ -12,8 +12,8 @@ from PySide6.QtCore import Qt, QEvent, QPoint
 from PySide6.QtGui import QKeyEvent
 
 import style
-import card_store
-from todo_card import TodoCard, TodoList, MARGIN
+import cardStore
+from todoCard import TodoCard, TodoList, MARGIN
 
 
 def key(code):
@@ -99,15 +99,15 @@ class TodoCardTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = card_store.STORE_PATH
-        card_store.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.card = TodoCard()
 
     def tearDown(self):
         self.card.close()
         self.card.deleteLater()
         QApplication.processEvents()  # actually run the deferred delete, or it outlives this test file
-        card_store.STORE_PATH = self.original_path
+        cardStore.STORE_PATH = self.original_path
         self.tmp.cleanup()
 
     def test_starts_with_no_items(self):
@@ -130,12 +130,12 @@ class TodoCardTests(unittest.TestCase):
         self.card.resize(400, 385)
         self.card.save()
 
-        saved = card_store.load("todo", None)
+        saved = cardStore.load("todo", None)
         self.assertEqual(saved["items"], [{"text": "water plants", "done": False}])
         self.assertEqual(saved["size"], [400 - 2 * MARGIN, 385 - 2 * MARGIN])
 
     def test_a_fresh_card_picks_up_previously_saved_items_and_size(self):
-        card_store.save("todo", {"items": [{"text": "old item", "done": True}], "size": [300, 260]})
+        cardStore.save("todo", {"items": [{"text": "old item", "done": True}], "size": [300, 260]})
         card = TodoCard()
         try:
             self.assertEqual(card.list.items, [{"text": "old item", "done": True}])
@@ -176,7 +176,7 @@ class TodoCardTests(unittest.TestCase):
         self.card.add_field.setText("urgent")
         self.card.addItem()  # schedules a debounced save, not yet written
         self.card.hide()
-        saved = card_store.load("todo", None)
+        saved = cardStore.load("todo", None)
         self.assertEqual(saved["items"], [{"text": "urgent", "done": False}])
 
 

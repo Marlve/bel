@@ -1,5 +1,5 @@
 # Registry of wedge action factories, keyed by a stable id. Each factory
-# takes a wedge's config dict and returns a callable - pie_menu.py only ever
+# takes a wedge's config dict and returns a callable - pieMenu.py only ever
 # calls that callable, it never touches these classes or configs directly.
 # Add a new action by writing it in its own module here, then adding one
 # entry below.
@@ -12,10 +12,10 @@
 # `session_id` kwarg and emits `session_started(str)` once per request, so a
 # card can resume the same conversation on its next send.
 
-from actions.claude_action import ClaudeAction, DEFAULT_PROMPT
-from actions.todo_action import todo
-from actions.note_action import note
-from actions.settings_action import settings
+from actions.claudeAction import ClaudeAction, DEFAULT_PROMPT
+from actions.todoAction import todo
+from actions.noteAction import note
+from actions.settingsAction import settings
 
 ACTIONS = {
     "claude": lambda config: ClaudeAction(prompt=config.get("prompt", DEFAULT_PROMPT)),

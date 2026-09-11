@@ -1,18 +1,18 @@
 # The ring's editable wedges - the ones the Settings card lets you relabel,
 # reorder, or reassign - plus the placement rule for the Settings wedge
-# itself. Kept out of pie_menu.py so settings_card.py can read the same
-# defaults and action list without importing pie_menu, which imports the
+# itself. Kept out of pieMenu.py so settingsCard.py can read the same
+# defaults and action list without importing pieMenu, which imports the
 # actions registry, which is what builds the Settings wedge in the first
-# place - that path back to pie_menu would be circular.
+# place - that path back to pieMenu would be circular.
 
-import card_store
+import cardStore
 
 STORE_KEY = "wedges"
 
 # How many messages a Claude chat card lets its session accumulate before
 # starting over fresh - not a per-wedge field, but kept here alongside the
-# other settings-editable config for the same reason (chat_card.py needs it
-# without importing pie_menu/settings_card).
+# other settings-editable config for the same reason (chatCard.py needs it
+# without importing pieMenu/settingsCard).
 CHAT_CONTEXT_LIMIT_KEY = "claude_context_limit"
 DEFAULT_CHAT_CONTEXT_LIMIT = 4
 
@@ -37,25 +37,25 @@ SETTINGS_ENTRY = {"id": "settings", "label": "Settings"}
 
 
 def load_other_wedges():
-    saved = card_store.load(STORE_KEY, None)
+    saved = cardStore.load(STORE_KEY, None)
     return saved if saved else [dict(entry) for entry in DEFAULT_OTHER_WEDGES]
 
 
 def save_other_wedges(entries):
-    card_store.save(STORE_KEY, entries)
+    cardStore.save(STORE_KEY, entries)
 
 
 def load_chat_context_limit():
-    return card_store.load(CHAT_CONTEXT_LIMIT_KEY, DEFAULT_CHAT_CONTEXT_LIMIT)
+    return cardStore.load(CHAT_CONTEXT_LIMIT_KEY, DEFAULT_CHAT_CONTEXT_LIMIT)
 
 
 def save_chat_context_limit(limit):
-    card_store.save(CHAT_CONTEXT_LIMIT_KEY, limit)
+    cardStore.save(CHAT_CONTEXT_LIMIT_KEY, limit)
 
 
 def bottom_pin_index(count):
     """Index closest to compass-down (180°) for a ring of this many wedges -
-    see wedge_index() in pie_menu.py for the same 0=up, clockwise
+    see wedge_index() in pieMenu.py for the same 0=up, clockwise
     convention. Exact whenever count is even; for an odd count no wedge
     sits exactly at 180° so this picks whichever of the two neighbors is
     nearer (ties round to the lower index)."""
@@ -74,5 +74,5 @@ def full_config(other_entries):
 
 def resolve(entries):
     """Editable entries (just id + label) with each action's own extra
-    config merged in, ready for pie_menu.build_wedges()."""
+    config merged in, ready for pieMenu.build_wedges()."""
     return [{**entry, **ACTION_EXTRAS.get(entry["id"], {})} for entry in entries]
