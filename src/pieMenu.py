@@ -8,7 +8,6 @@ from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadial
 from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
-import wedgeConfig
 from anims import pose
 from overlay import OverlayWindow
 from promptFlow import PromptFlow
@@ -16,7 +15,7 @@ from claudeChatCard import ChatSlot
 from pieMenuState import (
     PieMenuState,
     wedge_index,
-    cycle_wedge,
+    compass_wedge,
     INNER_RADIUS,
     HIT_RADIUS,
     HIDDEN,
@@ -40,7 +39,7 @@ PAINT_REACH = (
     (style.HOVER_GROW + style.HOVER_PUSH + style.SELECT_PUSH) * style.RING_RADIUS + style.GLOW_WIDTH / 2
 ) * OPEN_PEAK_SCALE * style.SELECT_SCALE
 
-CYCLE_STEP_BY_KEY = {Qt.Key_Right: 1, Qt.Key_Left: -1}
+ARROW_ANGLE_BY_KEY = {Qt.Key_Up: 0, Qt.Key_Right: 90, Qt.Key_Down: 180, Qt.Key_Left: 270}
 ACTIVATE_WIDGET_KEYS = (Qt.Key_Return, Qt.Key_Enter)
 
 
@@ -304,12 +303,8 @@ class PieMenu(OverlayWindow):
             self.beginClose()
         elif key in ACTIVATE_WIDGET_KEYS:
             self.activateHoveredWedge()
-        elif key in CYCLE_STEP_BY_KEY:
-            self.setHovered(cycle_wedge(self.state.hovered_wedge, len(self.state.wedges), CYCLE_STEP_BY_KEY[key]))
-        elif key == Qt.Key_Up:
-            self.setHovered(0)  # wedge 0 is compass-up by wedge_index()'s own convention
-        elif key == Qt.Key_Down:
-            self.setHovered(wedgeConfig.bottom_pin_index(len(self.state.wedges)))
+        elif key in ARROW_ANGLE_BY_KEY:
+            self.setHovered(compass_wedge(len(self.state.wedges), ARROW_ANGLE_BY_KEY[key]))
         elif self.isTyping(event):
             self.jumpToPrompt(event.text())
 

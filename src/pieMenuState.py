@@ -44,6 +44,15 @@ def wedge_index(dx, dy, count, deadzone=0, radius=None):
     return int(shifted // wedge_width)
 
 
+def compass_wedge(count, angle):
+    """Index of the wedge nearest compass angle `angle` (0=up, 90=right,
+    clockwise) for a ring of this many wedges - same convention and rounding
+    as wedge_index()."""
+    wedge_width = 360 / count
+    shifted = (angle + wedge_width / 2) % 360
+    return int(shifted // wedge_width)
+
+
 def cycle_wedge(current, count, step):
     """Index of the wedge step (+1 = right/next, -1 = left/previous) away
     from current, wrapping around. current=None starts from just before the

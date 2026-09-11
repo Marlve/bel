@@ -323,11 +323,17 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.phase, PROMPTING)
         self.assertEqual(self.menu.prompt_bar.field.text(), "w")
 
-    def test_arrow_keys_still_cycle_rather_than_jumping_into_the_prompt(self):
+    def test_right_key_jumps_straight_to_the_right_wedge(self):
         self.openMenu()
         self.menu.keyPressEvent(key(Qt.Key_Right))
         self.assertEqual(self.menu.phase, OPEN)
-        self.assertEqual(self.menu.hovered_wedge, 0)
+        self.assertEqual(self.menu.hovered_wedge, 1)
+
+    def test_left_key_jumps_straight_to_the_left_wedge_without_opening_the_prompt(self):
+        self.openMenu()
+        self.menu.keyPressEvent(key(Qt.Key_Left))
+        self.assertEqual(self.menu.phase, OPEN)
+        self.assertEqual(self.menu.hovered_wedge, PROMPT_WEDGE)
 
     def test_up_key_jumps_straight_to_the_top_wedge(self):
         self.openMenu()
