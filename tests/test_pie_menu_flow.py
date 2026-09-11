@@ -364,6 +364,21 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.phase, HIDDEN)
         self.assertEqual(self.calls, [])
 
+    def test_alt_tabbing_away_closes_the_ring(self):
+        # Losing OS focus (e.g. Alt+Tab) leaves the ring on top but no longer
+        # able to receive Escape - it used to just sit there, stuck open.
+        self.openMenu()
+        self.menu.changeEvent(QEvent(QEvent.WindowDeactivate))
+        self.assertEqual(self.menu.phase, HIDDEN)
+
+    def test_alt_tabbing_away_from_the_prompt_cancels_it_without_running(self):
+        self.openMenu()
+        self.menu.setHovered(PROMPT_WEDGE)
+        self.menu.activateHoveredWedge()
+        self.menu.changeEvent(QEvent(QEvent.WindowDeactivate))
+        self.assertEqual(self.menu.phase, HIDDEN)
+        self.assertEqual(self.calls, [])
+
     def test_typing_over_the_ring_jumps_into_the_prompt(self):
         self.openMenu()
         self.menu.keyPressEvent(key(Qt.Key_W, "w"))

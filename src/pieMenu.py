@@ -5,7 +5,7 @@
 
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
 
 import style
 from anims import pose
@@ -315,6 +315,19 @@ class PieMenu(QWidget):
             self.setHovered(compass_wedge(len(self.state.wedges), ARROW_ANGLE_BY_KEY[key]))
         elif self.isTyping(event):
             self.jumpToPrompt(event.text())
+
+    def changeEvent(self, event):
+        """Alt+Tabbing away leaves the ring on top but no longer able to
+        receive keystrokes (see util.force_foreground) - Escape would
+        otherwise look like it stopped working. Treat losing OS focus the
+        same as the hotkey firing again: get whatever's up out of the way."""
+        super().changeEvent(event)
+        if event.type() != QEvent.WindowDeactivate or self.state.phase in (HIDDEN, CLOSING):
+            return
+        if self.state.phase in (HANDOFF, PROMPTING):
+            self.cancelPrompt()
+        else:
+            self.beginClose()
 
     def isTyping(self, event):
         text = event.text()
