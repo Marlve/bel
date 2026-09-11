@@ -208,26 +208,23 @@ SETTINGS_HEIGHT = (
 )
 
 
-# --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, folds
-# to a COMPACT puck, then slides fully HIDDEN; a TAB peeks back out on
-# approach. Kept separate from CHAT_* above since these drive
-# claudeEdgeDockState.py's pure state machine, not the card's own paint. ---
+# --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, or
+# HIDDEN (reached only by an explicit minimize, never automatically); a TAB
+# peeks back out on approach while HIDDEN. Kept separate from CHAT_* above
+# since these drive claudeEdgeDockState.py's pure state machine, not the
+# card's own paint. ---
 
-DOCK_COMPACT_SIZE = 64
+DOCK_COMPACT_SIZE = 64  # HIDDEN/TAB's puck footprint
 DOCK_TAB_VISIBLE_PX = 26  # how much of the puck still shows in TAB
 DOCK_TAB_ROTATION_DEG = -9.0  # float: must match self.tilt's type or QVariantAnimation won't interpolate
 DOCK_TAB_SLIDE_MS = 300
 DOCK_TAB_ROTATE_MS = 260
 
-DOCK_COMPACT_MS = 300  # OPEN -> COMPACT, folding in place
-DOCK_COMPACT_TO_HIDE_DELAY_MS = 220  # pause between folding and sliding off
-DOCK_HIDE_MS = 300  # COMPACT -> HIDDEN, sliding fully past the edge
+DOCK_OPEN_MS = 300  # animating to OPEN, from HIDDEN or TAB
+DOCK_HIDE_MS = 300  # OPEN -> HIDDEN, sliding fully past the edge
 
 DOCK_ARM_PX = 180  # cursor closer than this to the right edge arms the tab
 DOCK_DISARM_PX = 260  # and must retreat past this to disarm - the hysteresis gap
-
-DOCK_IDLE_MS = 6_000  # before the compact step, with nothing else going on
-DOCK_LEAVE_MS = 2_500  # after the cursor leaves an open card
 
 DOCK_TRIGGER_WIDTH = 180  # EdgeTrigger's width along the right edge
 

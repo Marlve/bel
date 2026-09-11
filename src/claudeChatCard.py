@@ -1,9 +1,9 @@
 # Where a prompt's answer lands, per claude-chat-flow.md: a square born as
 # the prompt bar's exact rectangle, that flies to the top-right corner and
 # becomes a real chat - transcript plus composer, not a one-shot answer.
-# Docked, it also retreats and returns along the right edge (see
+# Docked, it stays fully open until explicitly minimized (see
 # claudeEdgeDockState.py / claudeEdgeDockAnimation.py / claudeEdgeTrigger.py)
-# unless it's busy: streaming, focused, or hovered.
+# - no automatic retreat - and a TAB peek lets it be reopened once hidden.
 #
 # design.md / claude-chat-flow.md: the card must NOT be a child of the
 # overlay - the ring closes as soon as the prompt is sent, so the card is
@@ -23,7 +23,7 @@ import style
 import wedgeConfig
 from anims import curves, pose
 from anims.clock import Clock, Tween
-from claudeEdgeDockState import OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockState import OPEN, HIDDEN, TAB
 from claudeEdgeDockAnimation import EdgeDockDriver
 from claudeEdgeTrigger import EdgeTrigger
 from util import reduced_motion
@@ -52,8 +52,6 @@ class Composer(QPlainTextEdit):
     field rather than closing the card."""
 
     submitted = Signal(str)
-    focused = Signal()
-    blurred = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,14 +79,6 @@ class Composer(QPlainTextEdit):
                 self.clear()
             return
         super().keyPressEvent(event)
-
-    def focusInEvent(self, event):
-        super().focusInEvent(event)
-        self.focused.emit()
-
-    def focusOutEvent(self, event):
-        super().focusOutEvent(event)
-        self.blurred.emit()
 
 
 class ChatCard(QWidget):
@@ -170,12 +160,10 @@ class ChatCard(QWidget):
 
         self.composer = Composer(self)
         self.composer.submitted.connect(self.send)
-        self.composer.focused.connect(self.onComposerFocused)
-        self.composer.blurred.connect(self.onComposerBlurred)
 
         root = QVBoxLayout(self)
         # This card's size is managed entirely by the dock state machine
-        # (COMPACT/HIDDEN 64x64, TAB's puck, OPEN 340x340), not by Qt - left
+        # (HIDDEN 64x64, TAB's puck, OPEN 340x340), not by Qt - left
         # at Qt's default, activating the layout floors the widget's
         # minimumSize at whatever's visible *at that moment*, and it never
         # shrinks back down again even once content is hidden for a smaller
@@ -192,7 +180,7 @@ class ChatCard(QWidget):
             widget.setVisible(visible)
 
     def setCompactVisual(self, compact):
-        """COMPACT, TAB and HIDDEN show the bare frame only."""
+        """TAB and HIDDEN show the bare frame only."""
         for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(not compact)
 
@@ -225,8 +213,6 @@ class ChatCard(QWidget):
             self, self.geometryFor, self.onDockMoved, self.onDockStateChanged, self.motion,
             on_landed=self.onDockLanded,
         )
-        if self.request is not None:
-            self.edge_driver.setStreaming(True)
         self.edge_trigger = EdgeTrigger(self.onEdgeDistance, self.screen)
 
         if self.buffered:
@@ -254,8 +240,6 @@ class ChatCard(QWidget):
         self.request.chunk.connect(self.onChunk)
         self.request.session_started.connect(self.onSessionStarted)
         self.request.finished.connect(self.onStreamFinished)
-        if self.edge_driver:
-            self.edge_driver.setStreaming(True)
 
     def onSessionStarted(self, session_id):
         self.session_id = session_id
@@ -280,8 +264,6 @@ class ChatCard(QWidget):
         self.streaming_label = None
         self.composer.setReadOnly(False)
         self.unwire()
-        if self.edge_driver:
-            self.edge_driver.setStreaming(False)
 
     def unwire(self):
         if self.request is None:
@@ -361,8 +343,6 @@ class ChatCard(QWidget):
         size = style.DOCK_COMPACT_SIZE
         if state == OPEN:
             return QRectF(r)
-        if state == COMPACT:
-            return QRectF(r.right() - size, r.top(), size, size)
         if state == HIDDEN:
             return QRectF(edge, r.top(), size, size)
         return QRectF(
@@ -379,10 +359,10 @@ class ChatCard(QWidget):
         # Reaching OPEN is the one transition where content becomes visible
         # rather than hidden - deferred to onDockLanded() so the labels don't
         # reflow every frame while the window is still growing from a
-        # COMPACT/TAB-sized footprint up to full size (same reasoning as
+        # HIDDEN/TAB-sized footprint up to full size (same reasoning as
         # onChunk() buffering text until the flight animation is done).
         if dock_state != OPEN or not self.motion:
-            self.setCompactVisual(dock_state in (COMPACT, TAB, HIDDEN))
+            self.setCompactVisual(dock_state in (TAB, HIDDEN))
         self.radius = style.CHAT_RADIUS
         target_tilt = style.DOCK_TAB_ROTATION_DEG if dock_state == TAB else 0.0
         if self.motion:
@@ -414,26 +394,10 @@ class ChatCard(QWidget):
         if self.edge_driver:
             self.edge_driver.reveal()
 
-    def enterEvent(self, event):
-        if self.edge_driver:
-            self.edge_driver.enterCard()
-
-    def leaveEvent(self, event):
-        if self.edge_driver:
-            self.edge_driver.leaveCard()
-
-    def onComposerFocused(self):
-        if self.edge_driver:
-            self.edge_driver.setComposerFocused(True)
-
-    def onComposerBlurred(self):
-        if self.edge_driver:
-            self.edge_driver.setComposerFocused(False)
-
     def puckRect(self):
         """The puck's own rect within this widget. Scales the TAB insets by
-        how far the geometry tween has grown from COMPACT/HIDDEN's bare
-        size*size window towards TAB's full (asymmetric) footprint, so the
+        how far the geometry tween has grown from HIDDEN's bare size*size
+        window towards TAB's full (asymmetric) footprint, so the
         puck tracks smoothly mid-transition instead of jumping to its final
         offset the instant TAB is reached."""
         size = style.DOCK_COMPACT_SIZE
@@ -450,9 +414,6 @@ class ChatCard(QWidget):
     def isTabbed(self):
         return self.edge_driver is not None and self.edge_driver.dock.state == TAB
 
-    def isCompact(self):
-        return self.edge_driver is not None and self.edge_driver.dock.state == COMPACT
-
     def tabContains(self, pos):
         pivot = self.tabPivot()
         inverse, ok = QTransform().translate(pivot.x(), pivot.y()).rotate(-style.DOCK_TAB_ROTATION_DEG).translate(
@@ -467,8 +428,6 @@ class ChatCard(QWidget):
         if self.fade.state() == QVariantAnimation.Running:
             return
         self.unwire()
-        if self.edge_driver:
-            self.edge_driver.timer.stop()
         if self.edge_trigger:
             self.edge_trigger.stop()
         if not self.motion:
@@ -492,9 +451,6 @@ class ChatCard(QWidget):
         if self.isTabbed():
             if self.tabContains(event.position()) and self.edge_driver:
                 self.edge_driver.clickTab()
-            return
-        if self.isCompact() and self.edge_driver:
-            self.edge_driver.clickCompact()
             return
 
     def keyPressEvent(self, event):
@@ -592,8 +548,6 @@ class ChatSlot:
         animation, and dropping the last reference to the card there would
         destroy that animation mid-emit."""
         card.unwire()
-        if card.edge_driver:
-            card.edge_driver.timer.stop()
         if card.edge_trigger:
             card.edge_trigger.stop()
         card.hide()

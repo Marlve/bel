@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication
 import cardStore
 import style
 from claudeChatCard import ChatCard, ChatSlot
-from claudeEdgeDockState import OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockState import OPEN, HIDDEN, TAB
 
 
 def key(code):
@@ -35,12 +35,10 @@ class FakeRequest(QObject):
 
 
 def teardownCard(card):
-    """Mirrors ChatSlot.retire(): stop the real QTimers a landed card owns
-    (EdgeDockDriver's countdown, EdgeTrigger's 50ms cursor poll) before the
-    widget goes away, or they keep firing into a torn-down test."""
+    """Mirrors ChatSlot.retire(): stop the real QTimer a landed card owns
+    (EdgeTrigger's 50ms cursor poll) before the widget goes away, or it
+    keeps firing into a torn-down test."""
     card.unwire()
-    if card.edge_driver:
-        card.edge_driver.timer.stop()
     if card.edge_trigger:
         card.edge_trigger.stop()
     card.close()
@@ -118,10 +116,6 @@ class ChatCardTests(unittest.TestCase):
 
     def test_dock_state_changes_toggle_compact_visuals_and_tilt(self):
         self.card.fly()
-
-        self.card.onDockStateChanged(COMPACT)
-        self.assertFalse(self.card.header_label.isVisible())
-        self.assertEqual(self.card.tilt, 0.0)
 
         self.card.onDockStateChanged(TAB)
         self.assertFalse(self.card.header_label.isVisible())
