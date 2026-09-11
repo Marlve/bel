@@ -3,13 +3,12 @@
 # wedge's action. A wedge whose action needs typed input hands off to the
 # prompt bar instead of firing straight away.
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
 from PySide6.QtCore import Qt, QPointF, QRectF
 
 import style
 from anims import pose
-from overlay import OverlayWindow
 from promptFlow import PromptFlow
 from claudeChatCard import ChatSlot
 from pieMenuState import (
@@ -65,9 +64,16 @@ def mix(a, b, t):
     )
 
 
-class PieMenu(OverlayWindow):
+class PieMenu(QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowFlags(
+            Qt.FramelessWindowHint  # no titlebar
+            | Qt.WindowStaysOnTopHint  # stays above other windows
+            | Qt.Tool  # no taskbar icon, skipped in Alt+Tab
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet(style.overlay_stylesheet())
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
