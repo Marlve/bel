@@ -1,6 +1,7 @@
 import subprocess
 import json
 import sys
+import tempfile
 
 from PySide6.QtCore import QObject, Signal
 
@@ -47,7 +48,12 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   if session_id:
       args += ["--resume", session_id]
 
-  process = subprocess.Popen(args, stdout=subprocess.PIPE, text=True, encoding="utf-8")
+  # Pinned so the CLI's own project-context auto-loading (CLAUDE.md, git
+  # status) can't pick up whatever folder this process happens to be
+  # launched from - it should only ever see SYSTEM_PROMPT above.
+  process = subprocess.Popen(
+      args, stdout=subprocess.PIPE, text=True, encoding="utf-8", cwd=tempfile.gettempdir()
+  )
   if on_process is not None:
       on_process(process)
 
