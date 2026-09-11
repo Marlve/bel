@@ -10,7 +10,8 @@ from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import QApplication, QWidget
 
 import style
-from claudeEdgeDock import EdgeDock, EdgeDockDriver, OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockState import EdgeDock, OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockAnimation import EdgeDockDriver
 
 
 class EdgeDockTests(unittest.TestCase):

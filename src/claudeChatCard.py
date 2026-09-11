@@ -2,8 +2,8 @@
 # the prompt bar's exact rectangle, that flies to the top-right corner and
 # becomes a real chat - transcript plus composer, not a one-shot answer.
 # Docked, it also retreats and returns along the right edge (see
-# claudeEdgeDock.py / claudeEdgeTrigger.py) unless it's busy: streaming, focused, or
-# hovered.
+# claudeEdgeDockState.py / claudeEdgeDockAnimation.py / claudeEdgeTrigger.py)
+# unless it's busy: streaming, focused, or hovered.
 #
 # design.md / claude-chat-flow.md: the card must NOT be a child of the
 # overlay - the ring closes as soon as the prompt is sent, so the card is
@@ -23,7 +23,8 @@ import style
 import wedgeConfig
 from anims import curves, pose
 from anims.clock import Clock, Tween
-from claudeEdgeDock import EdgeDockDriver, OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockState import OPEN, COMPACT, HIDDEN, TAB
+from claudeEdgeDockAnimation import EdgeDockDriver
 from claudeEdgeTrigger import EdgeTrigger
 from util import reduced_motion
 

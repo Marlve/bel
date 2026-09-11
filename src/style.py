@@ -210,8 +210,8 @@ SETTINGS_HEIGHT = (
 
 # --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, folds
 # to a COMPACT puck, then slides fully HIDDEN; a TAB peeks back out on
-# approach. Kept separate from CHAT_* above since these drive claudeEdgeDock.py's
-# pure state machine, not the card's own paint. ---
+# approach. Kept separate from CHAT_* above since these drive
+# claudeEdgeDockState.py's pure state machine, not the card's own paint. ---
 
 DOCK_COMPACT_SIZE = 64
 DOCK_TAB_VISIBLE_PX = 26  # how much of the puck still shows in TAB
