@@ -39,6 +39,14 @@ def resetClaudeHistory():
   rather than guessing - the drive colon, both slash kinds, and '.' (from
   the leading dot in ".bel") all become '-', every other character
   (including a literal '-') is left as-is.
+
+  If the CLI ever changes this encoding, `bucket` silently stops matching
+  the real directory and rmtree() just no-ops - no error, nothing to catch
+  it. Left unguarded on purpose: a new session file only lands here once per
+  app restart (session_id lives in memory only, never resumed across
+  launches), so even years of daily use tops out at a slow trickle - not
+  worth extra machinery for a failure mode whose worst case is "grows a
+  little," never a crash.
   """
   CLAUDE_CWD.mkdir(parents=True, exist_ok=True)
   encoded = str(CLAUDE_CWD).translate(str.maketrans(":\\/.", "----"))
