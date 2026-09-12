@@ -14,8 +14,12 @@ import style
 import wedgeConfig
 from actions import ACTIONS
 
-INNER_RADIUS = style.RING_INNER * style.RING_RADIUS  # hollow center doubles as the dead zone
-HIT_RADIUS = style.RING_HIT_OUTER * style.RING_RADIUS
+def inner_radius():
+    return style.RING_INNER * style.RING_RADIUS  # hollow center doubles as the dead zone
+
+
+def hit_radius():
+    return style.RING_HIT_OUTER * style.RING_RADIUS
 
 # The menu's life cycle. Input only counts while opening or open (or, once
 # the prompt bar has arrived, while prompting); the exits play out untouched

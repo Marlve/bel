@@ -13,7 +13,7 @@ from PySide6.QtGui import QKeyEvent
 
 import style
 import cardStore
-from todoCard import TodoCard, TodoList, MARGIN
+from todoCard import TodoCard, TodoList, margin
 
 
 def key(code):
@@ -133,14 +133,14 @@ class TodoCardTests(unittest.TestCase):
 
         saved = cardStore.load("todo", None)
         self.assertEqual(saved["items"], [{"text": "water plants", "done": False}])
-        self.assertEqual(saved["size"], [400 - 2 * MARGIN, 385 - 2 * MARGIN])
+        self.assertEqual(saved["size"], [400 - 2 * margin(), 385 - 2 * margin()])
 
     def test_a_fresh_card_picks_up_previously_saved_items_and_size(self):
         cardStore.save("todo", {"items": [{"text": "old item", "done": True}], "size": [300, 260]})
         card = TodoCard()
         try:
             self.assertEqual(card.list.items, [{"text": "old item", "done": True}])
-            self.assertEqual((card.width(), card.height()), (300 + 2 * MARGIN, 260 + 2 * MARGIN))
+            self.assertEqual((card.width(), card.height()), (300 + 2 * margin(), 260 + 2 * margin()))
         finally:
             card.close()
             card.deleteLater()
@@ -153,7 +153,7 @@ class TodoCardTests(unittest.TestCase):
         self.card.moveNear(QPoint(100, 100))
         self.assertEqual(
             (self.card.x(), self.card.y()),
-            (100 + style.CARD_SPAWN_OFFSET - MARGIN, 100 + style.CARD_SPAWN_OFFSET - MARGIN),
+            (100 + style.CARD_SPAWN_OFFSET - margin(), 100 + style.CARD_SPAWN_OFFSET - margin()),
         )
 
     def test_open_focuses_the_add_field(self):

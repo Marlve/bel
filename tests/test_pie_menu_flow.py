@@ -425,9 +425,10 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertEqual(self.menu.hovered_wedge, SETTINGS_WEDGE)
 
     def test_a_cursor_past_the_ring_selects_nothing(self):
-        from pieMenuState import HIT_RADIUS, wedge_index
+        from pieMenuState import hit_radius, wedge_index
 
-        self.assertIsNone(wedge_index(0, -(HIT_RADIUS + 1), 4, radius=HIT_RADIUS))
+        radius = hit_radius()
+        self.assertIsNone(wedge_index(0, -(radius + 1), 4, radius=radius))
 
 
 if __name__ == "__main__":

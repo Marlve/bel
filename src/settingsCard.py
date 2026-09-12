@@ -12,7 +12,10 @@ import shadow
 import wedgeConfig
 from draggable import WindowDrag
 
-MARGIN = style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
+def margin():
+    return style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
+
+
 CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX = 1, 50
 
 
@@ -81,7 +84,7 @@ class SettingsCard(QWidget):
         self.save_timer.timeout.connect(self.save)
         shadow.apply(self)
 
-        self.resize(style.SETTINGS_WIDTH + 2 * MARGIN, style.SETTINGS_HEIGHT + 2 * MARGIN)
+        self.resize(style.SETTINGS_WIDTH + 2 * margin(), style.SETTINGS_HEIGHT + 2 * margin())
         self.buildContent()
 
     def open(self):
@@ -95,8 +98,8 @@ class SettingsCard(QWidget):
     def moveNear(self, cursor_pos):
         screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
         area = screen.availableGeometry()
-        x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - MARGIN
-        y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - MARGIN
+        x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - margin()
+        y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - margin()
         x = max(area.x(), min(x, area.x() + area.width() - self.width()))
         y = max(area.y(), min(y, area.y() + area.height() - self.height()))
         self.move(x, y)
@@ -145,7 +148,7 @@ class SettingsCard(QWidget):
         context_row.addWidget(self.context_limit_field)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(*[style.CHAT_PADDING + MARGIN] * 4)
+        root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
         root.setSpacing(10)
         root.addLayout(header)
         root.addLayout(self.rows_layout)
@@ -237,7 +240,8 @@ class SettingsCard(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        frame = QRectF(self.rect()).adjusted(MARGIN + 0.5, MARGIN + 0.5, -MARGIN - 0.5, -MARGIN - 0.5)
+        m = margin()
+        frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
         painter.setBrush(QColor(style.CHAT_SURFACE))
         painter.setPen(QPen(QColor(style.CHAT_BORDER), 1))
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)

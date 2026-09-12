@@ -18,8 +18,8 @@ from pieMenuState import (
     PieMenuState,
     wedge_index,
     compass_wedge,
-    INNER_RADIUS,
-    HIT_RADIUS,
+    inner_radius,
+    hit_radius,
     HIDDEN,
     OPENING,
     OPEN,
@@ -34,12 +34,15 @@ from util import force_foreground
 # Furthest a wedge's ink can land from the anchor: grown by hover, pushed out
 # by hover and select together, plus half the glow's stroke, all at the peak
 # scale the open overshoot and select reach. Sizes dirty rects only - how far
-# out the cursor still counts as pointing at a wedge is HIT_RADIUS, a
+# out the cursor still counts as pointing at a wedge is hit_radius(), a
 # separate question with a separate answer.
 OPEN_PEAK_SCALE = max(pose.open_pose(ms)[0] for ms in range(style.OPEN_MS + 1))
-PAINT_REACH = (
-    (style.HOVER_GROW + style.HOVER_PUSH + style.SELECT_PUSH) * style.RING_RADIUS + style.GLOW_WIDTH / 2
-) * OPEN_PEAK_SCALE * style.SELECT_SCALE
+
+
+def paint_reach():
+    return (
+        (style.HOVER_GROW + style.HOVER_PUSH + style.SELECT_PUSH) * style.RING_RADIUS + style.GLOW_WIDTH / 2
+    ) * OPEN_PEAK_SCALE * style.SELECT_SCALE
 
 ARROW_ANGLE_BY_KEY = {Qt.Key_Up: 0, Qt.Key_Right: 90, Qt.Key_Down: 180, Qt.Key_Left: 270}
 ACTIVATE_WIDGET_KEYS = (Qt.Key_Return, Qt.Key_Enter)
@@ -157,11 +160,12 @@ class PieMenu(QWidget):
 
     def ringRect(self):
         """Screen area the ring's ink can reach."""
+        reach = paint_reach()
         return QRectF(
-            self.state.anchor.x() - PAINT_REACH,
-            self.state.anchor.y() - PAINT_REACH,
-            PAINT_REACH * 2,
-            PAINT_REACH * 2,
+            self.state.anchor.x() - reach,
+            self.state.anchor.y() - reach,
+            reach * 2,
+            reach * 2,
         ).toAlignedRect()
 
     # --- phases ---
@@ -299,7 +303,7 @@ class PieMenu(QWidget):
         pos = event.position()
         dx = pos.x() - self.state.anchor.x()
         dy = pos.y() - self.state.anchor.y()
-        self.setHovered(wedge_index(dx, dy, len(self.state.wedges), INNER_RADIUS, HIT_RADIUS))
+        self.setHovered(wedge_index(dx, dy, len(self.state.wedges), inner_radius(), hit_radius()))
 
     def mousePressEvent(self, event):
         if self.state.phase in (OPENING, OPEN):
@@ -409,7 +413,7 @@ class PieMenu(QWidget):
         straight through the ring's transparent hole."""
         if alpha <= 0:
             return
-        inner = INNER_RADIUS * scale
+        inner = inner_radius() * scale
         radius = style.RING_RADIUS * scale
         blur = style.CARD_SHADOW_BLUR
         outer = radius + blur
@@ -453,7 +457,7 @@ class PieMenu(QWidget):
         painter.scale(scale, scale)
         painter.translate(push * bx, push * by)
 
-        path = ring_segment(outer, INNER_RADIUS, 90 - index * span - span / 2, span)
+        path = ring_segment(outer, inner_radius(), 90 - index * span - span / 2, span)
 
         if t > 0:
             glow = QColor(style.GLOW)

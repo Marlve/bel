@@ -13,7 +13,7 @@ from PySide6.QtGui import QKeyEvent
 
 import style
 import cardStore
-from noteCard import NoteCard, MARGIN
+from noteCard import NoteCard, margin
 
 
 def key(code):
@@ -48,14 +48,14 @@ class NoteCardTests(unittest.TestCase):
 
         saved = cardStore.load("note", None)
         self.assertEqual(saved["text"], "pick up dry cleaning")
-        self.assertEqual(saved["size"], [400 - 2 * MARGIN, 385 - 2 * MARGIN])
+        self.assertEqual(saved["size"], [400 - 2 * margin(), 385 - 2 * margin()])
 
     def test_a_fresh_card_picks_up_previously_saved_text_and_size(self):
         cardStore.save("note", {"text": "remember this", "size": [300, 260]})
         card = NoteCard()
         try:
             self.assertEqual(card.body.toPlainText(), "remember this")
-            self.assertEqual((card.width(), card.height()), (300 + 2 * MARGIN, 260 + 2 * MARGIN))
+            self.assertEqual((card.width(), card.height()), (300 + 2 * margin(), 260 + 2 * margin()))
         finally:
             card.close()
             card.deleteLater()
@@ -68,7 +68,7 @@ class NoteCardTests(unittest.TestCase):
         self.card.moveNear(QPoint(100, 100))
         self.assertEqual(
             (self.card.x(), self.card.y()),
-            (100 + style.CARD_SPAWN_OFFSET - MARGIN, 100 + style.CARD_SPAWN_OFFSET - MARGIN),
+            (100 + style.CARD_SPAWN_OFFSET - margin(), 100 + style.CARD_SPAWN_OFFSET - margin()),
         )
 
     def test_close_button_hides_the_card(self):

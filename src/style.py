@@ -262,6 +262,57 @@ DOCK_DISARM_PX = 260  # and must retreat past this to disarm - the hysteresis ga
 DOCK_TRIGGER_WIDTH = 180  # EdgeTrigger's width along the right edge
 
 
+# --- Resolution scaling. Every constant above was tuned by eye at
+# REFERENCE_WIDTH x REFERENCE_HEIGHT; apply_scale() multiplies the ones that
+# are raw pixel lengths so the UI stays proportional on other screens. Colors,
+# alphas, ms durations, dimensionless ratios, easing names, counts, and
+# degree angles are left untouched - they don't scale with resolution.
+# Not applied at import time (every test imports this module directly and
+# asserts exact pixel values against these reference numbers) - only
+# main.py calls this, once, after QApplication exists. ---
+
+REFERENCE_WIDTH = 2560
+REFERENCE_HEIGHT = 1440
+
+_SCALE_INT_NAMES = [
+    "RING_RADIUS", "GLOW_WIDTH", "WEDGE_BOX",
+    "FIELD_WIDTH", "FIELD_HEIGHT", "FIELD_INSET_LEFT", "FIELD_INSET_RIGHT",
+    "FIELD_FONT_SIZE", "FONT_SIZE",
+    "REJECT_SHIFT",
+    "CHAT_SIZE", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
+    "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
+    "CHAT_COMPOSER_HEIGHT", "CHAT_COMPOSER_PADDING",
+    "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
+    "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",
+    "CARD_RESIZE_GRIP_EDGE_OFFSET", "CARD_RESIZE_GRIP_PAINT_OFFSET",
+    "CARD_SPAWN_OFFSET", "CARD_SHADOW_BLUR", "CARD_SHADOW_OFFSET_Y",
+    "CARD_SHADOW_MARGIN",
+    "TODO_ROW_HEIGHT", "TODO_CHECKBOX", "TODO_CHECKBOX_RADIUS",
+    "SETTINGS_WIDTH", "SETTINGS_HEADER_HEIGHT", "SETTINGS_ROW_HEIGHT",
+    "SETTINGS_ROW_GAP", "SETTINGS_ARROW_SIZE", "SETTINGS_CONTEXT_FIELD_WIDTH",
+    "SETTINGS_HEIGHT",
+    "DOCK_COMPACT_SIZE", "DOCK_TAB_VISIBLE_PX", "DOCK_ARM_PX", "DOCK_DISARM_PX",
+    "DOCK_TRIGGER_WIDTH",
+]
+
+# Already floats in their reference form - scaled but kept as floats, not
+# rounded to int.
+_SCALE_FLOAT_NAMES = ["CHAT_BODY_SIZE", "CHAT_HEADER_SIZE", "CARD_RESIZE_GRIP_STROKE"]
+
+# Tuples of pixel lengths - each element scaled and rounded individually.
+_SCALE_INT_TUPLE_NAMES = ["CHAT_BUBBLE_RADIUS"]
+
+
+def apply_scale(factor):
+    g = globals()
+    for name in _SCALE_INT_NAMES:
+        g[name] = round(g[name] * factor)
+    for name in _SCALE_FLOAT_NAMES:
+        g[name] = g[name] * factor
+    for name in _SCALE_INT_TUPLE_NAMES:
+        g[name] = tuple(round(v * factor) for v in g[name])
+
+
 def prompt_field_stylesheet(text_color):
     return (
         "background: transparent;"

@@ -22,7 +22,10 @@ from todoListAnimation import TodoListAnimation
 from util import reduced_motion
 
 STORE_KEY = "todo"
-MARGIN = style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
+
+
+def margin():
+    return style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
 
 
 class TodoList(QWidget):
@@ -130,7 +133,7 @@ class TodoCard(FloatingCard, QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setMinimumSize(style.CARD_MIN_WIDTH + 2 * MARGIN, style.CARD_MIN_HEIGHT + 2 * MARGIN)
+        self.setMinimumSize(style.CARD_MIN_WIDTH + 2 * margin(), style.CARD_MIN_HEIGHT + 2 * margin())
 
         self.drag = WindowDrag(self)
         self.save_timer = QTimer(self)
@@ -142,7 +145,7 @@ class TodoCard(FloatingCard, QWidget):
 
         saved = cardStore.load(STORE_KEY, {})
         face_w, face_h = saved.get("size", [style.CHAT_SIZE, style.CHAT_SIZE])
-        self.resize(face_w + 2 * MARGIN, face_h + 2 * MARGIN)
+        self.resize(face_w + 2 * margin(), face_h + 2 * margin())
 
         self.buildContent()
         self.list.setItems(saved.get("items", []))
@@ -195,7 +198,7 @@ class TodoCard(FloatingCard, QWidget):
         self.add_field.installEventFilter(self)  # Escape closes the card, not just the field
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(*[style.CHAT_PADDING + MARGIN] * 4)
+        root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
         root.setSpacing(10)
         root.addLayout(header)
         root.addWidget(self.scroll, 1)
@@ -224,7 +227,7 @@ class TodoCard(FloatingCard, QWidget):
     def save(self):
         cardStore.save(
             STORE_KEY,
-            {"items": self.list.items, "size": [self.width() - 2 * MARGIN, self.height() - 2 * MARGIN]},
+            {"items": self.list.items, "size": [self.width() - 2 * margin(), self.height() - 2 * margin()]},
         )
 
     def hideEvent(self, event):
@@ -265,7 +268,8 @@ class TodoCard(FloatingCard, QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        frame = QRectF(self.rect()).adjusted(MARGIN + 0.5, MARGIN + 0.5, -MARGIN - 0.5, -MARGIN - 0.5)
+        m = margin()
+        frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
         painter.setBrush(QColor(style.CHAT_SURFACE))
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))
