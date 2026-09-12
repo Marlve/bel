@@ -8,11 +8,13 @@
 from PySide6.QtWidgets import QApplication
 
 
-def available_area(point):
+def available_area(point, margin=0):
     """The work-area rect of whichever screen `point` (global coordinates,
-    a QPoint) is on, falling back to the primary screen."""
+    a QPoint) is on, falling back to the primary screen - inset by `margin`
+    on every side so a caller's own clamp naturally keeps that much breathing
+    room from the real screen edge."""
     screen = QApplication.screenAt(point) or QApplication.primaryScreen()
-    return screen.availableGeometry()
+    return screen.availableGeometry().adjusted(margin, margin, -margin, -margin)
 
 
 def clamp(value, low, high):

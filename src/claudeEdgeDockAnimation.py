@@ -57,16 +57,17 @@ class EdgeDockDriver:
         started just before dismissal doesn't fire on_landed afterwards."""
         self.tween.stop()
 
-    def refresh(self, duration_ms):
+    def refresh(self, duration_ms, easing=None):
         """The current state's own geometry moved (e.g. a restack changed
-        this card's slot) without the state itself changing - retarget the
-        animation at the new geometry rather than snapping to it."""
+        this card's slot, or a drag-and-snap picked a new corner) without
+        the state itself changing - retarget the animation at the new
+        geometry rather than snapping to it."""
         target = self.geometry_for(self.dock.state)
         if not self.motion:
             self.tween.stop()
             self.current_rect = target
             return
-        self.tween.run(self.current_rect, target, duration_ms, curves.CHAT_FLIGHT)
+        self.tween.run(self.current_rect, target, duration_ms, easing or curves.CHAT_FLIGHT)
 
     def _onTweenFinished(self):
         if self.on_landed:

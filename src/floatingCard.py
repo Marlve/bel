@@ -61,7 +61,7 @@ class FloatingCard:
         self.setWindowOpacity(value)
 
     def moveNear(self, cursor_pos):
-        area = screenBounds.available_area(cursor_pos)
+        area = screenBounds.available_area(cursor_pos, margin=style.CARD_EDGE_MARGIN)
         x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - style.CARD_SHADOW_MARGIN
         y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - style.CARD_SHADOW_MARGIN
         x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())
@@ -74,7 +74,7 @@ class FloatingCard:
         every other placement here in case it no longer falls on any screen
         (a monitor unplugged, or a resolution changed, since it was saved)."""
         x, y = pos
-        area = screenBounds.available_area(QPoint(x, y))
+        area = screenBounds.available_area(QPoint(x, y), margin=style.CARD_EDGE_MARGIN)
         x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())
         y = screenBounds.clamp(y, area.y(), area.y() + area.height() - self.height())
         self.move(x, y)

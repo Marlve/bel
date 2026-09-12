@@ -104,8 +104,12 @@ class TodoList(QWidget):
 
     def paintRow(self, painter, index, item):
         top = index * style.TODO_ROW_HEIGHT
+        pen_width = 1.5
         box = QRectF(
-            style.SPACE_2,
+            pen_width / 2,  # flush with the header/add-field's left edge; just enough inset to
+            # keep the full stroke onscreen (drawRoundedRect centers the pen on the path) -
+            # style.SPACE_2 read as clipping-fixed but sat visibly righter than every other
+            # left edge in the card, see card-visual-polish/02's live-check follow-up
             top + (style.TODO_ROW_HEIGHT - style.TODO_CHECKBOX) / 2,
             style.TODO_CHECKBOX,
             style.TODO_CHECKBOX,
@@ -115,7 +119,7 @@ class TodoList(QWidget):
         fade = self.animation.remove_fade.get(id(item), 1.0)
         painter.setOpacity(fade * 0.4 if item["done"] else fade)
 
-        painter.setPen(QPen(QColor(style.CHAT_LABEL_MONO), 1.5))
+        painter.setPen(QPen(QColor(style.CHAT_LABEL_MONO), pen_width))
         painter.setBrush(QColor(style.CHAT_ACCENT) if item["done"] else Qt.NoBrush)
         painter.drawRoundedRect(box, style.TODO_CHECKBOX_RADIUS, style.TODO_CHECKBOX_RADIUS)
 
@@ -218,9 +222,14 @@ class TodoCard(FloatingCard, QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
-        root.setSpacing(10)
+        root.setSpacing(0)
         root.addLayout(header)
+        root.addSpacing(style.SPACE_2)
         root.addWidget(self.scroll, 1)
+        # Matches the card's own bottom padding, so the add-field sits as far
+        # from the list above it as from the card's edge below it - see
+        # card-visual-polish/03's live-check follow-up.
+        root.addSpacing(style.CHAT_PADDING)
         root.addWidget(self.add_field)
 
         self.grip = ResizeGrip(self)
@@ -298,8 +307,14 @@ class TodoCard(FloatingCard, QWidget):
 
         # Body and footer share the one dark tone (per floating-card-redesign.md,
         # their reference values are near-identical); only the header bar and the
-        # footer's top seam actually differ from it.
-        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, self.scroll.y(), self.add_field.y())
+        # footer's top seam actually differ from it. The seam sits at the
+        # scroll area's own bottom edge, not the add-field's top - flush with
+        # the field left equal padding above it inside the footer (0px) but
+        # not below (CHAT_PADDING), reading as "too high" even though the
+        # field's own position was already symmetric relative to the body -
+        # see card-visual-polish/03's live-check follow-up.
+        footer_seam = self.scroll.y() + self.scroll.height()
+        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, self.scroll.y(), footer_seam)
 
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))

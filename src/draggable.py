@@ -50,7 +50,7 @@ class WindowDrag:
         window's candidate top-left, which can briefly compute into a
         neighboring monitor's geometry near a shared edge before the clamp
         below has even run."""
-        area = screenBounds.available_area(cursor_pos.toPoint())
+        area = screenBounds.available_area(cursor_pos.toPoint(), margin=style.CARD_EDGE_MARGIN)
         x = screenBounds.clamp(pos.x(), area.x(), area.x() + area.width() - self.window.width())
         y = screenBounds.clamp(pos.y(), area.y(), area.y() + area.height() - self.window.height())
         return QPoint(x, y)

@@ -97,7 +97,7 @@ class SettingsCard(QWidget):
         self.raise_()
 
     def moveNear(self, cursor_pos):
-        area = screenBounds.available_area(cursor_pos)
+        area = screenBounds.available_area(cursor_pos, margin=style.CARD_EDGE_MARGIN)
         x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - margin()
         y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - margin()
         x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())

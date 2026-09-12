@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, QPoint, Sign
 
 import cardStore
 import pieMenu as pieMenuModule
+import style
 import wedgeConfig
 from pieMenu import PieMenu
 from pieMenuState import HIDDEN, OPEN, PROMPTING
@@ -167,8 +168,8 @@ class PieMenuFlowTests(unittest.TestCase):
         screen = QApplication.primaryScreen()
         area = screen.availableGeometry()
         dock = self.menu.chat.dockRect(screen)
-        self.assertEqual(dock.top(), area.y() + 24)
-        self.assertEqual(dock.right(), area.x() + area.width() - 24)
+        self.assertEqual(dock.top(), area.y() + style.CHAT_MARGIN)
+        self.assertEqual(dock.right(), area.x() + area.width() - style.CHAT_MARGIN)
 
     def ask(self, prompt):
         """Open the ring and send `prompt` through the prompt bar - only

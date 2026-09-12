@@ -7,12 +7,14 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QPoint, QRectF
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QWidget
 
 import style
 from claudeEdgeDockState import EdgeDock, OPEN, HIDDEN, TAB
 from claudeEdgeDockAnimation import EdgeDockDriver
+from claudeEdgeTrigger import EdgeTrigger
 
 
 class EdgeDockTests(unittest.TestCase):
@@ -165,6 +167,61 @@ class EdgeDockDriverTests(unittest.TestCase):
             for _ in range(20):
                 self.driver.cursorDistance(style.DOCK_DISARM_PX + 1)  # already HIDDEN, still past disarm
             moveTo.assert_not_called()
+
+
+class EdgeTriggerTests(unittest.TestCase):
+    """The strip's side (and which way its distance grows) now depends on
+    which corner the card is docked to - chat-dock-corners/01."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.screen = QApplication.primaryScreen()
+        self.area = self.screen.availableGeometry()
+        self.distances = []
+
+    def makeTrigger(self, left):
+        trigger = EdgeTrigger(self.distances.append, self.screen, left=left)
+
+        def cleanup():
+            # A real always-on-top top-level window - flush its close before
+            # the next test runs, or a still-pending teardown can confuse
+            # which window a later activateWindow() elsewhere lands on.
+            trigger.stop()
+            QApplication.processEvents()
+
+        self.addCleanup(cleanup)
+        return trigger
+
+    def test_right_edge_strip_sits_at_the_right_of_the_work_area(self):
+        trigger = self.makeTrigger(left=False)
+        self.assertEqual(trigger.edge_x, self.area.x() + self.area.width())
+        self.assertEqual(trigger.geometry().right() + 1, self.area.x() + self.area.width())
+
+    def test_left_edge_strip_sits_at_the_left_of_the_work_area(self):
+        trigger = self.makeTrigger(left=True)
+        self.assertEqual(trigger.edge_x, self.area.x())
+        self.assertEqual(trigger.geometry().left(), self.area.x())
+
+    def test_right_edge_distance_grows_moving_away_from_the_edge(self):
+        trigger = self.makeTrigger(left=False)
+        with patch.object(QCursor, "pos", return_value=QPoint(trigger.edge_x - 50, self.area.y() + 10)):
+            trigger.checkCursor()
+        self.assertEqual(self.distances[-1], 50)
+
+    def test_left_edge_distance_grows_moving_away_from_the_edge(self):
+        trigger = self.makeTrigger(left=True)
+        with patch.object(QCursor, "pos", return_value=QPoint(trigger.edge_x + 50, self.area.y() + 10)):
+            trigger.checkCursor()
+        self.assertEqual(self.distances[-1], 50)
+
+    def test_cursor_outside_the_strip_reports_past_disarm(self):
+        trigger = self.makeTrigger(left=False)
+        with patch.object(QCursor, "pos", return_value=QPoint(self.area.x(), self.area.y())):
+            trigger.checkCursor()
+        self.assertEqual(self.distances[-1], style.DOCK_DISARM_PX + 1)
 
 
 if __name__ == "__main__":

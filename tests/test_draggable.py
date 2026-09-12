@@ -91,7 +91,13 @@ class WindowDragTests(unittest.TestCase):
         drag = WindowDrag(window)
         drag.press(QPointF(0, 0))
         drag.move(QPointF(area.width(), area.height()))  # drag way past the bottom-right corner
-        self.assertEqual(window.pos(), QPoint(area.x() + area.width() - 50, area.y() + area.height() - 50))
+        self.assertEqual(
+            window.pos(),
+            QPoint(
+                area.x() + area.width() - style.CARD_EDGE_MARGIN - 50,
+                area.y() + area.height() - style.CARD_EDGE_MARGIN - 50,
+            ),
+        )
 
     def test_dragging_cannot_push_the_window_past_the_left_or_top_edge(self):
         area = (QApplication.screenAt(QPoint(0, 0)) or QApplication.primaryScreen()).availableGeometry()
@@ -99,7 +105,9 @@ class WindowDragTests(unittest.TestCase):
         drag = WindowDrag(window)
         drag.press(QPointF(0, 0))
         drag.move(QPointF(-area.width(), -area.height()))  # drag way past the top-left corner
-        self.assertEqual(window.pos(), QPoint(area.x(), area.y()))
+        self.assertEqual(
+            window.pos(), QPoint(area.x() + style.CARD_EDGE_MARGIN, area.y() + style.CARD_EDGE_MARGIN)
+        )
 
     def test_dragging_within_bounds_is_unaffected_by_the_clamp(self):
         window = FakeWindow(100, 100, width=50, height=50)

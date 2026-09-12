@@ -89,14 +89,22 @@ class NoteCard(FloatingCard, QWidget):
         self.body = QPlainTextEdit(self)
         self.body.setFrameShape(QPlainTextEdit.NoFrame)
         self.body.setStyleSheet(style.plain_field_stylesheet())
-        self.body.document().setDocumentMargin(0)  # match the header's own zero inset, not Qt's ~4px default
+        self.body.document().setDocumentMargin(0)  # match the header's own zero *left* inset, not Qt's ~4px default
+        # The header/body divider is drawn at self.body.y() (paintEvent,
+        # below) - flush with the body widget's own top edge. Zero document
+        # margin means the typed text starts right at that same y, so
+        # without its own top inset the text sits flush against the divider
+        # line with no breathing room, regardless of the header-to-divider
+        # gap above (that's root's addSpacing below - a different gap).
+        self.body.setViewportMargins(0, style.SPACE_2, 0, 0)
         self.body.textChanged.connect(self.scheduleSave)
         self.body.installEventFilter(self)  # Escape closes the card, not just the field
 
         root = QVBoxLayout(self)
         root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
-        root.setSpacing(10)
+        root.setSpacing(0)
         root.addLayout(header)
+        root.addSpacing(style.SPACE_2)
         root.addWidget(self.body, 1)
 
         self.grip = ResizeGrip(self)

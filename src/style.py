@@ -165,8 +165,8 @@ CHAT_HEADER_SIZE = 9.5  # px mono, 0.14em tracking (applied via QFont.setLetterS
 CHAT_HEADER_TRACKING_PERCENT = 114  # 1 + 0.14em, as QFont.PercentageSpacing wants it
 
 CHAT_SIZE = 400
-CHAT_MARGIN = 24  # from the work area's edges
-CHAT_PADDING = 14
+CHAT_MARGIN = 8 # from the work area's edges
+CHAT_PADDING = SPACE_2  # 8px card-edge margin, shared by todo/notes/chat so they stay aligned
 
 CHAT_FLIGHT_MS = 420
 CHAT_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
@@ -227,6 +227,12 @@ CARD_SHADOW_MARGIN = 28  # extra room a top-level card window needs on every sid
 # widget (promptBar.py's, which bleeds into its parent overlay), a top-level window's effect
 # can only paint within that window's own pixels.
 
+CARD_EDGE_MARGIN = CHAT_MARGIN - CARD_SHADOW_MARGIN  # screenBounds clamp margin for todo/notes/
+# settings windows: their window rect is padded by CARD_SHADOW_MARGIN beyond the visible card
+# face, so clamping the window itself to CHAT_MARGIN would leave the *visible* face CHAT_MARGIN
+# + CARD_SHADOW_MARGIN from the screen edge - correcting by CARD_SHADOW_MARGIN here keeps the
+# visible corner at CHAT_MARGIN, same as the chat card's own dock position.
+
 TODO_ROW_HEIGHT = 36
 TODO_CHECKBOX = 17
 TODO_CHECKBOX_RADIUS = 4
@@ -271,6 +277,12 @@ DOCK_TAB_ROTATE_MS = 260
 DOCK_OPEN_MS = 300  # animating to OPEN, from HIDDEN or TAB
 DOCK_HIDE_MS = 300  # OPEN -> HIDDEN, sliding fully past the edge
 
+CHAT_DOCK_SNAP_MS = 220  # drag-and-snap's release -> corner tween - quicker and bouncier than DOCK_OPEN_MS's
+# HIDDEN/TAB -> OPEN tween, since this is a deliberate "magnetic" gesture, not a flight landing next to a
+# corner (CHAT_FLIGHT_EASING's own "no overshoot" reasoning doesn't apply here).
+CHAT_DOCK_SNAP_EASING = "OutBack"
+CHAT_DOCK_SNAP_OVERSHOOT = 1.2
+
 DOCK_ARM_PX = 180  # cursor closer than this to the right edge arms the tab
 DOCK_DISARM_PX = 260  # and must retreat past this to disarm - the hysteresis gap
 
@@ -303,7 +315,7 @@ _SCALE_INT_NAMES = [
     "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",
     "CARD_RESIZE_GRIP_EDGE_OFFSET", "CARD_RESIZE_GRIP_PAINT_OFFSET",
     "CARD_SPAWN_OFFSET", "CARD_SHADOW_BLUR", "CARD_SHADOW_OFFSET_Y",
-    "CARD_SHADOW_MARGIN",
+    "CARD_SHADOW_MARGIN", "CARD_EDGE_MARGIN",
     "TODO_ROW_HEIGHT", "TODO_CHECKBOX", "TODO_CHECKBOX_RADIUS",
     "SETTINGS_WIDTH", "SETTINGS_HEADER_HEIGHT", "SETTINGS_ROW_HEIGHT",
     "SETTINGS_ROW_GAP", "SETTINGS_ARROW_SIZE", "SETTINGS_CONTEXT_FIELD_WIDTH",

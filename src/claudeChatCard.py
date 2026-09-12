@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
+import cardStore
 import chatMarkdown
+import dockCorner
 import style
 import wedgeConfig
 from floatingCard import paint_card_bands
@@ -32,6 +34,8 @@ from claudeChatCardState import ChatCardState
 from claudeChatCardAnimation import ChatCardAnimation
 from claudeEdgeDockState import OPEN
 from util import reduced_motion
+
+STORE_KEY = "chat"
 
 
 class Composer(QPlainTextEdit):
@@ -78,14 +82,15 @@ class Composer(QPlainTextEdit):
 
 class ChatCard(QWidget):
     dismissed = Signal(object)
+    corner_changed = Signal(str)
 
-    def __init__(self, born, dock_rect, screen):
+    def __init__(self, born, dock_rect, screen, corner=dockCorner.TOP_RIGHT):
         super().__init__(None)  # top-level: it outlives the overlay it came from
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)  # never yank focus off whatever the user is doing
 
-        self.state = ChatCardState(dock_rect)
+        self.state = ChatCardState(dock_rect, corner)
         self.streaming_label = None
         self.streaming_index = None
         self.auto_scroll = True
@@ -101,6 +106,10 @@ class ChatCard(QWidget):
     @property
     def dock_rect(self):
         return self.state.dock_rect
+
+    @property
+    def corner(self):
+        return self.state.corner
 
     @property
     def wedge_id(self):
@@ -177,6 +186,11 @@ class ChatCard(QWidget):
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
         self.header_label.setFont(header_font)
         self.header_label.setStyleSheet(f"color: {style.CHAT_LABEL_MONO}; background: transparent;")
+        # Lets a press pass through to the card's own mousePressEvent below
+        # instead of being swallowed here - the header is the drag-to-corner
+        # zone (same "margins pass through, buttons don't" split as notes',
+        # noteCard.py's own header_label).
+        self.header_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self.minimize_button = QPushButton("−", self)
         self.minimize_button.setFixedSize(18, 18)
@@ -222,9 +236,14 @@ class ChatCard(QWidget):
         # state, silently clamping every setGeometry() call back up to it.
         root.setSizeConstraint(QLayout.SetNoConstraint)
         root.setContentsMargins(*[style.CHAT_PADDING] * 4)
-        root.setSpacing(10)
+        root.setSpacing(0)
         root.addLayout(header)
+        root.addSpacing(style.SPACE_2)
         root.addWidget(self.scroll, 1)
+        # Matches the card's own bottom padding, so the composer sits as far
+        # from the transcript above it as from the card's edge below it - see
+        # card-visual-polish/03's live-check follow-up.
+        root.addSpacing(style.CHAT_PADDING)
         root.addWidget(self.composer)
 
     def setContent(self, visible):
@@ -468,6 +487,17 @@ class ChatCard(QWidget):
             if self.animation.tabContains(event.position()) and self.animation.edge_driver:
                 self.animation.edge_driver.clickTab()
             return
+        if self.isOpen():
+            self.animation.dragPress(event.globalPosition())
+
+    def mouseMoveEvent(self, event):
+        self.animation.dragMove(event.globalPosition())
+
+    def mouseReleaseEvent(self, event):
+        self.animation.dragRelease(event.globalPosition())
+
+    def onCornerChanged(self, corner):
+        self.corner_changed.emit(corner)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -508,8 +538,14 @@ class ChatCard(QWidget):
             # Same two-tone body/header/footer treatment as the todo/notes
             # cards, per claude-chat-redesign.md's "matches the todo/notes
             # shell". Skipped for the bare TAB/HIDDEN puck below, which has
-            # no header/footer content to band.
-            paint_card_bands(painter, frame, radius, style.CARD_BODY, self.scroll.y(), self.composer.y())
+            # no header/footer content to band. The seam sits at the scroll
+            # area's own bottom edge, not the composer's top - flush with the
+            # composer left equal padding above it inside the footer (0px)
+            # but not below (CHAT_PADDING), reading as "too high" even though
+            # the composer's own position was already symmetric relative to
+            # the body - see card-visual-polish/03's live-check follow-up.
+            footer_seam = self.scroll.y() + self.scroll.height()
+            paint_card_bands(painter, frame, radius, style.CARD_BODY, self.scroll.y(), footer_seam)
             painter.setBrush(Qt.NoBrush)
         else:
             painter.setBrush(QColor(style.CHAT_SURFACE))
@@ -526,15 +562,15 @@ class ChatSlot:
     def __init__(self):
         self.card = None
         self.closing = []  # torn down on the next event loop turn, not mid-signal
+        self.corner = cardStore.load(STORE_KEY, {}).get("corner", dockCorner.TOP_RIGHT)
 
     def dockRect(self, screen):
         area = screen.availableGeometry()  # work area, not monitor bounds
-        return QRectF(
-            area.x() + area.width() - style.CHAT_MARGIN - style.CHAT_SIZE,
-            area.y() + style.CHAT_MARGIN,
-            style.CHAT_SIZE,
-            style.CHAT_SIZE,
-        )
+        return dockCorner.rect(self.corner, area, style.CHAT_SIZE, style.CHAT_MARGIN)
+
+    def onCornerChanged(self, corner):
+        self.corner = corner
+        cardStore.save(STORE_KEY, {"corner": corner})
 
     def cardFor(self, wedge_id):
         """The live card if it belongs to this wedge, else None."""
@@ -569,10 +605,11 @@ class ChatSlot:
         if self.card is not None:
             self.forget(self.card)
 
-        card = ChatCard(born, self.dockRect(screen), screen)
+        card = ChatCard(born, self.dockRect(screen), screen, self.corner)
         card.wedge_id = wedge_id
         card.action = action
         card.dismissed.connect(self.forget)
+        card.corner_changed.connect(self.onCornerChanged)
         self.card = card
 
         card.fly()  # before the request starts, so early chunks buffer instead of landing early

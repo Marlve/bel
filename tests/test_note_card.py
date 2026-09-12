@@ -100,7 +100,10 @@ class NoteCardTests(unittest.TestCase):
         try:
             self.assertEqual(
                 (card.x(), card.y()),
-                (area.x() + area.width() - card.width(), area.y() + area.height() - card.height()),
+                (
+                    area.x() + area.width() - style.CARD_EDGE_MARGIN - card.width(),
+                    area.y() + area.height() - style.CARD_EDGE_MARGIN - card.height(),
+                ),
             )
         finally:
             card.close()

@@ -6,16 +6,17 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, Qt, QVariantAnimation, Signal
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 import cardStore
+import dockCorner
 import style
 from claudeChatCard import ChatCard, ChatSlot
 from claudeEdgeDockState import OPEN, HIDDEN, TAB
@@ -23,6 +24,10 @@ from claudeEdgeDockState import OPEN, HIDDEN, TAB
 
 def key(code):
     return QKeyEvent(QEvent.KeyPress, code, Qt.NoModifier)
+
+
+def mouseEvent(kind, global_pos):
+    return QMouseEvent(kind, QPointF(0, 0), QPointF(global_pos), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
 
 
 class FakeRequest(QObject):
@@ -129,6 +134,123 @@ class ChatCardTests(unittest.TestCase):
         self.assertTrue(self.card.header_label.isVisible())
         self.assertEqual(self.card.tilt, 0.0)
 
+    def test_tab_tilt_is_mirrored_for_a_left_docked_corner(self):
+        left_dock_rect = QRectF(24, 24, style.CHAT_SIZE, style.CHAT_SIZE)
+        left_card = ChatCard(self.born, left_dock_rect, QApplication.primaryScreen(), dockCorner.TOP_LEFT)
+        left_card.motion = False
+        self.addCleanup(teardownCard, left_card)
+        left_card.fly()
+
+        left_card.onDockStateChanged(TAB)
+        self.assertEqual(left_card.tilt, -style.DOCK_TAB_ROTATION_DEG)
+
+    def test_hidden_and_tab_geometry_mirror_to_the_left_edge_for_a_left_docked_corner(self):
+        area = QApplication.primaryScreen().availableGeometry()
+        left_dock_rect = dockCorner.rect(dockCorner.TOP_LEFT, area, style.CHAT_SIZE, style.CHAT_MARGIN)
+        left_card = ChatCard(self.born, left_dock_rect, QApplication.primaryScreen(), dockCorner.TOP_LEFT)
+        left_card.motion = False
+        self.addCleanup(teardownCard, left_card)
+        left_card.fly()
+
+        hidden = left_card.animation.geometryFor(HIDDEN)
+        self.assertEqual(hidden.x(), area.x() - style.DOCK_COMPACT_SIZE)  # fully off-screen to the left
+
+        tab = left_card.animation.geometryFor(TAB)
+        self.assertGreater(tab.right(), area.x())  # the visible sliver peeks onto the screen
+        self.assertLess(tab.x(), area.x())  # most of the puck sits off-screen to the left
+
+    # --- drag-and-snap to a corner ---
+
+    def test_a_press_and_release_under_the_threshold_is_a_click_not_a_drag(self):
+        self.card.fly()
+        self.card.move(300, 300)
+        start_pos = self.card.pos()
+        press = QPointF(310, 310)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, press + QPointF(1, 1)))
+        self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, press + QPointF(1, 1)))
+        self.assertEqual(self.card.pos(), start_pos)
+        self.assertEqual(self.card.corner, dockCorner.TOP_RIGHT)
+
+    def test_dragging_past_the_threshold_follows_the_cursor(self):
+        self.card.fly()
+        self.card.move(300, 300)
+        press = QPointF(310, 310)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, press + QPointF(50, 5)))
+        self.assertEqual(self.card.pos(), QPoint(350, 305))
+
+    def test_releasing_a_drag_docks_to_the_nearest_corner_and_persists_it(self):
+        self.card.fly()
+        self.card.move(300, 300)
+        seen = []
+        self.card.corner_changed.connect(seen.append)
+        press = QPointF(310, 310)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        area = QApplication.primaryScreen().availableGeometry()
+        bottom_left = QPointF(area.x() + 20, area.y() + area.height() - 20)
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, bottom_left))
+        self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, bottom_left))
+        self.assertEqual(self.card.corner, dockCorner.BOTTOM_LEFT)
+        self.assertEqual(seen, [dockCorner.BOTTOM_LEFT])
+        expected = dockCorner.rect(dockCorner.BOTTOM_LEFT, area, style.CHAT_SIZE, style.CHAT_MARGIN)
+        self.assertEqual(self.card.geometry(), expected.toRect())
+
+    def test_the_snap_animation_starts_from_the_actual_drop_point(self):
+        # The live drag moves the window directly (self.parent.move()),
+        # bypassing EdgeDockDriver entirely - its own current_rect bookkeeping
+        # would otherwise still be wherever OPEN last was, and the tween
+        # would visibly snap back there before animating out to the new
+        # corner instead of starting from the drop point.
+        self.card.motion = True
+        self.card.fly()
+        self.card.flight.stop()
+        self.card.onLanded()
+
+        self.card.move(300, 300)
+        press = QPointF(310, 310)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        area = QApplication.primaryScreen().availableGeometry()
+        bottom_left = QPointF(area.x() + 20, area.y() + area.height() - 20)
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, bottom_left))
+        drop_rect = QRectF(self.card.geometry())
+
+        self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, bottom_left))
+
+        self.assertEqual(self.card.animation.edge_driver.tween.startValue(), drop_rect)
+
+    def test_releasing_a_drag_on_a_different_screen_docks_there_not_the_original_one(self):
+        # dragMove() already re-resolves the screen under the cursor on
+        # every move to clamp correctly on whatever monitor it's over -
+        # dragRelease() has to keep self.screen in step too, or a
+        # cross-monitor drag would snap back to a corner of the monitor the
+        # card started on instead of the one it was actually dropped on.
+        self.card.fly()
+        self.card.move(300, 300)
+        press = QPointF(310, 310)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, press + QPointF(50, 50)))
+
+        other_area = QRectF(2000, 0, 1000, 800)
+        other_screen = Mock()
+        other_screen.availableGeometry.return_value = other_area
+        release_pos = QPointF(2990, 20)  # top-right quadrant of other_area
+
+        with patch("claudeChatCardAnimation.QApplication.screenAt", return_value=other_screen):
+            self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, release_pos))
+
+        self.assertIs(self.card.animation.screen, other_screen)
+        self.assertEqual(self.card.corner, dockCorner.TOP_RIGHT)
+        expected = dockCorner.rect(dockCorner.TOP_RIGHT, other_area, style.CHAT_SIZE, style.CHAT_MARGIN)
+        self.assertEqual(self.card.dock_rect, expected)
+
+    def test_pressing_while_minimized_does_not_start_a_drag(self):
+        self.card.fly()
+        self.card.minimize()
+        press = QPointF(self.card.x() + 10, self.card.y() + 10)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        self.assertIsNone(self.card.animation.drag_press_pos)
+
     # --- the conversation ---
 
     def test_send_streams_a_reply_into_the_transcript(self):
@@ -185,6 +307,20 @@ class ChatSlotTests(unittest.TestCase):
         self.assertIs(self.slot.card, card)
         self.assertEqual(card.wedge_id, "wedge-1")
         self.assertEqual(len(self.requests), 1)
+
+    def test_a_fresh_slot_defaults_to_the_top_right_corner(self):
+        self.assertEqual(self.slot.corner, dockCorner.TOP_RIGHT)
+
+    def test_a_dragged_corner_persists_to_a_new_chatslot_instance(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.animation.dockToCorner(dockCorner.BOTTOM_RIGHT)
+        self.assertEqual(self.slot.corner, dockCorner.BOTTOM_RIGHT)
+
+        fresh_slot = ChatSlot()
+        self.assertEqual(fresh_slot.corner, dockCorner.BOTTOM_RIGHT)
+        screen = QApplication.primaryScreen()
+        expected = dockCorner.rect(dockCorner.BOTTOM_RIGHT, screen.availableGeometry(), style.CHAT_SIZE, style.CHAT_MARGIN)
+        self.assertEqual(fresh_slot.dockRect(screen), expected)
 
     def test_reopening_the_same_wedge_reveals_the_existing_card_instead_of_spawning_another(self):
         first = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
