@@ -92,7 +92,7 @@ class ResizeGrip(QWidget):
         super().leaveEvent(event)
 
     def animateHoverTo(self, target):
-        if not getattr(self.card, "motion", False):
+        if not self.card.motion:
             self.hover_tween.stop()
             self.hover_t = target
             self.update()
