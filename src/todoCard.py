@@ -8,16 +8,16 @@
 # add affordance in its spec. This adds one: a small field pinned at the
 # bottom, always present, the same way the chat card's composer always is.
 
-from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QHBoxLayout, QApplication
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QCursor
+from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QHBoxLayout
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
 import cardStore
 from anims.clock import Tween
-from anims import curves
 from draggable import WindowDrag, ResizeGrip
+from floatingCard import FloatingCard
 from todoListAnimation import TodoListAnimation
 from util import reduced_motion
 
@@ -123,7 +123,7 @@ class TodoList(QWidget):
         painter.restore()
 
 
-class TodoCard(QWidget):
+class TodoCard(FloatingCard, QWidget):
     def __init__(self):
         super().__init__(None)  # top-level: outlives the ring, persists for the app's life
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -148,14 +148,7 @@ class TodoCard(QWidget):
         self.list.setItems(saved.get("items", []))
         self.grip.reposition()
 
-    def open(self):
-        """Lands near wherever the wedge was picked - like the ring itself
-        always opening at the cursor, not wherever the card happened to be
-        left after a previous drag or a previous session."""
-        self.moveNear(QCursor.pos())
-        self.setWindowOpacity(0 if self.motion else 1)
-        self.show()
-        self.raise_()
+    def afterRaise(self):
         # WA_ShowWithoutActivating keeps show() from stealing OS focus, so
         # the field's setFocus() alone would be Qt-internal only - actual
         # keystrokes need the window itself activated. Safe to do explicitly
@@ -164,20 +157,6 @@ class TodoCard(QWidget):
         self.activateWindow()
         self.add_field.setFocus()
         self.add_field.end(False)  # caret after any text the field already holds
-        if self.motion:
-            self.fade.run(0.0, 1.0, style.CARD_OPEN_MS, curves.CHAT_FLIGHT)
-
-    def onFadeTick(self, value):
-        self.setWindowOpacity(value)
-
-    def moveNear(self, cursor_pos):
-        screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
-        x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - MARGIN
-        y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - MARGIN
-        x = max(area.x(), min(x, area.x() + area.width() - self.width()))
-        y = max(area.y(), min(y, area.y() + area.height() - self.height()))
-        self.move(x, y)
 
     def buildContent(self):
         self.header_label = QLabel("TODO", self)

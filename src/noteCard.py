@@ -10,22 +10,22 @@
 # bare margins - not covered by any child widget - fall through to it.
 
 from PySide6.QtWidgets import QWidget, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QApplication
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor
+from PySide6.QtGui import QPainter, QColor, QPen, QFont
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
 import cardStore
 from anims.clock import Tween
-from anims import curves
 from draggable import WindowDrag, ResizeGrip
+from floatingCard import FloatingCard
 from util import reduced_motion
 
 STORE_KEY = "note"
 MARGIN = style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
 
 
-class NoteCard(QWidget):
+class NoteCard(FloatingCard, QWidget):
     def __init__(self):
         super().__init__(None)  # top-level: outlives the ring, persists for the app's life
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -50,13 +50,7 @@ class NoteCard(QWidget):
         self.body.setPlainText(saved.get("text", ""))
         self.grip.reposition()
 
-    def open(self):
-        """Lands near wherever the wedge was picked - like the ring itself
-        always opening at the cursor, not wherever the card happened to be
-        left after a previous drag or a previous session."""
-        self.moveNear(QCursor.pos())
-        self.setWindowOpacity(0 if self.motion else 1)
-        self.show()
+    def afterShow(self):
         # QPlainTextEdit lays out (and decides whether it needs a scrollbar)
         # against whatever geometry it had while the window was still
         # hidden, which can be stale - show()'s first real paint can flash
@@ -64,21 +58,6 @@ class NoteCard(QWidget):
         # Flushing the pending layout here, before the card is actually
         # visible, keeps that first paint already correct.
         QApplication.processEvents()
-        self.raise_()
-        if self.motion:
-            self.fade.run(0.0, 1.0, style.CARD_OPEN_MS, curves.CHAT_FLIGHT)
-
-    def onFadeTick(self, value):
-        self.setWindowOpacity(value)
-
-    def moveNear(self, cursor_pos):
-        screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
-        x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - MARGIN
-        y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - MARGIN
-        x = max(area.x(), min(x, area.x() + area.width() - self.width()))
-        y = max(area.y(), min(y, area.y() + area.height() - self.height()))
-        self.move(x, y)
 
     def buildContent(self):
         self.header_label = QLabel("NOTE", self)
