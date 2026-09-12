@@ -6,9 +6,10 @@
 
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtCore import Qt, QPoint, QPointF
 
 import style
+import screenBounds
 from anims.clock import Tween
 from anims import curves
 from anims.pose import mix
@@ -36,8 +37,23 @@ class WindowDrag:
         if not self.dragging and delta.x() ** 2 + delta.y() ** 2 < style.CARD_DRAG_THRESHOLD_PX ** 2:
             return False
         self.dragging = True
-        self.window.move(self.window_pos + delta.toPoint())
+        self.window.move(self.clampedPos(self.window_pos + delta.toPoint(), global_pos))
         return True
+
+    def clampedPos(self, pos, cursor_pos):
+        """Sticks the window to whichever edge of its screen's available
+        geometry it would otherwise overflow, same "subtract the overflow"
+        idea as FloatingCard.moveNear()'s clamp at spawn time - move() had
+        no boundary check at all, so a drag could push the window fully off
+        any screen. Screen picked from the actual cursor position (already
+        at hand from the move event), not from `pos` itself - `pos` is the
+        window's candidate top-left, which can briefly compute into a
+        neighboring monitor's geometry near a shared edge before the clamp
+        below has even run."""
+        area = screenBounds.available_area(cursor_pos.toPoint())
+        x = screenBounds.clamp(pos.x(), area.x(), area.x() + area.width() - self.window.width())
+        y = screenBounds.clamp(pos.y(), area.y(), area.y() + area.height() - self.window.height())
+        return QPoint(x, y)
 
     def release(self):
         was_dragging = self.dragging

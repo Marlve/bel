@@ -6,11 +6,11 @@
 # they occupied before this split. First shared base class among this
 # codebase's cards (ticket 09).
 
-from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QCursor, QColor, QPainterPath, QPen
 from PySide6.QtCore import QRectF, QPointF
 
 import style
+import screenBounds
 from anims import curves
 
 
@@ -58,10 +58,9 @@ class FloatingCard:
         self.setWindowOpacity(value)
 
     def moveNear(self, cursor_pos):
-        screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
+        area = screenBounds.available_area(cursor_pos)
         x = cursor_pos.x() + style.CARD_SPAWN_OFFSET - style.CARD_SHADOW_MARGIN
         y = cursor_pos.y() + style.CARD_SPAWN_OFFSET - style.CARD_SHADOW_MARGIN
-        x = max(area.x(), min(x, area.x() + area.width() - self.width()))
-        y = max(area.y(), min(y, area.y() + area.height() - self.height()))
+        x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())
+        y = screenBounds.clamp(y, area.y(), area.y() + area.height() - self.height())
         self.move(x, y)

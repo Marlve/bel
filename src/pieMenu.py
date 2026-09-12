@@ -11,6 +11,7 @@ from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadial
 from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
 
 import style
+import screenBounds
 from anims import pose
 from promptFlow import PromptFlow
 from claudeChatCard import ChatSlot
@@ -158,6 +159,18 @@ class PieMenu(QWidget):
         if index is not None:
             self.animation.animateHover(index, 1)
 
+    def clampedAnchor(self, cursor_pos):
+        """Keeps the ring's full paint reach on the cursor's own screen: a
+        hotkey press within `paint_reach()` of an edge sticks the ring's
+        outer edge to that edge instead of letting wedges/glow/shadow clip
+        past it - same idea as FloatingCard.moveNear()'s clamp, applied to
+        the ring's anchor instead of a window's top-left corner."""
+        area = screenBounds.available_area(cursor_pos)
+        reach = paint_reach()
+        x = screenBounds.clamp(cursor_pos.x(), area.x() + reach, area.x() + area.width() - reach)
+        y = screenBounds.clamp(cursor_pos.y(), area.y() + reach, area.y() + area.height() - reach)
+        return self.mapFromGlobal(QPointF(x, y))
+
     def ringRect(self):
         """Screen area the ring's ink can reach."""
         reach = paint_reach()
@@ -184,7 +197,7 @@ class PieMenu(QWidget):
     def openAtCursor(self):
         self.animation.stopClocks()
         self.state.phase = OPENING
-        self.state.anchor = QPointF(self.mapFromGlobal(QCursor.pos()))
+        self.state.anchor = self.clampedAnchor(QCursor.pos())
         self.state.chosen_wedge = None
         self.state.prompt_text = None
         self.animation.open_ms = self.animation.select_ms = self.animation.close_ms = self.prompt_flow.ms = 0

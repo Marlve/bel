@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
+from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, QPoint, Signal
 
 import cardStore
 import pieMenu as pieMenuModule
@@ -429,6 +429,55 @@ class PieMenuFlowTests(unittest.TestCase):
 
         radius = hit_radius()
         self.assertIsNone(wedge_index(0, -(radius + 1), 4, radius=radius))
+
+
+class PieMenuAnchorClampTests(unittest.TestCase):
+    """clampedAnchor() (screen-boundaries/01) keeps the ring's full paint
+    reach on-screen - exercised directly since QCursor.pos(), what
+    openAtCursor() feeds it, isn't controllable from a test."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_path = cardStore.STORE_PATH
+        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_hotkey_log_path = pieMenuModule.HOTKEY_LOG_PATH
+        pieMenuModule.HOTKEY_LOG_PATH = Path(self.tmp.name) / "hotkey.log"
+        self.menu = PieMenu()
+
+    def tearDown(self):
+        self.menu.close()
+        self.menu.deleteLater()
+        cardStore.STORE_PATH = self.original_path
+        pieMenuModule.HOTKEY_LOG_PATH = self.original_hotkey_log_path
+        self.tmp.cleanup()
+
+    def globalAnchor(self, cursor_pos):
+        return self.menu.mapToGlobal(self.menu.clampedAnchor(cursor_pos))
+
+    def test_opening_at_the_top_left_corner_keeps_the_full_reach_onscreen(self):
+        area = QApplication.primaryScreen().availableGeometry()
+        reach = pieMenuModule.paint_reach()
+        anchor = self.globalAnchor(QPoint(area.x(), area.y()))
+        self.assertAlmostEqual(anchor.x(), area.x() + reach, delta=1)
+        self.assertAlmostEqual(anchor.y(), area.y() + reach, delta=1)
+
+    def test_opening_at_the_bottom_right_corner_keeps_the_full_reach_onscreen(self):
+        area = QApplication.primaryScreen().availableGeometry()
+        reach = pieMenuModule.paint_reach()
+        corner = QPoint(area.x() + area.width(), area.y() + area.height())
+        anchor = self.globalAnchor(corner)
+        self.assertAlmostEqual(anchor.x(), area.x() + area.width() - reach, delta=1)
+        self.assertAlmostEqual(anchor.y(), area.y() + area.height() - reach, delta=1)
+
+    def test_opening_away_from_any_edge_uses_the_raw_cursor_position(self):
+        area = QApplication.primaryScreen().availableGeometry()
+        center = QPoint(area.x() + area.width() // 2, area.y() + area.height() // 2)
+        anchor = self.globalAnchor(center)
+        self.assertEqual((anchor.x(), anchor.y()), (center.x(), center.y()))
 
 
 if __name__ == "__main__":

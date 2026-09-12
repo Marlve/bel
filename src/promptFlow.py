@@ -9,6 +9,7 @@
 # PieMenu.
 
 from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtWidgets import QApplication
 
 import style
 from anims import pose
@@ -18,6 +19,7 @@ from promptBar import PromptBar
 
 class PromptFlow:
     def __init__(self, parent, wedge_count, on_tick, on_arrived):
+        self.parent = parent
         self.wedge_count = wedge_count
         self.on_tick = on_tick
         self.on_arrived = on_arrived
@@ -41,8 +43,22 @@ class PromptFlow:
         return box
 
     def fieldRect(self, anchor):
+        """Centered on `anchor`, except within FIELD_WIDTH of a screen edge -
+        there it grows away from that edge instead of centering (and
+        clipping) across it. Once PieMenu.clampedAnchor() guarantees the
+        ring's anchor always has room on-screen, vertical placement never
+        collides, so only left/right need this."""
+        global_anchor = self.parent.mapToGlobal(anchor)
+        screen = QApplication.screenAt(global_anchor.toPoint()) or QApplication.primaryScreen()
+        area = screen.availableGeometry()
+
         rect = QRectF(0, 0, style.FIELD_WIDTH, style.FIELD_HEIGHT)
-        rect.moveCenter(anchor)
+        rect.moveCenter(global_anchor)
+        if rect.left() < area.x():
+            rect.moveLeft(global_anchor.x())
+        elif rect.right() > area.x() + area.width():
+            rect.moveRight(global_anchor.x())
+        rect.moveTopLeft(self.parent.mapFromGlobal(rect.topLeft()))
         return rect
 
     # --- the flight ---

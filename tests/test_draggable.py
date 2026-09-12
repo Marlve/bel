@@ -15,12 +15,20 @@ from draggable import WindowDrag, ResizeGrip
 
 
 class FakeWindow:
-    def __init__(self, x, y):
+    def __init__(self, x, y, width=100, height=100):
         self._pos = QPoint(x, y)
+        self._width = width
+        self._height = height
         self.move_calls = []
 
     def pos(self):
         return self._pos
+
+    def width(self):
+        return self._width
+
+    def height(self):
+        return self._height
 
     def move(self, point):
         self._pos = point
@@ -28,6 +36,10 @@ class FakeWindow:
 
 
 class WindowDragTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_small_movement_does_not_drag(self):
         window = FakeWindow(100, 100)
         drag = WindowDrag(window)
@@ -72,6 +84,29 @@ class WindowDragTests(unittest.TestCase):
         drag.release()
         self.assertFalse(drag.dragging)
         self.assertIsNone(drag.press_pos)
+
+    def test_dragging_cannot_push_the_window_past_the_right_or_bottom_edge(self):
+        area = (QApplication.screenAt(QPoint(0, 0)) or QApplication.primaryScreen()).availableGeometry()
+        window = FakeWindow(100, 100, width=50, height=50)
+        drag = WindowDrag(window)
+        drag.press(QPointF(0, 0))
+        drag.move(QPointF(area.width(), area.height()))  # drag way past the bottom-right corner
+        self.assertEqual(window.pos(), QPoint(area.x() + area.width() - 50, area.y() + area.height() - 50))
+
+    def test_dragging_cannot_push_the_window_past_the_left_or_top_edge(self):
+        area = (QApplication.screenAt(QPoint(0, 0)) or QApplication.primaryScreen()).availableGeometry()
+        window = FakeWindow(100, 100, width=50, height=50)
+        drag = WindowDrag(window)
+        drag.press(QPointF(0, 0))
+        drag.move(QPointF(-area.width(), -area.height()))  # drag way past the top-left corner
+        self.assertEqual(window.pos(), QPoint(area.x(), area.y()))
+
+    def test_dragging_within_bounds_is_unaffected_by_the_clamp(self):
+        window = FakeWindow(100, 100, width=50, height=50)
+        drag = WindowDrag(window)
+        drag.press(QPointF(0, 0))
+        drag.move(QPointF(10, -5))
+        self.assertEqual(window.pos(), QPoint(110, 95))
 
 
 class FakeMouseEvent:
