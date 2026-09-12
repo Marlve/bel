@@ -25,6 +25,7 @@ def key(code):
 class StubCard(QWidget):
     def __init__(self):
         super().__init__()
+        self.motion = False
         self.saved = 0
 
     def scheduleSave(self):

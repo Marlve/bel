@@ -83,7 +83,7 @@ class TodoList(QWidget):
         self.remove_timers.pop(id(item), None)
         if not item["done"]:
             return  # unticked before the timer fired
-        if not getattr(self.card, "motion", False):
+        if not self.card.motion:
             self.finishRemoval(item)
             return
         self.remove_fade[id(item)] = 1.0
