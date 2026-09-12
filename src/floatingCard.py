@@ -7,7 +7,7 @@
 # codebase's cards (ticket 09).
 
 from PySide6.QtGui import QCursor, QColor, QPainterPath, QPen
-from PySide6.QtCore import QRectF, QPointF
+from PySide6.QtCore import QRectF, QPointF, QPoint
 
 import style
 import screenBounds
@@ -35,11 +35,14 @@ def paint_card_bands(painter, frame, radius, body_color, header_bottom, divider_
 
 
 class FloatingCard:
+    positioned = False  # set once a real position is known, from a restore or a first moveNear
+
     def open(self):
-        """Lands near wherever the wedge was picked - like the ring itself
-        always opening at the cursor, not wherever the card happened to be
-        left after a previous drag or a previous session."""
-        self.moveNear(QCursor.pos())
+        """Lands near wherever the wedge was picked, like the ring itself -
+        but only the first time a card has never had a position of its own.
+        After that it stays wherever it was left, restored or dragged."""
+        if not self.positioned:
+            self.moveNear(QCursor.pos())
         self.setWindowOpacity(0 if self.motion else 1)
         self.show()
         self.afterShow()
@@ -64,3 +67,15 @@ class FloatingCard:
         x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())
         y = screenBounds.clamp(y, area.y(), area.y() + area.height() - self.height())
         self.move(x, y)
+        self.positioned = True
+
+    def restorePosition(self, pos):
+        """Applies a position saved from a previous session, clamped like
+        every other placement here in case it no longer falls on any screen
+        (a monitor unplugged, or a resolution changed, since it was saved)."""
+        x, y = pos
+        area = screenBounds.available_area(QPoint(x, y))
+        x = screenBounds.clamp(x, area.x(), area.x() + area.width() - self.width())
+        y = screenBounds.clamp(y, area.y(), area.y() + area.height() - self.height())
+        self.move(x, y)
+        self.positioned = True

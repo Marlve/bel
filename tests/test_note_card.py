@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -73,6 +74,53 @@ class NoteCardTests(unittest.TestCase):
             (self.card.x(), self.card.y()),
             (100 + style.CARD_SPAWN_OFFSET - margin(), 100 + style.CARD_SPAWN_OFFSET - margin()),
         )
+
+    def test_save_persists_position(self):
+        self.card.move(150, 220)
+        self.card.save()
+        saved = cardStore.load("note", None)
+        self.assertEqual(saved["pos"], [150, 220])
+
+    def test_a_fresh_card_picks_up_a_previously_saved_position(self):
+        cardStore.save("note", {"text": "", "size": [300, 260], "pos": [150, 220]})
+        card = NoteCard()
+        try:
+            self.assertEqual((card.x(), card.y()), (150, 220))
+        finally:
+            card.close()
+            card.deleteLater()
+            QApplication.processEvents()
+
+    def test_a_saved_position_off_any_screen_is_clamped_back_onscreen(self):
+        # e.g. a second monitor was unplugged since the position was saved.
+        area = QApplication.primaryScreen().availableGeometry()
+        off_screen = [area.x() + area.width() + 500, area.y() + area.height() + 500]
+        cardStore.save("note", {"text": "", "size": [300, 260], "pos": off_screen})
+        card = NoteCard()
+        try:
+            self.assertEqual(
+                (card.x(), card.y()),
+                (area.x() + area.width() - card.width(), area.y() + area.height() - card.height()),
+            )
+        finally:
+            card.close()
+            card.deleteLater()
+            QApplication.processEvents()
+
+    def test_open_moves_a_never_positioned_card_near_the_cursor(self):
+        with patch("floatingCard.QCursor.pos", return_value=QPoint(100, 100)):
+            self.card.open()
+        self.assertEqual(
+            (self.card.x(), self.card.y()),
+            (100 + style.CARD_SPAWN_OFFSET - margin(), 100 + style.CARD_SPAWN_OFFSET - margin()),
+        )
+
+    def test_open_does_not_move_a_card_that_already_has_a_position(self):
+        self.card.move(150, 220)
+        self.card.positioned = True
+        with patch("floatingCard.QCursor.pos", return_value=QPoint(500, 500)):
+            self.card.open()
+        self.assertEqual((self.card.x(), self.card.y()), (150, 220))
 
     def test_close_button_hides_the_card(self):
         self.card.show()

@@ -48,6 +48,9 @@ class NoteCard(FloatingCard, QWidget):
         saved = cardStore.load(STORE_KEY, {})
         face_w, face_h = saved.get("size", [style.NOTE_DEFAULT_WIDTH, style.CHAT_SIZE])
         self.resize(face_w + 2 * margin(), face_h + 2 * margin())
+        pos = saved.get("pos")
+        if pos is not None:
+            self.restorePosition(pos)
 
         self.buildContent()
         self.body.setPlainText(saved.get("text", ""))
@@ -106,7 +109,11 @@ class NoteCard(FloatingCard, QWidget):
     def save(self):
         cardStore.save(
             STORE_KEY,
-            {"text": self.body.toPlainText(), "size": [self.width() - 2 * margin(), self.height() - 2 * margin()]},
+            {
+                "text": self.body.toPlainText(),
+                "size": [self.width() - 2 * margin(), self.height() - 2 * margin()],
+                "pos": [self.x(), self.y()],
+            },
         )
 
     def hideEvent(self, event):

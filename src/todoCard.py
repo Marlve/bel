@@ -152,6 +152,9 @@ class TodoCard(FloatingCard, QWidget):
         saved = cardStore.load(STORE_KEY, {})
         face_w, face_h = saved.get("size", [style.TODO_DEFAULT_WIDTH, style.CHAT_SIZE])
         self.resize(face_w + 2 * margin(), face_h + 2 * margin())
+        pos = saved.get("pos")
+        if pos is not None:
+            self.restorePosition(pos)
 
         self.buildContent()
         self.list.setItems(saved.get("items", []))
@@ -245,7 +248,11 @@ class TodoCard(FloatingCard, QWidget):
     def save(self):
         cardStore.save(
             STORE_KEY,
-            {"items": self.list.items, "size": [self.width() - 2 * margin(), self.height() - 2 * margin()]},
+            {
+                "items": self.list.items,
+                "size": [self.width() - 2 * margin(), self.height() - 2 * margin()],
+                "pos": [self.x(), self.y()],
+            },
         )
 
     def hideEvent(self, event):
