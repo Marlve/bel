@@ -8,42 +8,29 @@
 # design.md / claude-chat-flow.md: the card must NOT be a child of the
 # overlay - the ring closes as soon as the prompt is sent, so the card is
 # its own top-level window, and ChatSlot is what keeps it alive afterwards.
-
-import math
+#
+# Per ADR-0007, split into this view (widgets, paint/input, orchestration),
+# claudeChatCardState.py (session/turn data, no Qt) and
+# claudeChatCardAnimation.py (every Clock/Tween, the edge-dock driver/
+# trigger, and the tick-fed radius/tilt) - ChatCard keeps its previous
+# attribute surface via thin properties so callers outside this file don't
+# need to know the split happened.
 
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTransform
-from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, QPointF, Signal
+from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import chatMarkdown
 import style
 import wedgeConfig
-from anims import curves, pose
-from anims.clock import Clock, Tween
-from claudeEdgeDockState import OPEN, HIDDEN, TAB
-from claudeEdgeDockAnimation import EdgeDockDriver
-from claudeEdgeTrigger import EdgeTrigger
+from anims import curves
+from claudeChatCardState import ChatCardState
+from claudeChatCardAnimation import ChatCardAnimation
+from claudeEdgeDockState import OPEN
 from util import reduced_motion
-
-def _tabFootprint():
-    """The window footprint TAB needs to show the puck rotated without
-    clipping it. claude-chat-flow.md hinges the tilt on the puck's own right
-    edge, not its centre, so the swept bounding box is asymmetric - a plain
-    size*(|cos|+|sin|) square (correct only for a centre-pivot rotation) and
-    a symmetric inset clips the far corner (the bottom edge, at -9deg)."""
-    size = style.DOCK_COMPACT_SIZE
-    pivot = QPointF(size, size / 2)  # right-edge midpoint, puck's own top-left as local origin
-    transform = QTransform().translate(pivot.x(), pivot.y()).rotate(style.DOCK_TAB_ROTATION_DEG).translate(
-        -pivot.x(), -pivot.y()
-    )
-    swept = transform.mapRect(QRectF(0, 0, size, size))
-    return math.ceil(swept.width()), math.ceil(swept.height()), math.ceil(-swept.left()), math.ceil(-swept.top())
-
-
-TAB_WIDTH, TAB_HEIGHT, TAB_LEFT_INSET, TAB_TOP_INSET = _tabFootprint()
 
 
 class Composer(QPlainTextEdit):
@@ -90,34 +77,90 @@ class ChatCard(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)  # never yank focus off whatever the user is doing
 
-        self.born = born
-        self.dock_rect = dock_rect  # this card's OPEN geometry, fixed for the card's life
-        self.screen = screen
-        self.radius = min(born.width(), born.height()) / 2
-        self.tilt = 0.0  # degrees, animated separately from the dock slide (claude-chat-flow.md's "260 ms rotation")
-        self.wedge_id = None
-        self.action = None
-        self.session_id = None
-        self.turn_count = 0  # messages sent in the current session; capped, see send()
-        self.request = None
-        self.buffered = ""
-        self.turns = []  # {"role": "user"/"claude", "text": ...}, one per transcript row
+        self.state = ChatCardState(dock_rect)
         self.streaming_label = None
-        self.streaming_text = ""
         self.streaming_index = None
         self.auto_scroll = True
-        self.motion = not reduced_motion()
+        self.focus_composer_on_land = False
 
         self.buildContent()
         self.setContent(False)
 
-        self.flight = Clock(self, self.onFlightTick, self.onLanded)
-        self.fade = Tween(self, self.onFadeTick, self.onFaded)
-        self.tilt_tween = Tween(self, self.onTiltTick)
+        self.animation = ChatCardAnimation(self, self.state, born, screen, not reduced_motion())
 
-        self.edge_driver = None
-        self.edge_trigger = None
-        self.focus_composer_on_land = False
+    # --- thin forwarding to state/animation, for callers outside this file ---
+
+    @property
+    def dock_rect(self):
+        return self.state.dock_rect
+
+    @property
+    def wedge_id(self):
+        return self.state.wedge_id
+
+    @wedge_id.setter
+    def wedge_id(self, value):
+        self.state.wedge_id = value
+
+    @property
+    def action(self):
+        return self.state.action
+
+    @action.setter
+    def action(self, value):
+        self.state.action = value
+
+    @property
+    def session_id(self):
+        return self.state.session_id
+
+    @property
+    def turn_count(self):
+        return self.state.turn_count
+
+    @property
+    def request(self):
+        return self.state.request
+
+    @property
+    def turns(self):
+        return self.state.turns
+
+    @property
+    def radius(self):
+        return self.animation.radius
+
+    @property
+    def tilt(self):
+        return self.animation.tilt
+
+    @property
+    def edge_driver(self):
+        return self.animation.edge_driver
+
+    @property
+    def edge_trigger(self):
+        return self.animation.edge_trigger
+
+    @property
+    def born(self):
+        return self.animation.born
+
+    @property
+    def flight(self):
+        return self.animation.flight
+
+    @property
+    def fade(self):
+        return self.animation.fade
+
+    @property
+    def motion(self):
+        return self.animation.motion
+
+    @motion.setter
+    def motion(self, value):
+        self.animation.motion = value
 
     def buildContent(self):
         self.header_label = QLabel("CLAUDE", self)
@@ -185,103 +228,104 @@ class ChatCard(QWidget):
         for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(not compact)
 
-    # --- the flight from the prompt bar ---
-
-    def flying(self):
-        return self.flight.state() == QVariantAnimation.Running
-
-    def fly(self):
-        self.setGeometry(self.born.toRect())
-        self.show()
-        self.raise_()
-        if not self.motion:
-            self.onLanded()
-            return
-        self.flight.run(style.CHAT_FLIGHT_MS)
-
-    def onFlightTick(self, ms):
-        self.setGeometry(pose.lerp_rect(self.born, self.dock_rect, pose.card_flight_progress(ms)).toRect())
-        self.radius = pose.card_radius(ms, min(self.born.width(), self.born.height()) / 2)
-        self.update()
-
-    def onLanded(self):
-        self.setGeometry(self.dock_rect.toRect())
-        self.radius = style.CHAT_RADIUS
-        self.setContent(True)
-        self.layout().activate()
-
-        self.edge_driver = EdgeDockDriver(
-            self, self.geometryFor, self.onDockMoved, self.onDockStateChanged, self.motion,
-            on_landed=self.onDockLanded,
-        )
-        self.edge_trigger = EdgeTrigger(self.onEdgeDistance, self.screen)
-
-        if self.buffered:
-            self.write(self.buffered)
-            self.buffered = ""
+    def focusComposerIfPending(self):
+        """Shared by the initial flight-landing and every later dock-tween
+        landing: reveal()'s `focus=True` sets focus_composer_on_land rather
+        than focusing immediately, since a still-hidden/mid-tween composer
+        wouldn't hold it."""
         if self.focus_composer_on_land:
             self.focus_composer_on_land = False
-            self.activateWindow()  # see onDockLanded()'s comment on WA_ShowWithoutActivating
+            # WA_ShowWithoutActivating keeps this window from ever getting
+            # real OS keyboard focus on its own - setFocus() alone would
+            # only be Qt-internal. Safe to activate explicitly here since
+            # reveal() only reaches this from a wedge pick, which already
+            # forced OS foreground for this process (util.force_foreground).
+            self.activateWindow()
             self.composer.setFocus()
+
+    # --- the flight from the prompt bar ---
+
+    def fly(self):
+        self.setGeometry(self.animation.born.toRect())
+        self.show()
+        self.raise_()
+        if not self.animation.motion:
+            self.onLanded()
+            return
+        self.animation.flight.run(style.CHAT_FLIGHT_MS)
+
+    def onFlightTick(self, ms):
+        self.animation.onFlightTick(ms)
+
+    def onLanded(self):
+        self.setGeometry(self.state.dock_rect.toRect())
+        self.setContent(True)
+        self.layout().activate()
+        self.animation.land()
+
+        if self.state.buffered:
+            self.write(self.state.buffered)
+            self.state.buffered = ""
+        self.focusComposerIfPending()
         self.update()
 
     # --- the conversation ---
 
     def send(self, text):
-        if self.request is not None or self.action is None:
+        if self.state.request is not None or self.state.action is None:
             return
-        if self.turn_count >= wedgeConfig.load_chat_context_limit():
+        if self.state.turn_count >= wedgeConfig.load_chat_context_limit():
             # The session has taken as much context as it's allowed to -
             # this message starts a brand new one rather than resuming.
-            self.session_id = None
-            self.turn_count = 0
-        self.turn_count += 1
+            self.state.session_id = None
+            self.state.turn_count = 0
+        self.state.turn_count += 1
         self.appendUserTurn(text)
         self.streaming_label = self.appendClaudeTurn()
-        self.streaming_text = ""
+        self.state.streaming_text = ""
         self.composer.setReadOnly(True)
 
-        self.request = self.action(text, session_id=self.session_id)
-        self.request.chunk.connect(self.onChunk)
-        self.request.session_started.connect(self.onSessionStarted)
-        self.request.finished.connect(self.onStreamFinished)
+        self.state.request = self.state.action(text, session_id=self.state.session_id)
+        self.state.request.chunk.connect(self.onChunk)
+        self.state.request.session_started.connect(self.onSessionStarted)
+        self.state.request.finished.connect(self.onStreamFinished)
 
     def onSessionStarted(self, session_id):
-        self.session_id = session_id
+        self.state.session_id = session_id
 
     def onChunk(self, text):
         # Content only streams once the geometry is at rest - text reflowing
         # inside a widget that is still resizing re-hints every glyph.
-        if self.flying():
-            self.buffered += text
+        if self.animation.flying():
+            self.state.buffered += text
         else:
             self.write(text)
 
     def write(self, text):
-        self.streaming_text += text
-        self.turns[self.streaming_index]["text"] = self.streaming_text
-        self.setTurnHtml(self.streaming_label, self.streaming_text, caret=True)
+        self.state.streaming_text += text
+        self.state.turns[self.streaming_index]["text"] = self.state.streaming_text
+        self.setTurnHtml(self.streaming_label, self.state.streaming_text, caret=True)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def onStreamFinished(self):
         if self.streaming_label is not None:
-            self.setTurnHtml(self.streaming_label, self.streaming_text, caret=False)
+            self.setTurnHtml(self.streaming_label, self.state.streaming_text, caret=False)
         self.streaming_label = None
         self.composer.setReadOnly(False)
         self.unwire()
 
     def unwire(self):
-        if self.request is None:
+        if self.state.request is None:
             return
-        self.request.chunk.disconnect(self.onChunk)
-        self.request.session_started.disconnect(self.onSessionStarted)
-        self.request.finished.disconnect(self.onStreamFinished)
-        self.request = None
+        self.state.request.chunk.disconnect(self.onChunk)
+        self.state.request.session_started.disconnect(self.onSessionStarted)
+        self.state.request.finished.disconnect(self.onStreamFinished)
+        self.state.request = None
 
     # --- transcript ---
 
     def appendUserTurn(self, text):
-        self.turns.append({"role": "user", "text": text})
+        self.state.turns.append({"role": "user", "text": text})
 
         bubble = QLabel(text)
         # Qt.AutoText's rich-text sniff can't fire on html.escape()'d text
@@ -301,8 +345,8 @@ class ChatCard(QWidget):
         self.insertTurnRow(row)
 
     def appendClaudeTurn(self):
-        self.turns.append({"role": "claude", "text": ""})
-        self.streaming_index = len(self.turns) - 1
+        self.state.turns.append({"role": "claude", "text": ""})
+        self.streaming_index = len(self.state.turns) - 1
 
         label = QLabel("")
         label.setTextFormat(Qt.RichText)
@@ -352,65 +396,15 @@ class ChatCard(QWidget):
 
     # --- the edge dock ---
 
-    def geometryFor(self, state):
-        r = self.dock_rect
-        area = self.screen.availableGeometry()
-        edge = area.x() + area.width()
-        size = style.DOCK_COMPACT_SIZE
-        if state == OPEN:
-            return QRectF(r)
-        if state == HIDDEN:
-            return QRectF(edge, r.top(), size, size)
-        return QRectF(
-            edge - style.DOCK_TAB_VISIBLE_PX - TAB_LEFT_INSET,
-            r.top() - TAB_TOP_INSET,
-            TAB_WIDTH,
-            TAB_HEIGHT,
-        )
-
-    def onDockMoved(self, rect):
-        self.setGeometry(rect.toRect())
-
     def onDockStateChanged(self, dock_state):
-        # Reaching OPEN is the one transition where content becomes visible
-        # rather than hidden - deferred to onDockLanded() so the labels don't
-        # reflow every frame while the window is still growing from a
-        # HIDDEN/TAB-sized footprint up to full size (same reasoning as
-        # onChunk() buffering text until the flight animation is done).
-        if dock_state != OPEN or not self.motion:
-            self.setCompactVisual(dock_state in (TAB, HIDDEN))
-        self.radius = style.CHAT_RADIUS
-        target_tilt = style.DOCK_TAB_ROTATION_DEG if dock_state == TAB else 0.0
-        if self.motion:
-            self.tilt_tween.run(self.tilt, target_tilt, style.DOCK_TAB_ROTATE_MS, curves.CHAT_FLIGHT)
-        else:
-            self.tilt = target_tilt
-        self.update()
+        self.animation.onDockStateChanged(dock_state)
 
     def onDockLanded(self):
-        if self.edge_driver and self.edge_driver.dock.state == OPEN:
-            self.setCompactVisual(False)
-            if self.focus_composer_on_land:
-                self.focus_composer_on_land = False
-                # WA_ShowWithoutActivating keeps this window from ever getting
-                # real OS keyboard focus on its own - setFocus() alone would
-                # only be Qt-internal. Safe to activate explicitly here since
-                # reveal() only reaches this from a wedge pick, which already
-                # forced OS foreground for this process (util.force_foreground).
-                self.activateWindow()
-                self.composer.setFocus()
-
-    def onTiltTick(self, value):
-        self.tilt = value
-        self.update()
-
-    def onEdgeDistance(self, px):
-        if self.edge_driver:
-            self.edge_driver.cursorDistance(px)
+        self.animation.onDockLanded()
 
     def minimize(self):
-        if self.edge_driver:
-            self.edge_driver.minimize()
+        if self.animation.edge_driver:
+            self.animation.edge_driver.minimize()
             self.focus_composer_on_land = False  # tucking it away - a still-pending reveal's focus shouldn't land later
 
     def reveal(self, focus=False):
@@ -421,45 +415,20 @@ class ChatCard(QWidget):
         leaves the content hidden mid-tween (see its own comment), and
         focusing a still-hidden composer wouldn't stick."""
         self.raise_()
-        if self.edge_driver:
-            self.edge_driver.reveal()
+        if self.animation.edge_driver:
+            self.animation.edge_driver.reveal()
         if focus:
-            if self.motion:
+            if self.animation.motion:
                 self.focus_composer_on_land = True
             else:
-                self.activateWindow()  # see onDockLanded()'s comment on WA_ShowWithoutActivating
+                self.activateWindow()  # see focusComposerIfPending()'s comment on WA_ShowWithoutActivating
                 self.composer.setFocus()
 
-    def puckRect(self):
-        """The puck's own rect within this widget. Scales the TAB insets by
-        how far the geometry tween has grown from HIDDEN's bare size*size
-        window towards TAB's full (asymmetric) footprint, so the
-        puck tracks smoothly mid-transition instead of jumping to its final
-        offset the instant TAB is reached."""
-        size = style.DOCK_COMPACT_SIZE
-        span = TAB_WIDTH - size
-        t = max(0.0, min(1.0, (self.width() - size) / span)) if span else 1.0
-        return QRectF(TAB_LEFT_INSET * t, TAB_TOP_INSET * t, size, size)
-
-    def tabPivot(self):
-        """claude-chat-flow.md: TAB is 'hinged on its right edge' - the pivot
-        is the puck's own right-edge midpoint, not the window centre."""
-        puck = self.puckRect()
-        return QPointF(puck.right(), puck.center().y())
-
     def isTabbed(self):
-        return self.edge_driver is not None and self.edge_driver.dock.state == TAB
+        return self.animation.isTabbed()
 
     def isOpen(self):
-        return self.edge_driver is not None and self.edge_driver.dock.state == OPEN
-
-    def tabContains(self, pos):
-        pivot = self.tabPivot()
-        inverse, ok = QTransform().translate(pivot.x(), pivot.y()).rotate(-style.DOCK_TAB_ROTATION_DEG).translate(
-            -pivot.x(), -pivot.y()
-        ).inverted()
-        local = inverse.map(pos) if ok else pos
-        return self.puckRect().contains(local)
+        return self.animation.isOpen()
 
     # --- leaving ---
 
@@ -467,25 +436,17 @@ class ChatCard(QWidget):
         """Cancel the edge-dock timer and tween - shared by dismiss() and
         ChatSlot.retire(), the two teardown paths, so a stray poll or a
         reveal's still-running tween can't land after teardown starts."""
-        if self.edge_trigger:
-            self.edge_trigger.stop()
-        if self.edge_driver:
-            self.edge_driver.stop()
+        self.animation.stopDynamics()
 
     def dismiss(self):
-        if self.fade.state() == QVariantAnimation.Running:
+        if self.animation.fade.state() == QVariantAnimation.Running:
             return
         self.unwire()
         self.stopDynamics()
-        if not self.motion:
+        if not self.animation.motion:
             self.onFaded()
             return
-        self.fade.run(1.0, 0.0, style.CHAT_DISMISS_MS, curves.CHAT_FLIGHT)
-
-    def onFadeTick(self, t):
-        self.setWindowOpacity(t)
-        travelled = round((1 - t) * style.CHAT_DISMISS_SLIDE)
-        self.move(self.dock_rect.toRect().x() + travelled, self.dock_rect.toRect().y())
+        self.animation.fade.run(1.0, 0.0, style.CHAT_DISMISS_MS, curves.CHAT_FLIGHT)
 
     def onFaded(self):
         # Only hide and announce. Tearing the widget down here would destroy
@@ -496,8 +457,8 @@ class ChatCard(QWidget):
 
     def mousePressEvent(self, event):
         if self.isTabbed():
-            if self.tabContains(event.position()) and self.edge_driver:
-                self.edge_driver.clickTab()
+            if self.animation.tabContains(event.position()) and self.animation.edge_driver:
+                self.animation.edge_driver.clickTab()
             return
 
     def keyPressEvent(self, event):
@@ -508,24 +469,24 @@ class ChatCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        dock_state = self.edge_driver.dock.state if self.edge_driver else None
-        if self.isTabbed() or (self.tilt != 0.0 and dock_state != OPEN):
-            # Rotation is gated on self.tilt, not just isTabbed(), so the
+        dock_state = self.animation.edge_driver.dock.state if self.animation.edge_driver else None
+        if self.isTabbed() or (self.animation.tilt != 0.0 and dock_state != OPEN):
+            # Rotation is gated on tilt, not just isTabbed(), so the
             # untilt-back-to-0 animation stays visible after the state has
             # already left TAB - otherwise painting would drop to the
             # unrotated branch the instant TAB ends, and the still-running
-            # tilt_tween would keep updating self.tilt with nothing drawing
+            # tilt_tween would keep updating tilt with nothing drawing
             # it, making the tilt appear to vanish instantly. Excluded for
             # OPEN specifically: reopening grows the window to full size
             # while puckRect() stays clamped to its tiny footprint, so
             # keeping this branch there would paint a stuck puck instead of
             # the growing card until the tilt tween finished.
             painter.save()
-            pivot = self.tabPivot()
+            pivot = self.animation.tabPivot()
             painter.translate(pivot)
-            painter.rotate(self.tilt)
+            painter.rotate(self.animation.tilt)
             painter.translate(-pivot.x(), -pivot.y())
-            self.paintFrame(painter, self.puckRect())
+            self.paintFrame(painter, self.animation.puckRect())
             painter.restore()
             return
 
@@ -535,7 +496,7 @@ class ChatCard(QWidget):
         border = style.CHAT_BORDER_TAB if self.isTabbed() else style.CHAT_BORDER
         painter.setBrush(QColor(style.CHAT_SURFACE))
         painter.setPen(QPen(QColor(border), 1))
-        painter.drawRoundedRect(frame, self.radius, self.radius)
+        painter.drawRoundedRect(frame, self.animation.radius, self.animation.radius)
 
 
 class ChatSlot:
