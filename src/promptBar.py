@@ -11,8 +11,12 @@
 # util.force_foreground), and a second window would have to fight again.
 # PieMenu drives the flight - this class only knows how to look right at a
 # given point in it.
-
-import math
+#
+# Per ADR-0007, split into this view (widget/paint/input),
+# promptBarState.py (the mode, no Qt) and promptBarAnimation.py (the
+# rejection shake plus the tick-fed flight opacities) - PromptBar keeps its
+# previous attribute surface via thin properties so callers outside this
+# file don't need to know the split happened.
 
 from PySide6.QtWidgets import QWidget, QLineEdit
 from PySide6.QtGui import QPainter, QColor, QPen, QPalette, QPixmap
@@ -20,10 +24,9 @@ from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal
 
 import style
 import shadow
-from anims.clock import Tween
+from promptBarState import PromptBarState, EMPTY, TYPING, SENDING, REJECTED
+from promptBarAnimation import PromptBarAnimation
 from util import reduced_motion
-
-EMPTY, TYPING, SENDING, REJECTED = "empty", "typing", "sending", "rejected"
 
 BORDER_BY_STATE = {
     EMPTY: style.FIELD_BORDER,
@@ -40,11 +43,8 @@ class PromptBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.rect_opacity = 0.0  # the frame fades in as the wedge fades out
-        self.chrome_opacity = 0.0  # the send hint follows, once the frame is at rest
-        self.state = EMPTY
-        self.rest_x = 0
-        self.motion = not reduced_motion()
+        self.bar_state = PromptBarState()
+        self.animation = PromptBarAnimation(self, not reduced_motion())
 
         # A press on the frame's own chrome - the send hint's inset -
         # would otherwise reach the overlay behind it, which reads any click
@@ -59,11 +59,42 @@ class PromptBar(QWidget):
         self.applyFieldPalette()
         self.field.hide()
 
-        # Rejected: the frame shakes in place, keeping whatever was typed.
-        self.shake = Tween(self, self.onShakeTick, self.onShakeDone)
-
         shadow.apply(self)
         self.hide()
+
+    # --- thin forwarding to bar_state/animation, for callers outside this file ---
+
+    @property
+    def state(self):
+        return self.bar_state.state
+
+    @state.setter
+    def state(self, value):
+        self.bar_state.state = value
+
+    @property
+    def rect_opacity(self):
+        return self.animation.rect_opacity
+
+    @property
+    def chrome_opacity(self):
+        return self.animation.chrome_opacity
+
+    @property
+    def rest_x(self):
+        return self.animation.rest_x
+
+    @property
+    def motion(self):
+        return self.animation.motion
+
+    @motion.setter
+    def motion(self, value):
+        self.animation.motion = value
+
+    @property
+    def shake(self):
+        return self.animation.shake
 
     def warmup(self):
         """Pay two one-time-per-process Qt/Windows costs now, at silent
@@ -86,10 +117,8 @@ class PromptBar(QWidget):
 
     def launch(self, placeholder, seed=""):
         """Reset for a fresh handoff. The field stays hidden until arrive()."""
-        self.shake.stop()
-        self.state = TYPING if seed.strip() else EMPTY
-        self.rect_opacity = 0.0
-        self.chrome_opacity = 0.0
+        self.animation.reset()
+        self.bar_state.state = TYPING if seed.strip() else EMPTY
         self.field.setReadOnly(False)
         self.field.setPlaceholderText(placeholder)
         self.field.setText(seed)
@@ -98,9 +127,7 @@ class PromptBar(QWidget):
         self.show()
 
     def setFlight(self, rect_opacity, chrome_opacity):
-        self.rect_opacity = rect_opacity
-        self.chrome_opacity = chrome_opacity
-        self.update()
+        self.animation.setFlight(rect_opacity, chrome_opacity)
 
     def screenRect(self):
         """Where the frame sits in screen coordinates - what the result card
@@ -118,7 +145,7 @@ class PromptBar(QWidget):
         candidate window against a moving target."""
         if self.field.isVisible():
             return
-        self.rest_x = self.x()
+        self.animation.rest_x = self.x()
         self.field.setGeometry(
             style.FIELD_INSET_LEFT,
             0,
@@ -138,9 +165,9 @@ class PromptBar(QWidget):
             self.field.setFocus()
 
     def onTextChanged(self, text):
-        if self.state == SENDING:
+        if self.bar_state.state == SENDING:
             return
-        self.state = TYPING if text.strip() else EMPTY  # also clears a rejection - the user is fixing it
+        self.bar_state.state = TYPING if text.strip() else EMPTY  # also clears a rejection - the user is fixing it
         self.update()
 
     def submit(self):
@@ -148,24 +175,17 @@ class PromptBar(QWidget):
         if not text:
             self.reject()
             return
-        self.state = SENDING
+        self.bar_state.state = SENDING
         self.field.setReadOnly(True)
         self.applyFieldPalette()
         self.update()
         self.submitted.emit(text)
 
     def reject(self):
-        self.state = REJECTED  # the border stays warned until the user changes the text
+        self.bar_state.state = REJECTED  # the border stays warned until the user changes the text
         self.update()
-        if self.motion:
-            self.shake.run(0.0, 1.0, style.REJECT_MS)
-
-    def onShakeTick(self, t):
-        offset = math.sin(t * 2 * math.pi * style.REJECT_SHAKES) * style.REJECT_SHIFT
-        self.move(round(self.rest_x + offset), self.y())
-
-    def onShakeDone(self):
-        self.move(self.rest_x, self.y())
+        if self.animation.motion:
+            self.animation.shake.run(0.0, 1.0, style.REJECT_MS)
 
     def eventFilter(self, watched, event):
         if watched is self.field and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
@@ -176,7 +196,7 @@ class PromptBar(QWidget):
     # --- painting ---
 
     def applyFieldPalette(self):
-        color = style.FIELD_TEXT_SENDING if self.state == SENDING else style.FIELD_TEXT
+        color = style.FIELD_TEXT_SENDING if self.bar_state.state == SENDING else style.FIELD_TEXT
         self.field.setStyleSheet(style.prompt_field_stylesheet(color))
         palette = self.field.palette()
         palette.setColor(QPalette.PlaceholderText, QColor(style.FIELD_PLACEHOLDER))
@@ -185,19 +205,19 @@ class PromptBar(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setOpacity(self.rect_opacity)
+        painter.setOpacity(self.animation.rect_opacity)
 
         frame = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         radius = min(frame.width(), frame.height()) / 2  # fully round at both ends of the grow
         painter.setBrush(QColor(style.FIELD_SURFACE))
-        painter.setPen(QPen(QColor(BORDER_BY_STATE[self.state]), 1))
+        painter.setPen(QPen(QColor(BORDER_BY_STATE[self.bar_state.state]), 1))
         painter.drawRoundedRect(frame, radius, radius)
 
-        if self.chrome_opacity <= 0:
+        if self.animation.chrome_opacity <= 0:
             return
-        painter.setOpacity(self.rect_opacity * self.chrome_opacity)
+        painter.setOpacity(self.animation.rect_opacity * self.animation.chrome_opacity)
 
-        lit = self.state in (TYPING, SENDING)
+        lit = self.bar_state.state in (TYPING, SENDING)
         painter.setPen(QColor(style.FIELD_HINT_LIT if lit else style.FIELD_HINT_IDLE))
         hint = QRectF(frame.right() - style.FIELD_INSET_RIGHT, frame.top(), style.FIELD_INSET_RIGHT, frame.height())
         painter.drawText(hint, Qt.AlignCenter, SEND_HINT)
