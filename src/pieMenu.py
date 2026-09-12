@@ -3,6 +3,9 @@
 # wedge's action. A wedge whose action needs typed input hands off to the
 # prompt bar instead of firing straight away.
 
+from datetime import datetime
+from pathlib import Path
+
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
 from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
@@ -40,6 +43,25 @@ PAINT_REACH = (
 
 ARROW_ANGLE_BY_KEY = {Qt.Key_Up: 0, Qt.Key_Right: 90, Qt.Key_Down: 180, Qt.Key_Left: 270}
 ACTIVATE_WIDGET_KEYS = (Qt.Key_Return, Qt.Key_Enter)
+
+# Diagnostics for pie-menu-hotkey/01 (hotkey sometimes does nothing visible):
+# every hotkey press appends its phase here. A press with no matching line
+# near the reported time means the OS-level hook itself didn't fire; a line
+# with an unexpected phase confirms the ring was stuck in a state that made
+# onKeyPress() no-op.
+HOTKEY_LOG_PATH = Path.home() / ".bel" / "hotkey.log"
+
+
+def logHotkeyPress(phase):
+    """Best-effort: a diagnostic that can never block the hotkey it's
+    watching, so any filesystem failure here (locked file, full disk) is
+    swallowed rather than left to interrupt onKeyPress()."""
+    try:
+        HOTKEY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(HOTKEY_LOG_PATH, "a") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} phase={phase}\n")
+    except OSError:
+        pass
 
 
 def ring_segment(outer, inner, start_angle, span):
@@ -156,6 +178,7 @@ class PieMenu(QWidget):
     def onKeyPress(self):
         """The global hotkey. Always does something: it opens the ring, or
         gets whatever's up out of the way."""
+        logHotkeyPress(self.state.phase)
         if self.state.phase in (HIDDEN, CLOSING):
             self.openAtCursor()
         elif self.state.phase in (HANDOFF, PROMPTING):

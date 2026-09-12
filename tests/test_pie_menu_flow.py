@@ -13,6 +13,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, Signal
 
 import cardStore
+import pieMenu as pieMenuModule
 import wedgeConfig
 from pieMenu import PieMenu
 from pieMenuState import HIDDEN, OPEN, PROMPTING
@@ -64,6 +65,8 @@ class PieMenuFlowTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.original_path = cardStore.STORE_PATH
         cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_hotkey_log_path = pieMenuModule.HOTKEY_LOG_PATH
+        pieMenuModule.HOTKEY_LOG_PATH = Path(self.tmp.name) / "hotkey.log"
         self.menu = PieMenu()
         self.menu.motion = False
         self.calls = []
@@ -78,6 +81,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.close()
         self.menu.deleteLater()
         cardStore.STORE_PATH = self.original_path
+        pieMenuModule.HOTKEY_LOG_PATH = self.original_hotkey_log_path
         self.tmp.cleanup()
 
     def openMenu(self):
