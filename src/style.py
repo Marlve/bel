@@ -16,6 +16,7 @@ PALETTE = {
     "450": "#6E6F73",
     "500": "#86878B",
     "700": "#C9CACD",
+    "750": "#D9D9DC",
     "800": "#E8E8EA",
 }
 
@@ -31,7 +32,7 @@ LABEL = PALETTE["500"]  # mono labels, muted body text
 BODY_DIM = PALETTE["700"]  # secondary/idle text
 BODY = PALETTE["800"]  # primary text
 INK = PALETTE["000"]  # near-black, for text on top of the accent
-ACCENT_NEUTRAL = PALETTE["800"]  # the one accent - near-white, not a hue
+ACCENT_NEUTRAL = PALETTE["750"]  # the one accent - near-white, not a hue
 
 BACKGROUND = SURFACE + "dd"
 TEXT = BODY
