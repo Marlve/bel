@@ -43,6 +43,16 @@ FONT_FAMILY = "Geist Mono"
 FONT_SIZE = 11
 
 
+# --- Shared spacing scale. Layout padding/spacing across the cards should
+# step through these rather than reusing CHAT_PADDING for everything or
+# typing a bare literal at the call site - see card-visual-polish/01. ---
+
+SPACE_1 = 4
+SPACE_2 = 8
+SPACE_3 = 12
+SPACE_4 = 16
+
+
 # --- Pie menu ring. Sizes are ratios of RING_RADIUS so the ring scales as one. ---
 
 RING_RADIUS = 152
@@ -170,7 +180,7 @@ CHAT_BUBBLE_PADDING_H = 9
 CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
 
-CHAT_COMPOSER_HEIGHT = 32
+CHAT_COMPOSER_HEIGHT = 2 * SPACE_4  # 32px, per claude-chat-flow.md's composer height
 
 
 # --- Todo & note cards. Persistent, draggable squares toggled from the
@@ -280,6 +290,7 @@ REFERENCE_WIDTH = 2560
 REFERENCE_HEIGHT = 1440
 
 _SCALE_INT_NAMES = [
+    "SPACE_1", "SPACE_2", "SPACE_3", "SPACE_4",
     "RING_RADIUS", "GLOW_WIDTH", "WEDGE_BOX",
     "FIELD_WIDTH", "FIELD_HEIGHT", "FIELD_RADIUS", "FIELD_INSET_LEFT", "FIELD_INSET_RIGHT",
     "FIELD_FONT_SIZE", "FONT_SIZE",

@@ -105,7 +105,10 @@ class TodoList(QWidget):
     def paintRow(self, painter, index, item):
         top = index * style.TODO_ROW_HEIGHT
         box = QRectF(
-            0, top + (style.TODO_ROW_HEIGHT - style.TODO_CHECKBOX) / 2, style.TODO_CHECKBOX, style.TODO_CHECKBOX
+            style.SPACE_2,
+            top + (style.TODO_ROW_HEIGHT - style.TODO_CHECKBOX) / 2,
+            style.TODO_CHECKBOX,
+            style.TODO_CHECKBOX,
         )
 
         painter.save()
@@ -120,7 +123,9 @@ class TodoList(QWidget):
         font.setStrikeOut(item["done"])
         painter.setFont(font)
         painter.setPen(QColor(style.CHAT_BODY_TEXT))
-        label_rect = QRectF(box.right() + 10, top, self.width() - box.right() - 10, style.TODO_ROW_HEIGHT)
+        label_rect = QRectF(
+            box.right() + style.SPACE_2, top, self.width() - box.right() - style.SPACE_2, style.TODO_ROW_HEIGHT
+        )
         metrics = QFontMetrics(font)
         elided = metrics.elidedText(item["text"], Qt.ElideRight, int(label_rect.width()))
         painter.drawText(label_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
@@ -200,6 +205,7 @@ class TodoCard(FloatingCard, QWidget):
         self.add_field = QLineEdit(self)
         self.add_field.setPlaceholderText("add a task")
         self.add_field.setFixedHeight(style.CHAT_COMPOSER_HEIGHT)
+        self.add_field.setFrame(False)  # no native frame metrics stealing space and shifting text off-center
         self.add_field.setStyleSheet(style.plain_field_stylesheet())
         palette = self.add_field.palette()
         palette.setColor(QPalette.PlaceholderText, QColor(style.MUTED))

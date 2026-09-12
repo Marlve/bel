@@ -18,11 +18,19 @@ class ApplyScaleTests(unittest.TestCase):
         style.apply_scale(1.0)
         self.assertEqual(style.RING_RADIUS, 152)
         self.assertEqual(style.CARD_MIN_WIDTH, 200)
+        self.assertEqual(style.SPACE_1, 4)
+        self.assertEqual(style.SPACE_2, 8)
+        self.assertEqual(style.SPACE_3, 12)
+        self.assertEqual(style.SPACE_4, 16)
 
     def test_scales_a_size_constant_by_the_given_factor(self):
         style.apply_scale(0.5)  # e.g. 1280x720 vs. the 2560x1440 reference
         self.assertEqual(style.RING_RADIUS, 76)
         self.assertEqual(style.CARD_MIN_WIDTH, 100)
+        self.assertEqual(style.SPACE_1, 2)
+        self.assertEqual(style.SPACE_2, 4)
+        self.assertEqual(style.SPACE_3, 6)
+        self.assertEqual(style.SPACE_4, 8)
 
     def test_keeps_already_float_constants_as_floats(self):
         style.apply_scale(2.0)

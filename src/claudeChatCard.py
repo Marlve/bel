@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPalette
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import chatMarkdown
@@ -53,6 +53,15 @@ class Composer(QPlainTextEdit):
         palette = self.palette()
         palette.setColor(QPalette.PlaceholderText, QColor(style.MUTED))
         self.setPalette(palette)
+
+        # QPlainTextEdit lays its document out from the top, not centered -
+        # zero its own document margin and inset the viewport by whatever's
+        # left over from the one line of text, so it sits centered in the
+        # fixed composer height instead of hugging the top.
+        self.ensurePolished()  # forces the stylesheet's font onto self.font() now, not on first show
+        self.document().setDocumentMargin(0)
+        pad = max(0, (style.CHAT_COMPOSER_HEIGHT - QFontMetrics(self.font()).height()) // 2)
+        self.setViewportMargins(0, pad, 0, pad)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:

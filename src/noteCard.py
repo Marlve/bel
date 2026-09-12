@@ -86,6 +86,7 @@ class NoteCard(FloatingCard, QWidget):
         self.body = QPlainTextEdit(self)
         self.body.setFrameShape(QPlainTextEdit.NoFrame)
         self.body.setStyleSheet(style.plain_field_stylesheet())
+        self.body.document().setDocumentMargin(0)  # match the header's own zero inset, not Qt's ~4px default
         self.body.textChanged.connect(self.scheduleSave)
         self.body.installEventFilter(self)  # Escape closes the card, not just the field
 
