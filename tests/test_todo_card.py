@@ -31,6 +31,9 @@ class StubCard(QWidget):
     def scheduleSave(self):
         self.saved += 1
 
+    def updateOpenCount(self):
+        pass
+
 
 class TodoListTests(unittest.TestCase):
     @classmethod
@@ -113,6 +116,19 @@ class TodoCardTests(unittest.TestCase):
 
     def test_starts_with_no_items(self):
         self.assertEqual(self.card.list.items, [])
+
+    def test_a_fresh_card_opens_at_the_default_width(self):
+        self.assertEqual(self.card.width(), style.TODO_DEFAULT_WIDTH + 2 * margin())
+
+    def test_header_count_reflects_open_items(self):
+        self.assertEqual(self.card.header_count_label.text(), "0 OPEN")
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        self.assertEqual(self.card.header_count_label.text(), "1 OPEN")
+        self.card.list.toggle(0)
+        self.assertEqual(self.card.header_count_label.text(), "0 OPEN")
+        self.card.list.toggle(0)
+        self.assertEqual(self.card.header_count_label.text(), "1 OPEN")
 
     def test_typing_and_enter_adds_an_item(self):
         self.card.add_field.setText("buy milk")

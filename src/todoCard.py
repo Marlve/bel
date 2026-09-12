@@ -9,7 +9,7 @@
 # bottom, always present, the same way the chat card's composer always is.
 
 from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QHBoxLayout
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
@@ -17,7 +17,7 @@ import shadow
 import cardStore
 from anims.clock import Tween
 from draggable import WindowDrag, ResizeGrip
-from floatingCard import FloatingCard
+from floatingCard import FloatingCard, paint_card_bands
 from todoListAnimation import TodoListAnimation
 from util import reduced_motion
 
@@ -63,6 +63,7 @@ class TodoList(QWidget):
         item["done"] = not item["done"]
         self.update()
         self.card.scheduleSave()
+        self.card.updateOpenCount()
         if item["done"]:
             self.animation.scheduleRemoval(item)
         else:
@@ -144,11 +145,12 @@ class TodoCard(FloatingCard, QWidget):
         shadow.apply(self)
 
         saved = cardStore.load(STORE_KEY, {})
-        face_w, face_h = saved.get("size", [style.CHAT_SIZE, style.CHAT_SIZE])
+        face_w, face_h = saved.get("size", [style.TODO_DEFAULT_WIDTH, style.CHAT_SIZE])
         self.resize(face_w + 2 * margin(), face_h + 2 * margin())
 
         self.buildContent()
         self.list.setItems(saved.get("items", []))
+        self.updateOpenCount()
         self.grip.reposition()
 
     def afterRaise(self):
@@ -162,13 +164,18 @@ class TodoCard(FloatingCard, QWidget):
         self.add_field.end(False)  # caret after any text the field already holds
 
     def buildContent(self):
-        self.header_label = QLabel("TODO", self)
+        self.header_label = QLabel("Today", self)
         header_font = QFont(style.CHAT_MONO_FAMILY)
         header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
         self.header_label.setFont(header_font)
         self.header_label.setStyleSheet(f"color: {style.CHAT_LABEL_MONO}; background: transparent;")
         self.header_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.header_count_label = QLabel(self)
+        self.header_count_label.setFont(header_font)
+        self.header_count_label.setStyleSheet(f"color: {style.CHAT_LABEL_MONO}; background: transparent;")
+        self.header_count_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self.close_button = QPushButton("✕", self)
         self.close_button.setFixedSize(18, 18)
@@ -180,6 +187,7 @@ class TodoCard(FloatingCard, QWidget):
         header.setSpacing(8)
         header.addWidget(self.header_label)
         header.addStretch(1)
+        header.addWidget(self.header_count_label)
         header.addWidget(self.close_button)
 
         self.list = TodoList(self)
@@ -190,10 +198,12 @@ class TodoCard(FloatingCard, QWidget):
         self.scroll.setStyleSheet(style.chat_scrollbar_stylesheet())
 
         self.add_field = QLineEdit(self)
-        self.add_field.setPlaceholderText("Add a to-do…")
+        self.add_field.setPlaceholderText("add a task")
         self.add_field.setFixedHeight(style.CHAT_COMPOSER_HEIGHT)
-        self.add_field.setStyleSheet(style.chat_composer_stylesheet(False))
-        self.add_field.textChanged.connect(self.onAddTextChanged)
+        self.add_field.setStyleSheet(style.plain_field_stylesheet())
+        palette = self.add_field.palette()
+        palette.setColor(QPalette.PlaceholderText, QColor(style.MUTED))
+        self.add_field.setPalette(palette)
         self.add_field.returnPressed.connect(self.addItem)
         self.add_field.installEventFilter(self)  # Escape closes the card, not just the field
 
@@ -206,9 +216,6 @@ class TodoCard(FloatingCard, QWidget):
 
         self.grip = ResizeGrip(self)
 
-    def onAddTextChanged(self, text):
-        self.add_field.setStyleSheet(style.chat_composer_stylesheet(bool(text.strip())))
-
     def addItem(self):
         text = self.add_field.text().strip()
         if not text:
@@ -216,8 +223,13 @@ class TodoCard(FloatingCard, QWidget):
         self.list.items.append({"text": text, "done": False})
         self.list.updateHeight()
         self.list.update()
+        self.updateOpenCount()
         self.add_field.clear()
         self.scheduleSave()
+
+    def updateOpenCount(self):
+        open_count = sum(1 for item in self.list.items if not item["done"])
+        self.header_count_label.setText(f"{open_count} OPEN")
 
     # --- persistence ---
 
@@ -270,7 +282,13 @@ class TodoCard(FloatingCard, QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         m = margin()
         frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
-        painter.setBrush(QColor(style.CHAT_SURFACE))
+
+        # Body and footer share the one dark tone (per floating-card-redesign.md,
+        # their reference values are near-identical); only the header bar and the
+        # footer's top seam actually differ from it.
+        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, self.scroll.y(), self.add_field.y())
+
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))
+        painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)

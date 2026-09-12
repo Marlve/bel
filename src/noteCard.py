@@ -18,7 +18,7 @@ import shadow
 import cardStore
 from anims.clock import Tween
 from draggable import WindowDrag, ResizeGrip
-from floatingCard import FloatingCard
+from floatingCard import FloatingCard, paint_card_bands
 from util import reduced_motion
 
 STORE_KEY = "note"
@@ -46,7 +46,7 @@ class NoteCard(FloatingCard, QWidget):
         shadow.apply(self)
 
         saved = cardStore.load(STORE_KEY, {})
-        face_w, face_h = saved.get("size", [style.CHAT_SIZE, style.CHAT_SIZE])
+        face_w, face_h = saved.get("size", [style.NOTE_DEFAULT_WIDTH, style.CHAT_SIZE])
         self.resize(face_w + 2 * margin(), face_h + 2 * margin())
 
         self.buildContent()
@@ -63,7 +63,7 @@ class NoteCard(FloatingCard, QWidget):
         QApplication.processEvents()
 
     def buildContent(self):
-        self.header_label = QLabel("NOTE", self)
+        self.header_label = QLabel("Notes", self)
         header_font = QFont(style.CHAT_MONO_FAMILY)
         header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
@@ -85,7 +85,7 @@ class NoteCard(FloatingCard, QWidget):
 
         self.body = QPlainTextEdit(self)
         self.body.setFrameShape(QPlainTextEdit.NoFrame)
-        self.body.setStyleSheet(style.note_body_stylesheet())
+        self.body.setStyleSheet(style.plain_field_stylesheet())
         self.body.textChanged.connect(self.scheduleSave)
         self.body.installEventFilter(self)  # Escape closes the card, not just the field
 
@@ -148,7 +148,14 @@ class NoteCard(FloatingCard, QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         m = margin()
         frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
-        painter.setBrush(QColor(style.CHAT_SURFACE))
+
+        # Body reads one step lighter than the header bar - the one deliberate
+        # exception in the palette, per floating-card-redesign.md: a note is
+        # a different kind of object from the todo/chat cards.
+        header_bottom = self.body.y()
+        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.SURFACE_RAISED, header_bottom, header_bottom)
+
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))
+        painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)

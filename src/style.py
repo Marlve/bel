@@ -21,9 +21,8 @@ PALETTE = {
     "800": "#E8E8EA",
 }
 
-SURFACE = PALETTE["150"]  # darkest surface: wedge idle fill, chat card body
-SURFACE_RAISED = PALETTE["200"]  # one step up: prompt field, composer
-SURFACE_BUBBLE = PALETTE["250"]  # user bubble, pressed wedge fill
+SURFACE = PALETTE["150"]  # darkest surface: wedge idle fill, card header bar
+SURFACE_RAISED = PALETTE["200"]  # one step up: prompt field, composer, notes card body
 BORDER_DIM = PALETTE["300"]  # resting border, one step lighter than its surface
 BORDER_WARM = PALETTE["375"]  # border once there's content/typing
 BORDER_STRONG = PALETTE["400"]  # strongest border (tabbed-out dock state)
@@ -144,9 +143,8 @@ CHAT_SURFACE = SURFACE  # card surface
 CHAT_BORDER = BORDER_DIM  # card border, open
 CHAT_BORDER_TAB = BORDER_STRONG  # card border, tabbed out at the edge
 CHAT_COMPOSER_FIELD = SURFACE_RAISED
-CHAT_COMPOSER_BORDER_WARM = BORDER_WARM  # on content
 CHAT_ACCENT = ACCENT
-CHAT_USER_BUBBLE = SURFACE_BUBBLE
+CHAT_USER_BUBBLE = PALETTE["200"]  # the question's bubble - one step lighter than the card body
 CHAT_BODY_TEXT = BODY
 CHAT_TURN_TEXT = BODY_DIM  # claude's own turns - plain text, no bubble
 CHAT_LABEL_MONO = LABEL
@@ -163,22 +161,28 @@ CHAT_PADDING = 14
 CHAT_FLIGHT_MS = 420
 CHAT_FLIGHT_EASING = "OutCubic"  # deliberately no overshoot - next to a screen corner it reads as an error
 CHAT_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same curve
-CHAT_RADIUS = 10
+CHAT_RADIUS = 9
 CHAT_DISMISS_MS = 140
 CHAT_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
 
-CHAT_BUBBLE_RADIUS = (9, 9, 3, 9)  # top-left, top-right, bottom-right, bottom-left
+CHAT_BUBBLE_RADIUS = (8, 8, 2, 8)  # top-left, top-right, bottom-right, bottom-left
 CHAT_BUBBLE_PADDING_H = 9
 CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
 
 CHAT_COMPOSER_HEIGHT = 32
-CHAT_COMPOSER_PADDING = 11
 
 
 # --- Todo & note cards. Persistent, draggable squares toggled from the
 # ring - same footprint, type, and neutral surface as the chat card (CHAT_*
 # above) so all three read as one family; only their content differs. ---
+
+CARD_BODY = PALETTE["000"]  # todo/chat card body - one step darker than the SURFACE header bar above it
+CARD_DIVIDER = PALETTE["250"]  # notes' header/body seam (its body is lighter, not darker, than the header)
+# and todo/chat's footer seam (their footer is the same CARD_BODY tone as the body, so only this line marks it)
+
+TODO_DEFAULT_WIDTH = 340  # first-run width, per floating-card-redesign.md - still freely resizable after
+NOTE_DEFAULT_WIDTH = 300
 
 CARD_DRAG_THRESHOLD_PX = 4  # design.md's "press and move more than 4 px" - drag vs click/tick
 CARD_AUTOSAVE_MS = 400  # idle debounce before writing position/content to disk
@@ -282,7 +286,8 @@ _SCALE_INT_NAMES = [
     "REJECT_SHIFT",
     "CHAT_SIZE", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
     "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
-    "CHAT_COMPOSER_HEIGHT", "CHAT_COMPOSER_PADDING",
+    "CHAT_COMPOSER_HEIGHT",
+    "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
     "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
     "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",
     "CARD_RESIZE_GRIP_EDGE_OFFSET", "CARD_RESIZE_GRIP_PAINT_OFFSET",
@@ -365,20 +370,14 @@ def chat_bubble_stylesheet():
     )
 
 
-def note_body_stylesheet():
+def plain_field_stylesheet():
+    """A flat field with no box of its own: notes' body, and todo/chat's
+    footer row, since in both cases the card itself paints the background
+    and any border/seam around it (see FloatingCard subclasses' paintEvent /
+    ChatCard.paintFrame)."""
     return (
         "background: transparent; border: none;"
         f"color: {CHAT_BODY_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
-    )
-
-
-def chat_composer_stylesheet(warm):
-    border = CHAT_COMPOSER_BORDER_WARM if warm else CHAT_INERT_HINT
-    return (
-        f"background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
-        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
-        f"border: 1px solid {border}; border-radius: {CHAT_COMPOSER_HEIGHT // 2}px;"
-        f"padding: 0 {CHAT_COMPOSER_PADDING}px;"
     )
 
 

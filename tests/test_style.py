@@ -31,7 +31,7 @@ class ApplyScaleTests(unittest.TestCase):
 
     def test_scales_each_element_of_a_tuple_constant(self):
         style.apply_scale(2.0)
-        self.assertEqual(style.CHAT_BUBBLE_RADIUS, (18, 18, 6, 18))
+        self.assertEqual(style.CHAT_BUBBLE_RADIUS, (16, 16, 4, 16))
 
     def test_derived_constant_scales_by_the_same_factor(self):
         original = style.SETTINGS_HEIGHT

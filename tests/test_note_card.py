@@ -41,6 +41,9 @@ class NoteCardTests(unittest.TestCase):
     def test_starts_empty(self):
         self.assertEqual(self.card.body.toPlainText(), "")
 
+    def test_a_fresh_card_opens_at_the_default_width(self):
+        self.assertEqual(self.card.width(), style.NOTE_DEFAULT_WIDTH + 2 * margin())
+
     def test_save_persists_text_and_size(self):
         self.card.body.setPlainText("pick up dry cleaning")
         self.card.resize(400, 385)

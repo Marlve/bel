@@ -7,10 +7,31 @@
 # codebase's cards (ticket 09).
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QColor, QPainterPath, QPen
+from PySide6.QtCore import QRectF, QPointF
 
 import style
 from anims import curves
+
+
+def paint_card_bands(painter, frame, radius, body_color, header_bottom, divider_y):
+    """The header/body two-tone fill shared by todo, notes, and chat's card
+    shell, clipped to the card's rounded frame: a header-colored band down
+    to `header_bottom`, `body_color` for the rest, and one divider line at
+    `divider_y` (the header/body seam for notes, the body/footer seam for
+    todo/chat)."""
+    path = QPainterPath()
+    path.addRoundedRect(frame, radius, radius)
+    painter.save()
+    painter.setClipPath(path)
+    painter.fillRect(frame, QColor(body_color))
+    painter.fillRect(
+        QRectF(frame.left(), frame.top(), frame.width(), header_bottom - frame.top()),
+        QColor(style.SURFACE),
+    )
+    painter.setPen(QPen(QColor(style.CARD_DIVIDER), 1))
+    painter.drawLine(QPointF(frame.left(), divider_y), QPointF(frame.right(), divider_y))
+    painter.restore()
 
 
 class FloatingCard:

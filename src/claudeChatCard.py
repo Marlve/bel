@@ -20,12 +20,13 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPalette
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import chatMarkdown
 import style
 import wedgeConfig
+from floatingCard import paint_card_bands
 from anims import curves
 from claudeChatCardState import ChatCardState
 from claudeChatCardAnimation import ChatCardAnimation
@@ -43,17 +44,15 @@ class Composer(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(style.CHAT_COMPOSER_HEIGHT)
-        self.setPlaceholderText("Ask a follow-up…")
+        self.setPlaceholderText("ask anything")
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setTabChangesFocus(True)
         self.setFrameShape(QPlainTextEdit.NoFrame)
-        self.textChanged.connect(self.onTextChanged)
-        self.onTextChanged()
-
-    def onTextChanged(self):
-        warm = bool(self.toPlainText().strip())
-        self.setStyleSheet(style.chat_composer_stylesheet(warm))
+        self.setStyleSheet(style.plain_field_stylesheet())
+        palette = self.palette()
+        palette.setColor(QPalette.PlaceholderText, QColor(style.MUTED))
+        self.setPalette(palette)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -163,7 +162,7 @@ class ChatCard(QWidget):
         self.animation.motion = value
 
     def buildContent(self):
-        self.header_label = QLabel("CLAUDE", self)
+        self.header_label = QLabel("Claude", self)
         header_font = QFont(style.CHAT_MONO_FAMILY)
         header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
@@ -494,9 +493,20 @@ class ChatCard(QWidget):
 
     def paintFrame(self, painter, frame):
         border = style.CHAT_BORDER_TAB if self.isTabbed() else style.CHAT_BORDER
-        painter.setBrush(QColor(style.CHAT_SURFACE))
+        radius = self.animation.radius
+
+        if self.scroll.isVisible():
+            # Same two-tone body/header/footer treatment as the todo/notes
+            # cards, per claude-chat-redesign.md's "matches the todo/notes
+            # shell". Skipped for the bare TAB/HIDDEN puck below, which has
+            # no header/footer content to band.
+            paint_card_bands(painter, frame, radius, style.CARD_BODY, self.scroll.y(), self.composer.y())
+            painter.setBrush(Qt.NoBrush)
+        else:
+            painter.setBrush(QColor(style.CHAT_SURFACE))
+
         painter.setPen(QPen(QColor(border), 1))
-        painter.drawRoundedRect(frame, self.animation.radius, self.animation.radius)
+        painter.drawRoundedRect(frame, radius, radius)
 
 
 class ChatSlot:
