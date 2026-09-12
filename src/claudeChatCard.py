@@ -213,6 +213,15 @@ class ChatCard(QWidget):
 
         self.transcript = QWidget()
         self.transcript_layout = QVBoxLayout(self.transcript)
+        # QVBoxLayout(self.transcript) makes this the transcript widget's own
+        # top-level layout, which (unlike header's nested QHBoxLayout, which
+        # defaults to 0) picks up the style's default ~9px margins on all 4
+        # sides unless overridden. Left/right zeroed so turn text lines up
+        # with the header label's and composer's own left edge; top/bottom
+        # kept as an explicit SPACE_2 (matching the gap already used just
+        # outside the scroll area, on both sides of it) rather than leaving
+        # the vertical cushion to that same implicit default.
+        self.transcript_layout.setContentsMargins(0, style.SPACE_2, 0, style.SPACE_2)
         self.transcript_layout.setSpacing(8)
         self.transcript_layout.addStretch(1)  # keeps a short transcript bottom-anchored
 

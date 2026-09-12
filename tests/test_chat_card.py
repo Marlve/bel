@@ -77,6 +77,16 @@ class ChatCardTests(unittest.TestCase):
         self.requests.append(request)
         return request
 
+    # --- layout ---
+
+    def test_transcript_rows_align_with_the_header_and_composer(self):
+        # QVBoxLayout(self.transcript) makes transcript_layout the widget's
+        # own top-level layout, which (unlike header's nested QHBoxLayout)
+        # picks up the style's non-zero default margins unless zeroed -
+        # previously landed Claude's turn text ~9px right of the header
+        # label's and composer's own left edge.
+        self.assertEqual(self.card.transcript_layout.contentsMargins().left(), 0)
+
     # --- opening ---
 
     def test_fly_lands_on_the_dock_rect_and_reveals_content(self):
