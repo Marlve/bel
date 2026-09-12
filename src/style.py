@@ -12,6 +12,7 @@ PALETTE = {
     "250": "#232427",
     "300": "#2D2E31",
     "350": "#3B3C40",
+    "375": "#3E3F44",
     "400": "#4A4B4F",
     "450": "#6E6F73",
     "500": "#86878B",
@@ -24,7 +25,7 @@ SURFACE = PALETTE["150"]  # darkest surface: wedge idle fill, chat card body
 SURFACE_RAISED = PALETTE["200"]  # one step up: prompt field, composer
 SURFACE_BUBBLE = PALETTE["250"]  # user bubble, pressed wedge fill
 BORDER_DIM = PALETTE["300"]  # resting border, one step lighter than its surface
-BORDER_WARM = PALETTE["350"]  # border once there's content/typing
+BORDER_WARM = PALETTE["375"]  # border once there's content/typing
 BORDER_STRONG = PALETTE["400"]  # strongest border (tabbed-out dock state)
 HINT = PALETTE["350"]  # inert icons/hints
 MUTED = PALETTE["450"]  # placeholder text, dimmed secondary text
