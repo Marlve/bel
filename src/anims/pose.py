@@ -6,6 +6,7 @@
 import math
 
 from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor
 
 import style
 from . import curves
@@ -132,4 +133,13 @@ def lerp_rect(a, b, t):
         lerp(a.y(), b.y(), t),
         lerp(a.width(), b.width(), t),
         lerp(a.height(), b.height(), t),
+    )
+
+
+def mix(a, b, t):
+    a, b = QColor(a), QColor(b)
+    return QColor.fromRgbF(
+        lerp(a.redF(), b.redF(), t),
+        lerp(a.greenF(), b.greenF(), t),
+        lerp(a.blueF(), b.blueF(), t),
     )

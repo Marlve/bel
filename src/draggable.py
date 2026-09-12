@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QPointF
 import style
 from anims.clock import Tween
 from anims import curves
-from anims.pose import lerp
+from anims.pose import mix
 
 
 class WindowDrag:
@@ -133,13 +133,7 @@ class ResizeGrip(QWidget):
     def inkColor(self):
         if self.dragging:
             return QColor(style.CARD_RESIZE_GRIP_DRAG)
-        rest = QColor(style.CARD_RESIZE_GRIP_REST)
-        hover = QColor(style.CARD_RESIZE_GRIP_HOVER)
-        return QColor(
-            int(lerp(rest.red(), hover.red(), self.hover_t)),
-            int(lerp(rest.green(), hover.green(), self.hover_t)),
-            int(lerp(rest.blue(), hover.blue(), self.hover_t)),
-        )
+        return mix(style.CARD_RESIZE_GRIP_REST, style.CARD_RESIZE_GRIP_HOVER, self.hover_t)
 
     def paintEvent(self, event):
         painter = QPainter(self)

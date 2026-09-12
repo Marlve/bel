@@ -77,15 +77,6 @@ def ring_segment(outer, inner, start_angle, span):
     return path
 
 
-def mix(a, b, t):
-    a, b = QColor(a), QColor(b)
-    return QColor.fromRgbF(
-        pose.lerp(a.redF(), b.redF(), t),
-        pose.lerp(a.greenF(), b.greenF(), t),
-        pose.lerp(a.blueF(), b.blueF(), t),
-    )
-
-
 class PieMenu(QWidget):
     def __init__(self):
         super().__init__()
@@ -472,12 +463,12 @@ class PieMenu(QWidget):
             painter.drawPath(path)
 
         painter.setPen(QPen(QColor(style.WEDGE_BORDER), 1))
-        painter.setBrush(QColor(style.WEDGE_PRESSED) if chosen else mix(style.WEDGE_IDLE, style.WEDGE_HOVER, t))
+        painter.setBrush(QColor(style.WEDGE_PRESSED) if chosen else pose.mix(style.WEDGE_IDLE, style.WEDGE_HOVER, t))
         painter.drawPath(path)
 
         label_r = style.RING_LABEL * style.RING_RADIUS
         painter.translate(label_r * bx, label_r * by)
         painter.scale(label_scale, label_scale)
-        painter.setPen(mix(style.LABEL_IDLE, style.LABEL_HOVER, t))
+        painter.setPen(pose.mix(style.LABEL_IDLE, style.LABEL_HOVER, t))
         painter.drawText(QRectF(-50, -15, 100, 30), Qt.AlignCenter, self.state.wedges[index].label)
         painter.restore()
