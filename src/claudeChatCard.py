@@ -180,7 +180,7 @@ class ChatCard(QWidget):
         self.animation.motion = value
 
     def buildContent(self):
-        self.header_label = QLabel("Claude", self)
+        self.header_label = QLabel("Bel", self)
         header_font = QFont(style.CHAT_MONO_FAMILY)
         header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)

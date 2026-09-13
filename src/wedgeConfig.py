@@ -25,12 +25,12 @@ ACTION_EXTRAS = {
 }
 
 # (id, display name), in the order offered in the settings dropdown.
-ACTION_CHOICES = [("todo", "Todo"), ("note", "Note"), ("claude", "Claude")]
+ACTION_CHOICES = [("todo", "Todo"), ("note", "Note"), ("claude", "Bel")]
 
 DEFAULT_OTHER_WEDGES = [
     {"id": "todo", "label": "Todo"},
     {"id": "note", "label": "Note"},
-    {"id": "claude", "label": "Claude"},
+    {"id": "claude", "label": "Bel"},
 ]
 
 SETTINGS_ENTRY = {"id": "settings", "label": "Settings"}

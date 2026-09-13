@@ -43,7 +43,7 @@ class SettingsCardTests(unittest.TestCase):
 
     def test_starts_with_the_default_rows_in_order(self):
         self.assertEqual([row.assigned_id for row in self.card.rows], ["todo", "note", "claude"])
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Claude"])
+        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Bel"])
 
     def test_editing_a_label_saves_and_notifies(self):
         self.card.rows[0].label_field.setText("Tasks")
@@ -60,14 +60,14 @@ class SettingsCardTests(unittest.TestCase):
         self.card.rows[0].action_combo.setCurrentIndex(self.card.rows[0].action_combo.findData("note"))
         self.assertEqual([row.assigned_id for row in self.card.rows], ["note", "todo", "claude"])
         # labels stay with their own row - only the underlying action moved
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Claude"])
-        self.assertEqual(self.changes[-1], [{"id": "note", "label": "Todo"}, {"id": "todo", "label": "Note"}, {"id": "claude", "label": "Claude"}])
+        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Bel"])
+        self.assertEqual(self.changes[-1], [{"id": "note", "label": "Todo"}, {"id": "todo", "label": "Note"}, {"id": "claude", "label": "Bel"}])
 
     def test_reordering_moves_the_whole_row_not_just_the_id(self):
         self.card.rows[0].label_field.setText("Tasks")
         self.card.moveRow(self.card.rows[0], 1)
         self.assertEqual([row.assigned_id for row in self.card.rows], ["note", "todo", "claude"])
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Note", "Tasks", "Claude"])
+        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Note", "Tasks", "Bel"])
 
     def test_arrows_are_disabled_at_the_ends(self):
         self.assertFalse(self.card.rows[0].up_button.isEnabled())
