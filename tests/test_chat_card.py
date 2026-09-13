@@ -95,6 +95,17 @@ class ChatCardTests(unittest.TestCase):
         self.card.fly()
         self.assertEqual(self.card.composer.width(), self.card.contentWidth())
 
+    def test_bel_reply_stops_short_of_the_composer_right_edge(self):
+        # Regression for chat-bubble-polish/05: Bel's reply used to run the
+        # full contentWidth(), flush with the composer's own right edge -
+        # now it stops CHAT_REPLY_INSET short as a deliberate visual margin.
+        self.card.fly()
+        self.card.send("hello")
+        self.assertEqual(
+            self.card.streaming_label.width(),
+            self.card.contentWidth() - style.CHAT_REPLY_INSET,
+        )
+
     def test_single_word_user_bubble_is_wide_enough_not_to_clip(self):
         # Regression for chat-bubble-polish/06's real root cause: any
         # unbreakable single "word" ("idk", "hi", "ok"...) can never wrap

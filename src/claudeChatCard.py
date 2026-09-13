@@ -401,8 +401,10 @@ class ChatCard(QWidget):
         # computes a narrower "ideal" width from the rich-text layout instead,
         # and the row's trailing addStretch(1) never forces it wider - so the
         # label wrapped at a fraction of the actual available width. Fixed
-        # forces it to really use the full content width.
-        label.setFixedWidth(self.contentWidth())
+        # forces it to really use the full content width (minus a deliberate
+        # inset - chat-bubble-polish/05 - so it stops short of the composer's
+        # own right edge instead of running flush with it).
+        label.setFixedWidth(self.replyWidth())
 
         row = QHBoxLayout()
         if follows_user:
@@ -475,6 +477,9 @@ class ChatCard(QWidget):
 
     def bubbleMaxWidth(self):
         return round(self.contentWidth() * style.CHAT_BUBBLE_MAX_WIDTH_FRACTION)
+
+    def replyWidth(self):
+        return self.contentWidth() - style.CHAT_REPLY_INSET
 
     def contentWidth(self):
         return style.CHAT_SIZE - 2 * style.CHAT_PADDING

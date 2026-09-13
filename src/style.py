@@ -179,6 +179,7 @@ CHAT_BUBBLE_PADDING_H = 9
 CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
 CHAT_BUBBLE_GAP_EXTRA = SPACE_3  # added on top of transcript_layout's own row spacing, only between a user bubble and the Bel reply beneath it
+CHAT_REPLY_INSET = SPACE_2  # Bel's reply label stops this much short of contentWidth() - a deliberate visual margin instead of running flush with the composer's right edge
 CHAT_PARAGRAPH_GAP = 6  # gap above a paragraph break *within* one Bel reply - deliberately smaller than the 8px turn-gap (transcript_layout's own spacing) so a break within a message never reads as bigger than the break between messages
 
 CHAT_COMPOSER_HEIGHT = 2 * SPACE_4  # 32px, per claude-chat-flow.md's composer height
@@ -310,7 +311,7 @@ _SCALE_INT_NAMES = [
     "REJECT_SHIFT",
     "CHAT_SIZE", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
     "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
-    "CHAT_BUBBLE_GAP_EXTRA", "CHAT_PARAGRAPH_GAP",
+    "CHAT_BUBBLE_GAP_EXTRA", "CHAT_REPLY_INSET", "CHAT_PARAGRAPH_GAP",
     "CHAT_COMPOSER_HEIGHT",
     "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
     "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
