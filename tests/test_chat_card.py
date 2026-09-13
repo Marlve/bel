@@ -87,6 +87,20 @@ class ChatCardTests(unittest.TestCase):
         # label's and composer's own left edge.
         self.assertEqual(self.card.transcript_layout.contentsMargins().left(), 0)
 
+    def test_composer_right_edge_matches_transcript_content_width(self):
+        # Regression for chat-bubble-polish/04: the composer used to span
+        # root's raw padded width, running 6px past contentWidth() - the
+        # same 6px the transcript reserves for the scrollbar - so its right
+        # edge sat under the scrollbar instead of stopping short of it.
+        self.card.fly()
+        self.assertEqual(self.card.composer.width(), self.card.contentWidth())
+
+    def test_scrollbar_never_draws_over_content(self):
+        # A visible thumb clipped bubble/composer text under it (short
+        # single-word bubbles like "idk" worst-hit) - still scrollable via
+        # wheel/drag, just no drawn bar.
+        self.assertEqual(self.card.scroll.verticalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+
     # --- opening ---
 
     def test_fly_lands_on_the_dock_rect_and_reveals_content(self):

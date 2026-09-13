@@ -208,6 +208,9 @@ class TodoCard(FloatingCard, QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setStyleSheet(style.chat_scrollbar_stylesheet())
+        # Matches the chat card's scrollbar removal - still scrollable via
+        # wheel/drag, just no drawn bar clipping content under it.
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.add_field = QLineEdit(self)
         self.add_field.setPlaceholderText("add a task")

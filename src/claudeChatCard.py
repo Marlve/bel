@@ -230,11 +230,19 @@ class ChatCard(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setStyleSheet(style.chat_scrollbar_stylesheet())
+        # The visible thumb clipped bubble/composer text under it (short
+        # single-word bubbles like "idk" worst-hit) - still scrollable via
+        # wheel/drag, just no drawn bar. See chat-bubble-polish's follow-up.
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.verticalScrollBar().valueChanged.connect(self.onScrollValueChanged)
         self.scroll.verticalScrollBar().rangeChanged.connect(self.onScrollRangeChanged)
 
         self.composer = Composer(self)
         self.composer.submitted.connect(self.send)
+        # Right edge should line up with the transcript's own rows, which
+        # stop short of root's raw padded width to leave room for the
+        # scrollbar - see chat-bubble-polish/04.
+        self.composer.setFixedWidth(self.contentWidth())
 
         root = QVBoxLayout(self)
         # This card's size is managed entirely by the dock state machine

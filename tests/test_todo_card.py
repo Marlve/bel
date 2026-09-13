@@ -118,6 +118,11 @@ class TodoCardTests(unittest.TestCase):
     def test_starts_with_no_items(self):
         self.assertEqual(self.card.list.items, [])
 
+    def test_scrollbar_never_draws_over_content(self):
+        # A visible thumb clipped list-item text under it - still
+        # scrollable via wheel/drag, just no drawn bar.
+        self.assertEqual(self.card.scroll.verticalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+
     def test_a_fresh_card_opens_at_the_default_width(self):
         self.assertEqual(self.card.width(), style.TODO_DEFAULT_WIDTH + 2 * margin())
 
