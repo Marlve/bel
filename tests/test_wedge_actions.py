@@ -36,8 +36,10 @@ class WedgeToggleTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = cardStore.STORE_PATH
-        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_dir = cardStore.STORE_DIR
+        self.original_legacy_path = cardStore.LEGACY_STORE_PATH
+        cardStore.STORE_DIR = Path(self.tmp.name) / "cards"
+        cardStore.LEGACY_STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.menu = PieMenu()
         self.menu.motion = False
 
@@ -49,7 +51,8 @@ class WedgeToggleTests(unittest.TestCase):
         self.menu.close()
         self.menu.deleteLater()
         QApplication.processEvents()
-        cardStore.STORE_PATH = self.original_path
+        cardStore.STORE_DIR = self.original_dir
+        cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
     def pickWedge(self, index):

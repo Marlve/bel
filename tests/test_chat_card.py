@@ -58,8 +58,10 @@ class ChatCardTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = cardStore.STORE_PATH
-        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_dir = cardStore.STORE_DIR
+        self.original_legacy_path = cardStore.LEGACY_STORE_PATH
+        cardStore.STORE_DIR = Path(self.tmp.name) / "cards"
+        cardStore.LEGACY_STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.requests = []
         self.born = QRectF(100, 700, 64, 64)
         self.dock_rect = QRectF(1600, 24, style.CHAT_SIZE, style.CHAT_SIZE)
@@ -69,7 +71,8 @@ class ChatCardTests(unittest.TestCase):
 
     def tearDown(self):
         teardownCard(self.card)
-        cardStore.STORE_PATH = self.original_path
+        cardStore.STORE_DIR = self.original_dir
+        cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
     def fakeAction(self, prompt, session_id=None):
@@ -351,8 +354,10 @@ class ChatSlotTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = cardStore.STORE_PATH
-        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_dir = cardStore.STORE_DIR
+        self.original_legacy_path = cardStore.LEGACY_STORE_PATH
+        cardStore.STORE_DIR = Path(self.tmp.name) / "cards"
+        cardStore.LEGACY_STORE_PATH = Path(self.tmp.name) / "cards.json"
         motion_patch = patch("claudeChatCard.reduced_motion", return_value=True)
         motion_patch.start()
         self.addCleanup(motion_patch.stop)
@@ -364,7 +369,8 @@ class ChatSlotTests(unittest.TestCase):
         if self.slot.card:
             teardownCard(self.slot.card)
         QApplication.processEvents()  # flush any pending ChatSlot.dropRetired()
-        cardStore.STORE_PATH = self.original_path
+        cardStore.STORE_DIR = self.original_dir
+        cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
     def fakeAction(self, prompt, session_id=None):

@@ -64,8 +64,10 @@ class PieMenuFlowTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = cardStore.STORE_PATH
-        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_dir = cardStore.STORE_DIR
+        self.original_legacy_path = cardStore.LEGACY_STORE_PATH
+        cardStore.STORE_DIR = Path(self.tmp.name) / "cards"
+        cardStore.LEGACY_STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.original_hotkey_log_path = pieMenuModule.HOTKEY_LOG_PATH
         pieMenuModule.HOTKEY_LOG_PATH = Path(self.tmp.name) / "hotkey.log"
         self.menu = PieMenu()
@@ -81,7 +83,8 @@ class PieMenuFlowTests(unittest.TestCase):
             card.close()
         self.menu.close()
         self.menu.deleteLater()
-        cardStore.STORE_PATH = self.original_path
+        cardStore.STORE_DIR = self.original_dir
+        cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         pieMenuModule.HOTKEY_LOG_PATH = self.original_hotkey_log_path
         self.tmp.cleanup()
 
@@ -443,8 +446,10 @@ class PieMenuAnchorClampTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.original_path = cardStore.STORE_PATH
-        cardStore.STORE_PATH = Path(self.tmp.name) / "cards.json"
+        self.original_dir = cardStore.STORE_DIR
+        self.original_legacy_path = cardStore.LEGACY_STORE_PATH
+        cardStore.STORE_DIR = Path(self.tmp.name) / "cards"
+        cardStore.LEGACY_STORE_PATH = Path(self.tmp.name) / "cards.json"
         self.original_hotkey_log_path = pieMenuModule.HOTKEY_LOG_PATH
         pieMenuModule.HOTKEY_LOG_PATH = Path(self.tmp.name) / "hotkey.log"
         self.menu = PieMenu()
@@ -452,7 +457,8 @@ class PieMenuAnchorClampTests(unittest.TestCase):
     def tearDown(self):
         self.menu.close()
         self.menu.deleteLater()
-        cardStore.STORE_PATH = self.original_path
+        cardStore.STORE_DIR = self.original_dir
+        cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         pieMenuModule.HOTKEY_LOG_PATH = self.original_hotkey_log_path
         self.tmp.cleanup()
 
