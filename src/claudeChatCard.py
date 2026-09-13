@@ -239,9 +239,9 @@ class ChatCard(QWidget):
 
         self.composer = Composer(self)
         self.composer.submitted.connect(self.send)
-        # Right edge should line up with the transcript's own rows, which
-        # stop short of root's raw padded width to leave room for the
-        # scrollbar - see chat-bubble-polish/04.
+        # Right edge should line up with the transcript's own rows
+        # (contentWidth() - see chat-bubble-polish/04), not root's own
+        # raw padded width.
         self.composer.setFixedWidth(self.contentWidth())
 
         root = QVBoxLayout(self)
@@ -381,8 +381,7 @@ class ChatCard(QWidget):
         bubble.setTextFormat(Qt.PlainText)
         bubble.setWordWrap(True)
         bubble.setStyleSheet(style.chat_bubble_stylesheet())
-        bubble.ensurePolished()  # forces the stylesheet's font onto bubble.font() now, not on first show
-        bubble.setFixedWidth(self.userBubbleWidth(text, bubble.font()))
+        bubble.setFixedWidth(self.userBubbleWidth(text))
 
         row = QHBoxLayout()
         row.addStretch(1)
@@ -431,26 +430,39 @@ class ChatCard(QWidget):
             body += f'<span style="color:{style.CHAT_ACCENT};">▏</span>'
         label.setText(body)
 
-    def userBubbleWidth(self, text, font):
+    def userBubbleWidth(self, text):
         # A word-wrapping QLabel's sizeHint doesn't equal maximumWidth() (see
         # appendClaudeTurn()'s note), and a plain QFontMetrics guess isn't
-        # enough either - QLabel's own word-wrap layout adds internal
-        # spacing QFontMetrics knows nothing about, so a label sized to
-        # exactly the text's advance width still wraps a line early. Probe
-        # a real label the same way Qt itself will lay the final one out,
-        # searching for the narrowest width that doesn't force an extra
-        # line, so short messages shrink to fit instead of sitting at
-        # bubbleMaxWidth() like Bel's reply always does.
-        metrics = QFontMetrics(font)
-        lo = max(metrics.horizontalAdvance(line) for line in text.split("\n")) + 2 * style.CHAT_BUBBLE_PADDING_H
-        hi = self.bubbleMaxWidth()
-        if lo >= hi:
-            return hi
-
+        # enough either - QLabel's own word-wrap layout routes through an
+        # internal QTextDocument with its own margin QFontMetrics has no
+        # visibility into, so a label sized to exactly the text's advance
+        # width still wraps a line early. Probe a real label the same way
+        # Qt itself will lay the final one out, searching for the narrowest
+        # width that doesn't force an extra line, so short messages shrink
+        # to fit instead of sitting at bubbleMaxWidth() like Bel's reply
+        # always does.
         probe = QLabel(text)
         probe.setTextFormat(Qt.PlainText)  # match the real bubble - AutoText's rich-text sniff would size differently
         probe.setStyleSheet(style.chat_bubble_stylesheet())
         probe.ensurePolished()
+
+        # The binary search below only works when wrapping is possible at
+        # all - it detects "too narrow" by watching heightForWidth() grow to
+        # a second line. A single unbreakable "word" (no space to wrap on,
+        # e.g. "idk") never grows past one line at any width, so that signal
+        # never fires and the search would silently collapse to whatever
+        # `lo` starts at. Qt's own unwrapped sizeHint() - not a hand-rolled
+        # QFontMetrics guess - is the one number guaranteed to already
+        # include that same QTextDocument margin, so it's a safe floor
+        # whether or not the text can wrap (measured 13px short with a raw
+        # QFontMetrics().horizontalAdvance() estimate for single words -
+        # exactly this clipped "idk" and other one-word messages).
+        probe.setWordWrap(False)
+        lo = probe.sizeHint().width()
+        hi = self.bubbleMaxWidth()
+        if lo >= hi:
+            return hi
+
         probe.setWordWrap(True)
         single_line_height = probe.heightForWidth(hi)
         while lo < hi:
@@ -465,7 +477,7 @@ class ChatCard(QWidget):
         return round(self.contentWidth() * style.CHAT_BUBBLE_MAX_WIDTH_FRACTION)
 
     def contentWidth(self):
-        return style.CHAT_SIZE - 2 * style.CHAT_PADDING - self.scroll.verticalScrollBar().sizeHint().width()
+        return style.CHAT_SIZE - 2 * style.CHAT_PADDING
 
     def onScrollValueChanged(self, value):
         bar = self.scroll.verticalScrollBar()

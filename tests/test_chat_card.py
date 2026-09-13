@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 import cardStore
 import dockCorner
@@ -94,6 +94,25 @@ class ChatCardTests(unittest.TestCase):
         # edge sat under the scrollbar instead of stopping short of it.
         self.card.fly()
         self.assertEqual(self.card.composer.width(), self.card.contentWidth())
+
+    def test_single_word_user_bubble_is_wide_enough_not_to_clip(self):
+        # Regression for chat-bubble-polish/06's real root cause: any
+        # unbreakable single "word" ("idk", "hi", "ok"...) can never wrap
+        # onto a second line at any width, so userBubbleWidth()'s
+        # narrowest-width-without-a-second-line binary search never gets a
+        # signal that a width is too narrow - it silently returned its
+        # QFontMetrics-based starting guess, ~13px short of what the real
+        # QLabel (with its own internal QTextDocument margin) needed,
+        # clipping the last character(s). The fix measures the same
+        # QLabel's own unwrapped sizeHint() instead of guessing.
+        for word in ("idk", "hi", "ok", "a", "yes"):
+            probe = QLabel(word)
+            probe.setTextFormat(Qt.PlainText)
+            probe.setStyleSheet(style.chat_bubble_stylesheet())
+            probe.ensurePolished()
+            probe.setWordWrap(False)
+            natural_width = probe.sizeHint().width()
+            self.assertGreaterEqual(self.card.userBubbleWidth(word), natural_width)
 
     def test_scrollbar_never_draws_over_content(self):
         # A visible thumb clipped bubble/composer text under it (short
