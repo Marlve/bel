@@ -1,3 +1,4 @@
+import importlib
 import sys
 import unittest
 from pathlib import Path
@@ -112,6 +113,21 @@ class ChatMarkdownTests(unittest.TestCase):
             rendered,
             f'<ul><li>one</li><li>two</li></ul><p style="margin:0;margin-top:{style.CHAT_PARAGRAPH_GAP}px;">Done.</p>',
         )
+
+    def test_paragraph_gap_reflects_apply_scale_not_the_reference_value(self):
+        # chatMarkdown used to `from style import CHAT_PARAGRAPH_GAP`, which
+        # binds a copy at import time - apply_scale() (called once at real
+        # startup, after this module is already imported) mutates style's
+        # own attribute, but the frozen copy here never saw it, so a real
+        # 4K/150% monitor would silently render the reference-scale gap
+        # forever instead of the actual scaled one.
+        try:
+            style.apply_scale(1.5)
+            rendered = chatMarkdown.render("para one\n\npara two")
+            self.assertIn(f"margin-top:{style.CHAT_PARAGRAPH_GAP}px", rendered)
+            self.assertNotEqual(style.CHAT_PARAGRAPH_GAP, 6)
+        finally:
+            importlib.reload(style)
 
 
 if __name__ == "__main__":

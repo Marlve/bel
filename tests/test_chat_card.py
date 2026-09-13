@@ -87,6 +87,22 @@ class ChatCardTests(unittest.TestCase):
         # label's and composer's own left edge.
         self.assertEqual(self.card.transcript_layout.contentsMargins().left(), 0)
 
+    def test_transcript_row_spacing_uses_the_named_constant(self):
+        # Regression for chat-bubble-polish/02: this used to be a bare
+        # literal 8, invisible to apply_scale()'s per-monitor scaling - so
+        # on a large enough screen CHAT_PARAGRAPH_GAP (which does scale)
+        # could grow past this unscaled turn-gap, inverting the gap
+        # hierarchy the ticket was built to fix.
+        self.assertEqual(self.card.transcript_layout.spacing(), style.SPACE_2)
+
+    def test_paragraph_gap_stays_smaller_than_the_turn_gap_at_4k_scale(self):
+        import importlib
+        try:
+            style.apply_scale(1.5)  # e.g. a 3840x2160 4K primary monitor
+            self.assertLess(style.CHAT_PARAGRAPH_GAP, style.SPACE_2)
+        finally:
+            importlib.reload(style)
+
     def test_composer_right_edge_matches_transcript_content_width(self):
         # Regression for chat-bubble-polish/04: the composer used to span
         # root's raw padded width, running 6px past contentWidth() - the

@@ -9,7 +9,7 @@
 import html
 import re
 
-from style import CHAT_MONO_FAMILY, CHAT_PARAGRAPH_GAP
+import style
 
 _FENCE_RE = re.compile(r"```[^\n`]*\n(.*?)\n```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -38,7 +38,7 @@ def render(text):
     fences = []
 
     def stash_fence(match):
-        fences.append(f'<pre style="font-family:{CHAT_MONO_FAMILY};">{match.group(1)}</pre>')
+        fences.append(f'<pre style="font-family:{style.CHAT_MONO_FAMILY};">{match.group(1)}</pre>')
         return _FENCE_TOKEN % (len(fences) - 1)
 
     body = _FENCE_RE.sub(stash_fence, escaped)
@@ -67,7 +67,7 @@ def _join(pieces):
             return
         text = "\n".join(paragraph)
         if with_gap:
-            text = f'<p style="margin:0;margin-top:{CHAT_PARAGRAPH_GAP}px;">{text}</p>'
+            text = f'<p style="margin:0;margin-top:{style.CHAT_PARAGRAPH_GAP}px;">{text}</p>'
         out.append(text)
         paragraph.clear()
 
@@ -128,7 +128,7 @@ def _inline(text):
     spans = []
 
     def stash_code(match):
-        spans.append(f'<code style="font-family:{CHAT_MONO_FAMILY};">{match.group(1)}</code>')
+        spans.append(f'<code style="font-family:{style.CHAT_MONO_FAMILY};">{match.group(1)}</code>')
         return _CODE_TOKEN % (len(spans) - 1)
 
     text = _INLINE_CODE_RE.sub(stash_code, text)

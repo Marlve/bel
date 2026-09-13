@@ -222,7 +222,7 @@ class ChatCard(QWidget):
         # outside the scroll area, on both sides of it) rather than leaving
         # the vertical cushion to that same implicit default.
         self.transcript_layout.setContentsMargins(0, style.SPACE_2, 0, style.SPACE_2)
-        self.transcript_layout.setSpacing(8)
+        self.transcript_layout.setSpacing(style.SPACE_2)
         self.transcript_layout.addStretch(1)  # keeps a short transcript bottom-anchored
 
         self.scroll = QScrollArea(self)
