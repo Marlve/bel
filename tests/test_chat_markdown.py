@@ -91,6 +91,28 @@ class ChatMarkdownTests(unittest.TestCase):
         rendered = chatMarkdown.render("1. a\n- b")
         self.assertEqual(rendered, "<ol><li>a</li></ol><ul><li>b</li></ul>")
 
+    def test_single_hard_break_stays_a_literal_newline(self):
+        # No blank source line between them - not a paragraph break.
+        self.assertEqual(chatMarkdown.render("line one\nline two"), "line one\nline two")
+
+    def test_blank_line_becomes_a_paragraph_break_not_a_double_newline(self):
+        rendered = chatMarkdown.render("para one\n\npara two")
+        self.assertNotIn("\n\n", rendered)
+        self.assertIn("para one", rendered)
+        self.assertIn(f'margin-top:{style.CHAT_PARAGRAPH_GAP}px', rendered)
+        self.assertIn("para two", rendered)
+
+    def test_multiple_blank_lines_still_produce_a_single_paragraph_gap(self):
+        rendered = chatMarkdown.render("para one\n\n\n\npara two")
+        self.assertEqual(rendered.count("margin-top"), 1)
+
+    def test_paragraph_break_directly_after_a_list_still_gets_the_gap(self):
+        rendered = chatMarkdown.render("- one\n- two\n\nDone.")
+        self.assertEqual(
+            rendered,
+            f'<ul><li>one</li><li>two</li></ul><p style="margin:0;margin-top:{style.CHAT_PARAGRAPH_GAP}px;">Done.</p>',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@
 import html
 import re
 
-from style import CHAT_MONO_FAMILY
+from style import CHAT_MONO_FAMILY, CHAT_PARAGRAPH_GAP
 
 _FENCE_RE = re.compile(r"```[^\n`]*\n(.*?)\n```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -52,14 +52,36 @@ def render(text):
 
 def _join(pieces):
     # ClaudeChatCard's label renders this in a white-space:pre-wrap span, so
-    # a literal "\n" here is a real line break - only put one between two
-    # plain text lines. A list/fence block already opens its own line, so a
-    # "\n" next to one would double up with its block margin.
+    # a bare "\n" here is a real line break within one paragraph. A blank
+    # source line instead marks a paragraph break, wrapped in its own <p> so
+    # the gap is a deliberate CHAT_PARAGRAPH_GAP margin rather than another
+    # font-line-height "\n". A list/fence block already opens its own line,
+    # so nothing is added directly next to one - only a blank line (pending)
+    # still earns the next paragraph its gap.
     out = []
-    for index, (is_block, text) in enumerate(pieces):
-        if index > 0 and not is_block and not pieces[index - 1][0]:
-            out.append("\n")
+    paragraph = []
+    pending_gap = False
+
+    def flush_paragraph(with_gap):
+        if not paragraph:
+            return
+        text = "\n".join(paragraph)
+        if with_gap:
+            text = f'<p style="margin:0;margin-top:{CHAT_PARAGRAPH_GAP}px;">{text}</p>'
         out.append(text)
+        paragraph.clear()
+
+    for is_block, text in pieces:
+        if is_block:
+            flush_paragraph(pending_gap)
+            pending_gap = False
+            out.append(text)
+        elif text == "":
+            flush_paragraph(pending_gap)
+            pending_gap = True
+        else:
+            paragraph.append(text)
+    flush_paragraph(pending_gap)
     return "".join(out)
 
 
