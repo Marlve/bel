@@ -156,7 +156,6 @@ CHAT_COMPOSER_FIELD = SURFACE_RAISED
 CHAT_ACCENT = ACCENT
 CHAT_USER_BUBBLE = PALETTE["200"]  # the question's bubble - one step lighter than the card body
 CHAT_BODY_TEXT = BODY
-CHAT_TURN_TEXT = BODY_DIM  # claude's own turns - plain text, no bubble
 CHAT_LABEL_MONO = LABEL
 CHAT_INERT_HINT = HINT
 
@@ -179,6 +178,7 @@ CHAT_BUBBLE_RADIUS = (8, 8, 2, 8)  # top-left, top-right, bottom-right, bottom-l
 CHAT_BUBBLE_PADDING_H = 9
 CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
+CHAT_BUBBLE_GAP_EXTRA = SPACE_3  # added on top of transcript_layout's own row spacing, only between a user bubble and the Bel reply beneath it
 
 CHAT_COMPOSER_HEIGHT = 2 * SPACE_4  # 32px, per claude-chat-flow.md's composer height
 
@@ -309,6 +309,7 @@ _SCALE_INT_NAMES = [
     "REJECT_SHIFT",
     "CHAT_SIZE", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
     "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
+    "CHAT_BUBBLE_GAP_EXTRA",
     "CHAT_COMPOSER_HEIGHT",
     "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
     "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
@@ -379,7 +380,10 @@ def chat_scrollbar_stylesheet():
 
 
 def chat_turn_stylesheet():
-    return f"color: {CHAT_TURN_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
+    # Full CHAT_BODY_TEXT brightness rather than a dimmer secondary tone -
+    # Bel's reply is the thing being read here, so it shouldn't be styled
+    # as lower-priority than the user's own bubble text.
+    return f"color: {CHAT_BODY_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
 
 
 def chat_bubble_stylesheet():

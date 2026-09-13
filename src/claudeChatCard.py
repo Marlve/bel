@@ -381,6 +381,7 @@ class ChatCard(QWidget):
         self.insertTurnRow(row)
 
     def appendClaudeTurn(self):
+        follows_user = bool(self.state.turns) and self.state.turns[-1]["role"] == "user"
         self.state.turns.append({"role": "claude", "text": ""})
         self.streaming_index = len(self.state.turns) - 1
 
@@ -388,9 +389,19 @@ class ChatCard(QWidget):
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         label.setStyleSheet(style.chat_turn_stylesheet())
-        label.setMaximumWidth(self.contentWidth())
+        # A word-wrapping QLabel's sizeHint doesn't equal maximumWidth() - Qt
+        # computes a narrower "ideal" width from the rich-text layout instead,
+        # and the row's trailing addStretch(1) never forces it wider - so the
+        # label wrapped at a fraction of the actual available width. Fixed
+        # forces it to really use the full content width.
+        label.setFixedWidth(self.contentWidth())
 
         row = QHBoxLayout()
+        if follows_user:
+            # transcript_layout's own spacing already separates every turn
+            # row uniformly - this widens just the user-bubble-to-Bel-reply
+            # transition, leaving Bel-to-Bel/user-to-user gaps untouched.
+            row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
         row.addWidget(label)
         row.addStretch(1)
         self.insertTurnRow(row)
