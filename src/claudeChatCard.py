@@ -373,7 +373,8 @@ class ChatCard(QWidget):
         bubble.setTextFormat(Qt.PlainText)
         bubble.setWordWrap(True)
         bubble.setStyleSheet(style.chat_bubble_stylesheet())
-        bubble.setMaximumWidth(self.bubbleMaxWidth())
+        bubble.ensurePolished()  # forces the stylesheet's font onto bubble.font() now, not on first show
+        bubble.setFixedWidth(self.userBubbleWidth(text, bubble.font()))
 
         row = QHBoxLayout()
         row.addStretch(1)
@@ -421,6 +422,36 @@ class ChatCard(QWidget):
         if caret:
             body += f'<span style="color:{style.CHAT_ACCENT};">▏</span>'
         label.setText(body)
+
+    def userBubbleWidth(self, text, font):
+        # A word-wrapping QLabel's sizeHint doesn't equal maximumWidth() (see
+        # appendClaudeTurn()'s note), and a plain QFontMetrics guess isn't
+        # enough either - QLabel's own word-wrap layout adds internal
+        # spacing QFontMetrics knows nothing about, so a label sized to
+        # exactly the text's advance width still wraps a line early. Probe
+        # a real label the same way Qt itself will lay the final one out,
+        # searching for the narrowest width that doesn't force an extra
+        # line, so short messages shrink to fit instead of sitting at
+        # bubbleMaxWidth() like Bel's reply always does.
+        metrics = QFontMetrics(font)
+        lo = max(metrics.horizontalAdvance(line) for line in text.split("\n")) + 2 * style.CHAT_BUBBLE_PADDING_H
+        hi = self.bubbleMaxWidth()
+        if lo >= hi:
+            return hi
+
+        probe = QLabel(text)
+        probe.setTextFormat(Qt.PlainText)  # match the real bubble - AutoText's rich-text sniff would size differently
+        probe.setStyleSheet(style.chat_bubble_stylesheet())
+        probe.ensurePolished()
+        probe.setWordWrap(True)
+        single_line_height = probe.heightForWidth(hi)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if probe.heightForWidth(mid) <= single_line_height:
+                hi = mid
+            else:
+                lo = mid + 1
+        return lo
 
     def bubbleMaxWidth(self):
         return round(self.contentWidth() * style.CHAT_BUBBLE_MAX_WIDTH_FRACTION)
