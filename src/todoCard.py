@@ -10,7 +10,7 @@
 
 from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QHBoxLayout
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
-from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
+from PySide6.QtCore import Qt, QRectF, QTimer, QEvent, QFileSystemWatcher
 
 import style
 import shadow
@@ -60,9 +60,12 @@ class TodoList(QWidget):
 
     def toggle(self, index):
         item = self.items[index]
-        item["done"] = not item["done"]
-        self.update()
-        self.card.scheduleSave()
+
+        def apply():
+            item["done"] = not item["done"]
+            self.update()
+
+        self.card.mutateThenSave(apply)
         self.card.updateOpenCount()
         if item["done"]:
             self.animation.scheduleRemoval(item)
@@ -73,15 +76,16 @@ class TodoList(QWidget):
         self.animation.removeIfStillDone(item)
 
     def finishRemoval(self, item):
-        for index, existing in enumerate(self.items):
-            if existing is item:
-                del self.items[index]
-                break
-        else:
-            return
-        self.updateHeight()
-        self.update()
-        self.card.scheduleSave()
+        def apply():
+            for index, existing in enumerate(self.items):
+                if existing is item:
+                    del self.items[index]
+                    self.updateHeight()
+                    self.update()
+                    return True
+            return False  # already gone - nothing to save
+
+        self.card.mutateThenSave(apply)
 
     def mousePressEvent(self, event):
         self.card.drag.press(event.globalPosition())
@@ -165,6 +169,23 @@ class TodoCard(FloatingCard, QWidget):
         self.updateOpenCount()
         self.grip.reposition()
 
+        # Bel's Claude subprocess can add/toggle todos through cardTool.py
+        # while this card is already open (see claude.py) - it writes
+        # straight to the store file, with no way to reach this card's
+        # in-memory items directly, so without this the card would just
+        # sit stale until closed and reopened.
+        self.watcher = QFileSystemWatcher(self)
+        self.watcher.fileChanged.connect(self.onStoreChanged)
+        self.watcher.directoryChanged.connect(self.onStoreChanged)
+        # On a brand-new install nothing's been saved yet, so there's no
+        # file for the watch above to attach to - save() (which also calls
+        # watchStoreFile()) creates it immediately rather than waiting on
+        # whichever comes first, a local edit or this card's own hide(),
+        # so a to-do added purely through Bel, before the user ever touches
+        # this card themselves, still gets picked up live.
+        self.save()
+        self.watcher.addPath(str(cardStore.STORE_DIR))
+
     def afterRaise(self):
         # WA_ShowWithoutActivating keeps show() from stealing OS focus, so
         # the field's setFocus() alone would be Qt-internal only - actual
@@ -241,12 +262,15 @@ class TodoCard(FloatingCard, QWidget):
         text = self.add_field.text().strip()
         if not text:
             return
-        self.list.items.append({"text": text, "done": False})
-        self.list.updateHeight()
-        self.list.update()
+
+        def apply():
+            self.list.items.append({"text": text, "done": False})
+            self.list.updateHeight()
+            self.list.update()
+
+        self.mutateThenSave(apply)
         self.updateOpenCount()
         self.add_field.clear()
-        self.scheduleSave()
 
     def updateOpenCount(self):
         open_count = sum(1 for item in self.list.items if not item["done"])
@@ -266,11 +290,72 @@ class TodoCard(FloatingCard, QWidget):
                 "pos": [self.x(), self.y()],
             },
         )
+        # A brand-new card's first save is what creates the store file -
+        # __init__'s own watchStoreFile() call had nothing to watch yet at
+        # that point, so this is what actually arms it.
+        self.watchStoreFile()
+
+    def mutateThenSave(self, apply):
+        """Shared by every local edit that saves immediately rather than
+        going through scheduleSave()'s debounce (toggle/finishRemoval on
+        TodoList, addItem here) - see any of their call sites for the race
+        this closes. Reload must happen before `apply`, not after: merging
+        afterward would let disk's still-stale state for whatever `apply`
+        just changed stomp that very change. `apply` may return False to
+        mean "nothing changed, skip the save" (finishRemoval's item already
+        gone)."""
+        self.reloadFromDisk()
+        if apply() is False:
+            return
+        self.save()
 
     def hideEvent(self, event):
         self.save_timer.stop()
         self.save()
         super().hideEvent(event)
+
+    # --- external changes (Bel's Claude subprocess, via cardTool.py) ---
+
+    def watchStoreFile(self):
+        path = str(cardStore.key_path(STORE_KEY))
+        if path not in self.watcher.files():
+            self.watcher.addPath(path)
+
+    def onStoreChanged(self, path):
+        # A rewrite can drop a path from the watch list (seen on some
+        # platforms with write-then-rename saves) - re-arm every time so a
+        # second external edit still notifies us. Harmless if the file
+        # wasn't the one that actually changed (e.g. a directory event from
+        # some other key's file appearing): reloadFromDisk() only acts on
+        # items whose "done" state actually differs.
+        self.watchStoreFile()
+        self.reloadFromDisk()
+
+    def reloadFromDisk(self):
+        """Merges in whatever's now on disk instead of replacing the list
+        outright, so an item completed externally plays the same
+        fade-and-remove animation a manual tick does. Matches by position -
+        cardTool.py only appends or flips "done" on an existing index, same
+        as this card, so the common prefix of both lists always lines up."""
+        saved = cardStore.load(STORE_KEY, {})
+        new_items = saved.get("items", [])
+        old_items = self.list.items
+
+        for index, new_item in enumerate(new_items[:len(old_items)]):
+            old_item = old_items[index]
+            if old_item["done"] == new_item["done"]:
+                continue
+            old_item["done"] = new_item["done"]
+            if old_item["done"]:
+                self.list.animation.scheduleRemoval(old_item)
+            else:
+                self.list.animation.cancelRemoval(old_item)
+
+        old_items.extend(new_items[len(old_items):])
+
+        self.list.updateHeight()
+        self.list.update()
+        self.updateOpenCount()
 
     def resizeEvent(self, event):
         if hasattr(self, "grip"):

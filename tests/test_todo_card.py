@@ -28,12 +28,25 @@ class StubCard(QWidget):
         super().__init__()
         self.motion = False
         self.saved = 0
+        self.scheduled = 0
 
     def scheduleSave(self):
+        self.scheduled += 1
+
+    def save(self):
         self.saved += 1
 
     def updateOpenCount(self):
         pass
+
+    def reloadFromDisk(self):
+        pass
+
+    def mutateThenSave(self, apply):
+        self.reloadFromDisk()
+        if apply() is False:
+            return
+        self.save()
 
 
 class TodoListTests(unittest.TestCase):
@@ -49,13 +62,14 @@ class TodoListTests(unittest.TestCase):
         self.assertEqual(card.rowAt(36), 1)
         self.assertIsNone(card.rowAt(1000))
 
-    def test_toggle_flips_done_and_schedules_a_save(self):
+    def test_toggle_flips_done_and_saves_immediately(self):
         stub = StubCard()
         list_widget = TodoList(stub)
         list_widget.setItems([{"text": "a", "done": False}])
         list_widget.toggle(0)
         self.assertTrue(list_widget.items[0]["done"])
         self.assertEqual(stub.saved, 1)
+        self.assertEqual(stub.scheduled, 0)
 
     def test_ticking_a_row_schedules_its_removal(self):
         stub = StubCard()
@@ -145,6 +159,12 @@ class TodoCardTests(unittest.TestCase):
         self.assertEqual(self.card.list.items, [{"text": "buy milk", "done": False}])
         self.assertEqual(self.card.add_field.text(), "")
 
+    def test_adding_an_item_persists_immediately_without_a_hide_or_timer(self):
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        saved = cardStore.load("todo", None)
+        self.assertEqual(saved["items"], [{"text": "buy milk", "done": False}])
+
     def test_blank_text_adds_nothing(self):
         self.card.add_field.setText("   ")
         self.card.addItem()
@@ -196,6 +216,105 @@ class TodoCardTests(unittest.TestCase):
             card.close()
             card.deleteLater()
             QApplication.processEvents()
+
+    # --- reloadFromDisk() - picking up cardTool.py's external edits ---
+
+    def test_reload_marks_an_externally_completed_item_done_and_schedules_removal(self):
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        item = self.card.list.items[0]
+        cardStore.save("todo", {"items": [{"text": "buy milk", "done": True}]})
+
+        self.card.reloadFromDisk()
+
+        self.assertTrue(item["done"])
+        self.assertIn(id(item), self.card.list.remove_timers)
+
+    def test_reload_undoing_externally_cancels_a_pending_removal(self):
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        item = self.card.list.items[0]
+        self.card.list.toggle(0)  # done locally - removal scheduled
+        cardStore.save("todo", {"items": [{"text": "buy milk", "done": False}]})
+
+        self.card.reloadFromDisk()
+
+        self.assertFalse(item["done"])
+        self.assertNotIn(id(item), self.card.list.remove_timers)
+
+    def test_reload_picks_up_an_item_added_externally(self):
+        cardStore.save("todo", {"items": [{"text": "buy milk", "done": False}]})
+        self.card.reloadFromDisk()
+        self.assertEqual(self.card.list.items, [{"text": "buy milk", "done": False}])
+        self.assertEqual(self.card.header_count_label.text(), "1 OPEN")
+
+    def test_reload_is_a_no_op_when_nothing_changed(self):
+        self.card.add_field.setText("buy milk")
+        self.card.addItem()
+        item = self.card.list.items[0]
+        self.card.save()
+
+        self.card.reloadFromDisk()
+
+        self.assertEqual(self.card.list.items, [item])
+        self.assertNotIn(id(item), self.card.list.remove_timers)
+
+    # --- immediate saves merge cardTool.py's writes first, rather than
+    # clobbering them (code-review finding on the immediate-save fix above:
+    # a bare overwrite would otherwise discard whatever cardTool.py had
+    # already written to disk in the gap before the file watcher's signal
+    # is delivered and processed) ---
+
+    def test_toggle_merges_an_externally_added_item_before_saving(self):
+        self.card.add_field.setText("wash car")
+        self.card.addItem()
+        # Simulates cardTool.py's add-todo landing on disk before the file
+        # watcher's signal for it has been delivered/processed.
+        cardStore.save("todo", {"items": [
+            {"text": "wash car", "done": False},
+            {"text": "buy milk", "done": False},
+        ]})
+
+        self.card.list.toggle(0)
+
+        saved = cardStore.load("todo", None)["items"]
+        self.assertEqual(saved, [
+            {"text": "wash car", "done": True},
+            {"text": "buy milk", "done": False},
+        ])
+
+    def test_add_item_merges_an_externally_added_item_before_saving(self):
+        # Simulates cardTool.py's add-todo landing on disk while the user is
+        # mid-type, before the file watcher's signal is delivered/processed.
+        cardStore.save("todo", {"items": [{"text": "buy milk", "done": False}]})
+        self.card.add_field.setText("wash car")
+
+        self.card.addItem()
+
+        saved = cardStore.load("todo", None)["items"]
+        self.assertEqual(saved, [
+            {"text": "buy milk", "done": False},
+            {"text": "wash car", "done": False},
+        ])
+
+    def test_finish_removal_merges_an_externally_added_item_before_saving(self):
+        self.card.add_field.setText("wash car")
+        self.card.addItem()
+        item = self.card.list.items[0]
+        self.card.list.toggle(0)  # done locally, removal scheduled, already saved
+
+        # Simulates cardTool.py's add-todo landing on disk before the
+        # removal timer fires and before the file watcher's signal for it
+        # is delivered/processed.
+        cardStore.save("todo", {"items": [
+            {"text": "wash car", "done": True},
+            {"text": "buy milk", "done": False},
+        ]})
+
+        self.card.list.finishRemoval(item)
+
+        saved = cardStore.load("todo", None)["items"]
+        self.assertEqual(saved, [{"text": "buy milk", "done": False}])
 
     def test_a_saved_position_off_any_screen_is_clamped_back_onscreen(self):
         # e.g. a second monitor was unplugged since the position was saved.
@@ -265,9 +384,12 @@ class TodoCardTests(unittest.TestCase):
         self.assertFalse(self.card.isVisible())
 
     def test_hiding_flushes_a_pending_save(self):
+        # addItem()/toggle() save immediately now - the resize grip is the
+        # remaining debounced caller (see draggable.ResizeGrip), simulated
+        # here directly rather than dragging a real grip.
         self.card.show()  # hideEvent only fires when a visible widget is hidden
-        self.card.add_field.setText("urgent")
-        self.card.addItem()  # schedules a debounced save, not yet written
+        self.card.list.items.append({"text": "urgent", "done": False})
+        self.card.scheduleSave()  # not yet written - debounced
         self.card.hide()
         saved = cardStore.load("todo", None)
         self.assertEqual(saved["items"], [{"text": "urgent", "done": False}])
