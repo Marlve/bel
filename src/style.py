@@ -173,6 +173,7 @@ CHAT_RADIUS_MS = 300  # the pill squares off before the flight ends, on the same
 CHAT_RADIUS = 9
 CHAT_DISMISS_MS = 140
 CHAT_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
+CHAT_TYPING_PERIOD_MS = 900  # one full sweep of the pre-reply typing indicator's 3-dot pulse
 
 CHAT_BUBBLE_RADIUS = (8, 8, 2, 8)  # top-left, top-right, bottom-right, bottom-left
 CHAT_BUBBLE_PADDING_H = 9

@@ -25,6 +25,7 @@ from anims.pose import (
     lerp_rect,
     card_flight_progress,
     card_radius,
+    typing_dot_pose,
 )
 
 R = style.RING_RADIUS
@@ -212,6 +213,29 @@ class LerpRectTests(unittest.TestCase):
 
     def test_halfway(self):
         self.assertEqual(lerp_rect(self.a, self.b, 0.5), QRectF(100, 25, 300, 80))
+
+
+class TypingDotPoseTests(unittest.TestCase):
+    PERIOD = style.CHAT_TYPING_PERIOD_MS
+
+    def test_values_stay_in_unit_range(self):
+        for ms in range(0, self.PERIOD * 2, 17):
+            for brightness in typing_dot_pose(ms, self.PERIOD):
+                self.assertGreaterEqual(brightness, 0)
+                self.assertLessEqual(brightness, 1)
+
+    def test_dots_are_out_of_phase_with_each_other(self):
+        # The whole point of a sequential pulse: the 3 dots shouldn't all
+        # be at the same brightness at some arbitrary point mid-cycle.
+        a, b, c = typing_dot_pose(self.PERIOD / 6, self.PERIOD)
+        self.assertNotAlmostEqual(a, b)
+        self.assertNotAlmostEqual(b, c)
+
+    def test_repeats_every_period(self):
+        start = typing_dot_pose(0, self.PERIOD)
+        wrapped = typing_dot_pose(self.PERIOD, self.PERIOD)
+        for a, b in zip(start, wrapped):
+            self.assertAlmostEqual(a, b)
 
 
 class CardFlightTests(unittest.TestCase):

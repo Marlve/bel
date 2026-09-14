@@ -328,6 +328,7 @@ class ChatCard(QWidget):
         self.streaming_label = self.appendClaudeTurn()
         self.state.streaming_text = ""
         self.composer.setReadOnly(True)
+        self.animation.startTyping(self.streaming_label)
 
         self.state.request = self.state.action(text, session_id=self.state.session_id)
         self.state.request.chunk.connect(self.onChunk)
@@ -346,12 +347,14 @@ class ChatCard(QWidget):
             self.write(text)
 
     def write(self, text):
+        self.animation.stopTyping()
         self.state.streaming_text += text
         self.state.turns[self.streaming_index]["text"] = self.state.streaming_text
         self.setTurnHtml(self.streaming_label, self.state.streaming_text, caret=True)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def onStreamFinished(self):
+        self.animation.stopTyping()  # a reply that finished with zero chunks would otherwise pulse forever
         if self.streaming_label is not None:
             self.setTurnHtml(self.streaming_label, self.state.streaming_text, caret=False)
         self.streaming_label = None

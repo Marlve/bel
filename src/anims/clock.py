@@ -22,7 +22,8 @@ class Clock(QVariantAnimation):
         self.valueChanged.connect(on_tick)
         self.finished.connect(on_done)
 
-    def run(self, total_ms, motion=True):
+    def run(self, total_ms, motion=True, loop=False):
+        self.setLoopCount(-1 if loop else 1)
         self.setEndValue(total_ms)
         self.setDuration(total_ms)
         self.start()

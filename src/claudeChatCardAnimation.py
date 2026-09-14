@@ -56,6 +56,8 @@ class ChatCardAnimation:
         self.flight = Clock(parent, self.onFlightTick, parent.onLanded)
         self.fade = Tween(parent, self.onFadeTick, parent.onFaded)
         self.tilt_tween = Tween(parent, self.onTiltTick)
+        self.typing_clock = Clock(parent, self.onTypingTick, lambda: None)
+        self.typing_label = None
 
         self.edge_driver = None
         self.edge_trigger = None
@@ -84,6 +86,34 @@ class ChatCardAnimation:
             on_landed=self.onDockLanded,
         )
         self.edge_trigger = EdgeTrigger(self.onEdgeDistance, self.screen, left=dockCorner.is_left(self.state.corner))
+
+    # --- the pre-reply typing indicator: fills the gap between send() and
+    # the first onChunk(), see chat-bubble-polish/01 ---
+
+    def startTyping(self, label):
+        self.typing_label = label
+        if self.motion:
+            self.typing_clock.run(style.CHAT_TYPING_PERIOD_MS, loop=True)
+        else:
+            self.renderTypingDots((1.0, 1.0, 1.0))
+
+    def stopTyping(self):
+        if self.typing_label is None:
+            return
+        self.typing_clock.stop()
+        self.typing_label = None
+
+    def onTypingTick(self, ms):
+        self.renderTypingDots(pose.typing_dot_pose(ms, style.CHAT_TYPING_PERIOD_MS))
+
+    def renderTypingDots(self, brightnesses):
+        if self.typing_label is None:
+            return
+        dots = " ".join(
+            f'<span style="color:{pose.mix(style.MUTED, style.CHAT_ACCENT, b).name()};">•</span>'
+            for b in brightnesses
+        )
+        self.typing_label.setText(dots)
 
     # --- the edge dock ---
 

@@ -343,6 +343,40 @@ class ChatCardTests(unittest.TestCase):
         self.assertIsNone(self.card.request)
         self.assertIsNone(self.card.streaming_label)
 
+    def test_a_typing_indicator_fills_the_gap_before_the_first_chunk(self):
+        # chat-bubble-polish/01: the reply bubble used to render nothing at
+        # all until the first chunk arrived - no feedback that Bel was
+        # actually working during the fetch/cold-start gap.
+        self.card.fly()
+        self.card.send("hello")
+        label = self.card.streaming_label
+        self.assertNotEqual(label.text(), "")
+        self.assertIsNotNone(self.card.animation.typing_label)
+
+    def test_the_first_chunk_stops_the_typing_indicator(self):
+        self.card.fly()
+        self.card.send("hello")
+        self.requests[0].chunk.emit("Hi")
+        self.assertIsNone(self.card.animation.typing_label)
+        self.assertIn("Hi", self.card.streaming_label.text())
+
+    def test_a_reply_with_no_chunks_still_stops_the_typing_indicator(self):
+        # Defensive: an empty/errored reply shouldn't leave the indicator
+        # pulsing forever with nothing left listening to it.
+        self.card.fly()
+        self.card.send("hello")
+        self.requests[0].finished.emit()
+        self.assertIsNone(self.card.animation.typing_label)
+
+    def test_reduced_motion_shows_static_typing_dots_instead_of_pulsing(self):
+        # self.card.motion is already False (set in setUp) for deterministic
+        # tests elsewhere - covers the same reduced_motion() path a real
+        # user with motion off would hit.
+        self.card.fly()
+        self.card.send("hello")
+        self.assertEqual(self.card.animation.typing_clock.state(), QVariantAnimation.Stopped)
+        self.assertNotEqual(self.card.streaming_label.text(), "")
+
 
 class ChatSlotTests(unittest.TestCase):
     """The dedupe rule: reopening the same wedge's card reveals it instead

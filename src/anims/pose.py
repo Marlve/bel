@@ -127,6 +127,14 @@ def card_radius(elapsed, start):
     return lerp(start, style.CHAT_RADIUS, t)
 
 
+def typing_dot_pose(elapsed, period_ms):
+    """0..1 brightness for each of the pre-reply typing indicator's 3 dots -
+    a sequential pulse, each dot 1/3 of the cycle behind the last, so it
+    visibly travels across the row rather than all 3 dots pulsing in
+    unison."""
+    return tuple((math.sin(2 * math.pi * (elapsed / period_ms - i / 3)) + 1) / 2 for i in range(3))
+
+
 def lerp_rect(a, b, t):
     return QRectF(
         lerp(a.x(), b.x(), t),
