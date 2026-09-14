@@ -372,6 +372,7 @@ class ChatCard(QWidget):
     # --- transcript ---
 
     def appendUserTurn(self, text):
+        follows_claude = bool(self.state.turns) and self.state.turns[-1]["role"] == "claude"
         self.state.turns.append({"role": "user", "text": text})
 
         bubble = QLabel(text)
@@ -387,6 +388,11 @@ class ChatCard(QWidget):
         bubble.setFixedWidth(self.userBubbleWidth(text))
 
         row = QHBoxLayout()
+        if follows_claude:
+            # Mirrors appendClaudeTurn()'s own follows_user check - see
+            # chat-bubble-polish/02's follow-up: the extra gap only widened
+            # the user-to-Bel transition, leaving Bel-to-user asymmetric.
+            row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
         row.addStretch(1)
         row.addWidget(bubble)
         self.insertTurnRow(row)
@@ -413,7 +419,8 @@ class ChatCard(QWidget):
         if follows_user:
             # transcript_layout's own spacing already separates every turn
             # row uniformly - this widens just the user-bubble-to-Bel-reply
-            # transition, leaving Bel-to-Bel/user-to-user gaps untouched.
+            # transition (appendUserTurn() mirrors this for Bel-to-user),
+            # leaving Bel-to-Bel/user-to-user gaps untouched.
             row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
         row.addWidget(label)
         row.addStretch(1)

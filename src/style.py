@@ -179,7 +179,7 @@ CHAT_BUBBLE_RADIUS = (8, 8, 2, 8)  # top-left, top-right, bottom-right, bottom-l
 CHAT_BUBBLE_PADDING_H = 9
 CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
-CHAT_BUBBLE_GAP_EXTRA = SPACE_3  # added on top of transcript_layout's own row spacing, only between a user bubble and the Bel reply beneath it
+CHAT_BUBBLE_GAP_EXTRA = SPACE_3  # added on top of transcript_layout's own row spacing, only across a role change (user<->Bel), never between two turns from the same role
 CHAT_REPLY_INSET = SPACE_2  # Bel's reply label stops this much short of contentWidth() - a deliberate visual margin instead of running flush with the composer's right edge
 CHAT_PARAGRAPH_GAP = 6  # gap above a paragraph break *within* one Bel reply - deliberately smaller than the 8px turn-gap (transcript_layout's own spacing) so a break within a message never reads as bigger than the break between messages
 

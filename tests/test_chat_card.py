@@ -144,6 +144,24 @@ class ChatCardTests(unittest.TestCase):
             natural_width = probe.sizeHint().width()
             self.assertGreaterEqual(self.card.userBubbleWidth(word), natural_width)
 
+    def test_user_turn_gets_extra_gap_after_a_bel_reply(self):
+        # chat-bubble-polish/02: user-to-Bel already got CHAT_BUBBLE_GAP_EXTRA
+        # on top of transcript_layout's own row spacing, but Bel-to-user had
+        # none - the rhythm should be symmetric.
+        self.card.fly()
+        self.card.send("hi")
+        self.requests[0].finished.emit()
+        self.card.send("again")
+        second_user_row = self.card.transcript_layout.itemAt(2).layout()
+        self.assertEqual(second_user_row.contentsMargins().top(), style.CHAT_BUBBLE_GAP_EXTRA)
+
+    def test_first_user_turn_gets_no_extra_gap(self):
+        # No previous turn to follow - should behave like today, no margin.
+        self.card.fly()
+        self.card.send("hi")
+        first_user_row = self.card.transcript_layout.itemAt(0).layout()
+        self.assertEqual(first_user_row.contentsMargins().top(), 0)
+
     def test_scrollbar_never_draws_over_content(self):
         # A visible thumb clipped bubble/composer text under it (short
         # single-word bubbles like "idk" worst-hit) - still scrollable via
