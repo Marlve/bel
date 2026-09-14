@@ -89,6 +89,9 @@ class NoteCard(FloatingCard, QWidget):
         self.body = QPlainTextEdit(self)
         self.body.setFrameShape(QPlainTextEdit.NoFrame)
         self.body.setStyleSheet(style.plain_field_stylesheet())
+        # Matches the chat card's/todo's scrollbar removal - still scrollable
+        # via wheel/drag, just no drawn bar clipping text under it.
+        self.body.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.body.document().setDocumentMargin(0)  # match the header's own zero *left* inset, not Qt's ~4px default
         # The header/body divider is drawn at self.body.y() (paintEvent,
         # below) - flush with the body widget's own top edge. Zero document
