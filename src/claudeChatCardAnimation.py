@@ -226,7 +226,11 @@ class ChatCardAnimation:
         # silently stay pinned to whichever monitor the card started on.
         self.screen = QApplication.screenAt(global_pos.toPoint()) or self.screen
         area = self.screen.availableGeometry()
-        self.dockToCorner(dockCorner.nearest(global_pos.toPoint(), area))
+        # The card's own (clamped) center, not the raw cursor - dragMove()
+        # lets the cursor run ahead of a clamped card near an edge, so
+        # picking by cursor alone could lock a corner the card no longer
+        # visually looks closest to.
+        self.dockToCorner(dockCorner.nearest(self.parent.geometry().center(), area))
 
     def dockToCorner(self, corner):
         """Re-targets OPEN's own resting geometry at `corner` and animates

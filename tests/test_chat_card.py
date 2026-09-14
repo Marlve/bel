@@ -265,11 +265,11 @@ class ChatCardTests(unittest.TestCase):
 
     def test_dragging_past_the_threshold_follows_the_cursor(self):
         self.card.fly()
-        self.card.move(300, 300)
-        press = QPointF(310, 310)
+        self.card.move(200, 300)
+        press = QPointF(210, 310)
         self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
         self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, press + QPointF(50, 5)))
-        self.assertEqual(self.card.pos(), QPoint(350, 305))
+        self.assertEqual(self.card.pos(), QPoint(250, 305))
 
     def test_releasing_a_drag_docks_to_the_nearest_corner_and_persists_it(self):
         self.card.fly()
@@ -286,6 +286,21 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(seen, [dockCorner.BOTTOM_LEFT])
         expected = dockCorner.rect(dockCorner.BOTTOM_LEFT, area, style.CHAT_SIZE, style.CHAT_MARGIN)
         self.assertEqual(self.card.geometry(), expected.toRect())
+
+    def test_docks_by_where_the_card_visually_sits_not_the_raw_cursor(self):
+        # Grabbing low on the card and dragging up leaves the cursor above
+        # the screen's midpoint while the card's own body - the offset
+        # between grab point and window origin - is still below it. The
+        # corner should follow what the card visually looks closest to, not
+        # the cursor alone.
+        self.card.fly()
+        self.card.move(300, 550)
+        press = QPointF(310, 560)
+        self.card.mousePressEvent(mouseEvent(QEvent.MouseButtonPress, press))
+        release = press + QPointF(0, -250)
+        self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, release))
+        self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, release))
+        self.assertEqual(self.card.corner, dockCorner.BOTTOM_RIGHT)
 
     def test_the_snap_animation_starts_from_the_actual_drop_point(self):
         # The live drag moves the window directly (self.parent.move()),
@@ -328,6 +343,7 @@ class ChatCardTests(unittest.TestCase):
         release_pos = QPointF(2990, 20)  # top-right quadrant of other_area
 
         with patch("claudeChatCardAnimation.QApplication.screenAt", return_value=other_screen):
+            self.card.mouseMoveEvent(mouseEvent(QEvent.MouseMove, release_pos))
             self.card.mouseReleaseEvent(mouseEvent(QEvent.MouseButtonRelease, release_pos))
 
         self.assertIs(self.card.animation.screen, other_screen)

@@ -165,7 +165,7 @@ class PieMenuFlowTests(unittest.TestCase):
         self.assertIsNotNone(card)
         self.assertEqual(card.turns[0]["text"], "what is on my plate today")
         self.assertEqual(card.born, born)
-        self.assertEqual(card.dock_rect.size().toSize().width(), 400)
+        self.assertEqual(card.dock_rect.size().toSize().width(), style.CHAT_SIZE)
 
     def test_a_card_docks_against_the_top_right_of_the_work_area(self):
         screen = QApplication.primaryScreen()
