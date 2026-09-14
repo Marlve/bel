@@ -106,6 +106,7 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """
   args = [
       "claude", "-p", prompt,
+      "--model", "haiku",
       "--output-format", "stream-json",
       "--include-partial-messages",
       "--verbose",
