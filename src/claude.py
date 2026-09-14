@@ -16,36 +16,13 @@ from PySide6.QtCore import QObject, Signal
 # anyway (ChatCard's session_id lives only in memory).
 CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
-# The only file access the CLI subprocess gets (see askBel()'s --allowedTools
-# below) - a script, not the raw todo.json, so a bad index or malformed edit
-# can't corrupt the store; see cardTool.py.
-CARD_TOOL_PATH = Path(__file__).resolve().parent / "cardTool.py"
+SYSTEM_PROMPT = """
+You're a personal helper tool called Bel.
 
-# A short, fixed, path-free command name for the model to invoke cardTool.py
-# through, so --allowedTools below can be a strict "starts with this exact
-# literal" prefix match with nothing before it - live-tested: a pattern like
-# "Bash(python *cardTool.py*)" (leading wildcard, to tolerate the model
-# quoting the real path differently each time) let an unrelated
-# `python -c "..."` one-liner through as long as it merely mentioned
-# cardTool.py in a trailing comment, since the CLI's glob matching lets `*`
-# span anything, including shell metacharacters. ~/.local/bin is already on
-# PATH here (it's where claude.exe itself lives); ensure_card_tool_shim()
-# (re)writes this every startup so it stays correct if the repo moves.
-CARD_TOOL_SHIM_PATH = Path.home() / ".local" / "bin" / "cardtool.cmd"
-CARD_TOOL_SHIM_COMMAND = "cardtool.cmd"
-
-SYSTEM_PROMPT = f"""
-You're Bel, a personal assistant overlay for calendar, tasks, and reminders.
-
-- Keep responses short. For actions/commands, just confirm what happened. No extra explanation unless asked.
-- You can check/manage calendar events, track assignments and to-dos, and send reminders.
-- To read or change the to-do list, run one of these via the Bash tool (no other file access exists):
-  - `{CARD_TOOL_SHIM_COMMAND} list-todos`
-  - `{CARD_TOOL_SHIM_COMMAND} add-todo "task text"`
-  - `{CARD_TOOL_SHIM_COMMAND} toggle-todo "task text"` (the exact text of an open item, from list-todos)
-  - There's no delete - if asked to delete/remove/clear a to-do, toggle-todo it done instead; it disappears from the list on its own shortly after.
-- If something can't be found or done, say so directly instead of guessing.
-- Stay focused on organization/productivity help; for unrelated questions, decline, answer briefly and redirect back to what you can help with.
+- answer as short and concise as you can, if its a command, don't put too much details except needed.
+- you live as an overlay that could help the user organize calender schedule, check for assignments.
+- you have no way to read or change the user's to-do list - if asked, say so instead of guessing or claiming to have done it.
+- ignore any git/repository status context you were given, only respond to the user's actual message.
 """
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -76,15 +53,6 @@ def resetClaudeHistory():
   encoded = str(CLAUDE_CWD).translate(str.maketrans(":\\/.", "----"))
   bucket = Path.home() / ".claude" / "projects" / encoded
   shutil.rmtree(bucket, ignore_errors=True)
-
-def ensure_card_tool_shim():
-  """Call once at app startup, alongside resetClaudeHistory(). Writes the
-  .cmd shim CARD_TOOL_SHIM_PATH points at, so the model has a stable bare
-  command to invoke cardTool.py through - see CARD_TOOL_SHIM_PATH's comment
-  for why the exact command name matters for --allowedTools' security, not
-  just convenience."""
-  CARD_TOOL_SHIM_PATH.parent.mkdir(parents=True, exist_ok=True)
-  CARD_TOOL_SHIM_PATH.write_text(f'@python "{CARD_TOOL_PATH}" %*\n')
 
 def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of
@@ -118,7 +86,6 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
       # list`) so SYSTEM_PROMPT's "organize calendar schedule" is actually
       # reachable instead of just aspirational.
       "--allowedTools", "mcp__claude_ai_Google_Calendar",
-      f"Bash({CARD_TOOL_SHIM_COMMAND} *)",
   ]
   if session_id:
       args += ["--resume", session_id]
@@ -129,9 +96,7 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   #
   # CREATE_NO_WINDOW: claude.exe is a real console-subsystem executable, so
   # spawning it from a console-less parent (Bel launched via pythonw) would
-  # otherwise make Windows pop a new visible console window for it - and
-  # anything it shells out to internally (e.g. a Bash tool call) just
-  # attaches to that same console rather than opening its own.
+  # otherwise make Windows pop a new visible console window for it.
   creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
   process = subprocess.Popen(
       args, stdout=subprocess.PIPE, text=True, encoding="utf-8", cwd=CLAUDE_CWD,
