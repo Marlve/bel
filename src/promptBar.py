@@ -208,12 +208,9 @@ class PromptBar(QWidget):
         painter.setOpacity(self.animation.rect_opacity)
 
         frame = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        grown_radius = min(frame.width(), frame.height()) / 2  # circle at the wedge, pill once the rect is full size
-        # settles from that pill to the flat resting radius as chrome_opacity fades the send hint in
-        radius = grown_radius + (style.FIELD_RADIUS - grown_radius) * self.animation.chrome_opacity
         painter.setBrush(QColor(style.FIELD_SURFACE))
         painter.setPen(QPen(QColor(BORDER_BY_STATE[self.bar_state.state]), 1))
-        painter.drawRoundedRect(frame, radius, radius)
+        painter.drawRoundedRect(frame, style.FIELD_RADIUS, style.FIELD_RADIUS)
 
         if self.animation.chrome_opacity <= 0:
             return
