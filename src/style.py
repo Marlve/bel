@@ -243,6 +243,26 @@ TODO_REMOVE_DELAY_MS = 1000  # a ticked row vanishes this long after being check
 TODO_ITEM_FADE_MS = 180  # a ticked row fades out over this long before it's actually removed
 
 
+# --- Calendar nudge card. A proactive, display-only notice (no header icon,
+# no actions - calendar-nudge.md) sliding out of a thin rail at a screen
+# edge to surface upcoming items found by the startup calendar query. ---
+
+NUDGE_BODY = "#141416"  # calendar-nudge.md's own literal - a hair between SURFACE and INK
+NUDGE_BORDER = BORDER_DIM
+NUDGE_TEXT = BODY
+NUDGE_TEXT_SECONDARY = LABEL  # source line / tone label, per calendar-nudge.md
+NUDGE_TEXT_MUTED = MUTED  # expanded item due-time text
+
+NUDGE_RAIL_SIZE = 5  # quiet rail's thickness, per calendar-nudge.md
+NUDGE_WIDTH = 260
+NUDGE_HEIGHT = 56  # sentence + source line
+NUDGE_ITEM_ROW_HEIGHT = 22
+
+NUDGE_SLIDE_MS = 240  # calendar-nudge.md: "the card slides out (240ms, decelerating curve)"
+NUDGE_SLIDE_EASING = "OutCubic"  # a standard decelerating curve, matching CHAT_FLIGHT_EASING's own choice
+NUDGE_RETIRE_MS = 12_000  # "auto-retires after 12s if untouched"
+
+
 # --- Settings card. A short, fixed list of the ring's non-pinned wedges -
 # label, assigned action, reorder - same CHAT_* surface/shadow as
 # todo/note/chat so it reads as one family. No resize grip: the row count
@@ -321,6 +341,7 @@ _SCALE_INT_NAMES = [
     "CARD_SPAWN_OFFSET", "CARD_SHADOW_BLUR", "CARD_SHADOW_OFFSET_Y",
     "CARD_SHADOW_MARGIN", "CARD_EDGE_MARGIN",
     "TODO_ROW_HEIGHT", "TODO_CHECKBOX", "TODO_CHECKBOX_RADIUS",
+    "NUDGE_RAIL_SIZE", "NUDGE_WIDTH", "NUDGE_HEIGHT", "NUDGE_ITEM_ROW_HEIGHT",
     "SETTINGS_WIDTH", "SETTINGS_HEADER_HEIGHT", "SETTINGS_ROW_HEIGHT",
     "SETTINGS_ROW_GAP", "SETTINGS_ARROW_SIZE", "SETTINGS_CONTEXT_FIELD_WIDTH",
     "SETTINGS_HEIGHT",
