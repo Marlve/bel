@@ -128,6 +128,12 @@ class NoteCardTests(unittest.TestCase):
             self.card.open()
         self.assertEqual((self.card.x(), self.card.y()), (150, 220))
 
+    def test_open_focuses_the_body(self):
+        self.card.open()
+        self.card.activateWindow()
+        QApplication.processEvents()
+        self.assertTrue(self.card.body.hasFocus())
+
     def test_close_button_hides_the_card(self):
         self.card.show()
         self.card.close_button.click()

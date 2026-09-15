@@ -56,6 +56,15 @@ class NoteCard(FloatingCard, QWidget):
         self.body.setPlainText(saved.get("text", ""))
         self.grip.reposition()
 
+    def afterRaise(self):
+        # WA_ShowWithoutActivating keeps show() from stealing OS focus, so
+        # the body's setFocus() alone would be Qt-internal only - actual
+        # keystrokes need the window itself activated. Safe to do explicitly
+        # here (unlike a passive reveal) since this always follows the ring
+        # just having forced OS foreground for this process (util.force_foreground).
+        self.activateWindow()
+        self.body.setFocus()
+
     def afterShow(self):
         # QPlainTextEdit lays out (and decides whether it needs a scrollbar)
         # against whatever geometry it had while the window was still
