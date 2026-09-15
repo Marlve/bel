@@ -1,13 +1,13 @@
 # Calendar nudge card — bel
 
-A proactive card that appears at the screen edge to surface upcoming calendar/assignment items, with no action buttons — it only shows.
+A proactive card that appears at the screen edge to surface upcoming calendar/assignment items, with a close ("✕") button as its only action.
 
 ## Behaviour
 
 1. **Quiet** — a 5px rail at the screen edge (same rail the chat card retreats to). Nothing visible.
 2. **Nudge** — the card slides out (240ms, decelerating curve). One sentence + a source line (e.g. "from calendar · 2 items"). Auto-retires after 12s if untouched — that counts as ignored.
-3. **Expand** — hovering reveals the actual items (name + due time), no header icon, no actions.
-4. **Gone** — collapses back to the rail. Snoozed and ignored both end here; the resting state is always the same.
+3. **Expand** — hovering reveals the actual items (name + due time), no header icon, no actions beyond the close button.
+4. **Gone** — the close button collapses it back to the rail, sliding with the same 240ms decelerating motion as the entrance, reversed. Snoozed and ignored both end here; the resting state is always the same.
 
 ## What was removed
 

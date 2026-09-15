@@ -4,7 +4,7 @@
 # hover to show the actual items, and always collapses back to the same
 # rail - there's no accept flow, so nothing else to do with it.
 
-from PySide6.QtWidgets import QWidget, QApplication
+from PySide6.QtWidgets import QWidget, QApplication, QPushButton
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetricsF
 from PySide6.QtCore import Qt, QRectF
 
@@ -41,6 +41,14 @@ class CalendarNudgeCard(QWidget):
         self.setMouseTracking(True)
 
         self.driver = CalendarNudgeDriver(self, self.geometryFor, self.onMoved, self.onStateChanged, motion=motion)
+
+        self.close_button = QPushButton("✕", self)
+        self.close_button.setFixedSize(18, 18)
+        self.close_button.setCursor(Qt.PointingHandCursor)
+        self.close_button.setStyleSheet(style.chat_close_stylesheet())
+        self.close_button.clicked.connect(self.driver.dismiss)
+        self.close_button.hide()  # starts QUIET - onStateChanged reveals it on the next show()
+
         self.onMoved(self.driver.current_rect)
         self.show()
 
@@ -79,23 +87,43 @@ class CalendarNudgeCard(QWidget):
         font = buildFont()
         sentence_h = wrappedTextHeight(self.driver.state.sentence, content_width, font)
         source_h = QFontMetricsF(font).height()
-        return pad + sentence_h + style.SPACE_1 + source_h + pad
+        return self.contentTopPad() + sentence_h + style.SPACE_1 + source_h + pad
+
+    def contentTopPad(self):
+        """Top inset reserved for the close button's row, above the
+        sentence - paintEvent's sentence_rect must start at this same
+        offset or the button will sit on top of the text."""
+        return style.SPACE_2 + self.close_button.height() + style.SPACE_1
 
     def onMoved(self, rect):
         self.setGeometry(rect.toRect())
+        self.positionCloseButton(rect.width())
+
+    def positionCloseButton(self, width):
+        pad = style.SPACE_2
+        self.close_button.move(int(width - pad - self.close_button.width()), int(pad))
 
     def onStateChanged(self, state):
+        # Positions against the target state's own width rather than
+        # whatever self.width() happens to be at this instant - _moveTo()
+        # can fire this before the slide's first animation tick lands, and
+        # showing the button at the old (narrower) width would misplace it
+        # for a frame.
+        if state != QUIET:
+            self.positionCloseButton(self.geometryFor(state).width())
+        self.close_button.setVisible(state != QUIET)
         self.update()
 
-    # --- input: hover expands it, a click dismisses it - the card stays on
-    # screen otherwise, per calendar-nudge.md's "no accept flow" ---
+    # --- input: hover expands it; the close button is the only thing that
+    # dismisses it - the card stays on screen otherwise, per
+    # calendar-nudge.md's "no accept flow" ---
 
     def enterEvent(self, event):
         self.driver.hover()
         super().enterEvent(event)
 
     def mousePressEvent(self, event):
-        self.driver.dismiss()
+        pass  # body clicks no longer dismiss - only the close button does
 
     # --- painting ---
 
@@ -119,7 +147,7 @@ class CalendarNudgeCard(QWidget):
         fm = QFontMetricsF(font)
 
         sentence_h = wrappedTextHeight(self.driver.state.sentence, content_width, font)
-        sentence_rect = QRectF(frame.left() + pad, frame.top() + pad, content_width, sentence_h)
+        sentence_rect = QRectF(frame.left() + pad, frame.top() + self.contentTopPad(), content_width, sentence_h)
         painter.setPen(QColor(style.NUDGE_TEXT))
         painter.drawText(sentence_rect, Qt.TextWordWrap, self.driver.state.sentence)
 

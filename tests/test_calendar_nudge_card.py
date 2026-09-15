@@ -49,16 +49,29 @@ class CalendarNudgeCardTests(unittest.TestCase):
         self.card.leaveEvent(None)
         self.assertEqual(self.card.driver.state.state, EXPANDED)
 
-    def test_click_while_expanded_dismisses_to_quiet(self):
+    def test_click_on_expanded_body_does_not_dismiss(self):
         self.card.showNudge(ITEMS, "Friday")
         self.card.enterEvent(None)
         self.card.mousePressEvent(None)
-        self.assertEqual(self.card.driver.state.state, QUIET)
+        self.assertEqual(self.card.driver.state.state, EXPANDED)
 
-    def test_click_on_a_bare_nudge_dismisses_to_quiet(self):
+    def test_click_on_a_bare_nudge_body_does_not_dismiss(self):
         self.card.showNudge(ITEMS, "Friday")
         self.card.mousePressEvent(None)
+        self.assertEqual(self.card.driver.state.state, NUDGE)
+
+    def test_close_button_hidden_while_quiet(self):
+        self.assertFalse(self.card.close_button.isVisible())
+
+    def test_close_button_shown_on_nudge(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.assertTrue(self.card.close_button.isVisible())
+
+    def test_close_button_click_dismisses_to_quiet(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.card.close_button.click()
         self.assertEqual(self.card.driver.state.state, QUIET)
+        self.assertFalse(self.card.close_button.isVisible())
 
     def test_expanded_height_leaves_a_bottom_margin_after_the_last_item(self):
         # Independently derives the expected height from raw font metrics and
@@ -71,8 +84,9 @@ class CalendarNudgeCardTests(unittest.TestCase):
         content_width = style.NUDGE_WIDTH - 2 * pad
         sentence_h = wrappedTextHeight(self.card.driver.state.sentence, content_width, font)
         source_h = QFontMetricsF(font).height()
+        top = pad + self.card.close_button.height() + style.SPACE_1  # close button's row
         expected = (
-            pad + sentence_h + style.SPACE_1 + source_h  # top through the source line
+            top + sentence_h + style.SPACE_1 + source_h  # top through the source line
             + pad  # gap before the item list
             + len(ITEMS) * style.NUDGE_ITEM_ROW_HEIGHT  # item rows
             + pad  # bottom margin after the last item
