@@ -54,15 +54,15 @@ class CalendarNudgeCard(QWidget):
     def onStateChanged(self, state):
         self.update()
 
-    # --- input: hover is the only interaction this card has ---
+    # --- input: hover expands it, a click dismisses it - the card stays on
+    # screen otherwise, per calendar-nudge.md's "no accept flow" ---
 
     def enterEvent(self, event):
         self.driver.hover()
         super().enterEvent(event)
 
-    def leaveEvent(self, event):
-        self.driver.leave()
-        super().leaveEvent(event)
+    def mousePressEvent(self, event):
+        self.driver.dismiss()
 
     # --- painting ---
 

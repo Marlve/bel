@@ -46,23 +46,21 @@ class CalendarNudgeDriverTests(unittest.TestCase):
         self.assertEqual(self.driver.current_rect, self.geometryFor(NUDGE))
         self.assertEqual(self.states, [NUDGE])
 
-    def test_hover_moves_to_expanded_geometry_and_stops_the_retire_timer(self):
+    def test_hover_moves_to_expanded_geometry(self):
         self.driver.show(ITEMS, "sentence", "source")
-        self.assertTrue(self.driver.retire_timer.isActive())
         self.driver.hover()
         self.assertEqual(self.driver.current_rect, self.geometryFor(EXPANDED))
-        self.assertFalse(self.driver.retire_timer.isActive())
 
-    def test_leave_moves_back_to_quiet_geometry(self):
+    def test_dismiss_after_hover_moves_back_to_quiet_geometry(self):
         self.driver.show(ITEMS, "sentence", "source")
         self.driver.hover()
-        self.driver.leave()
+        self.driver.dismiss()
         self.assertEqual(self.driver.current_rect, self.geometryFor(QUIET))
         self.assertEqual(self.driver.state.items, [])
 
-    def test_retire_timeout_moves_back_to_quiet_geometry(self):
+    def test_dismiss_from_a_bare_nudge_moves_back_to_quiet_geometry(self):
         self.driver.show(ITEMS, "sentence", "source")
-        self.driver.retire_timer.timeout.emit()
+        self.driver.dismiss()
         self.assertEqual(self.driver.current_rect, self.geometryFor(QUIET))
 
     def test_a_second_show_while_already_showing_does_not_retarget(self):

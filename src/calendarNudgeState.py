@@ -1,10 +1,8 @@
-# Pure state machine for the calendar nudge card - calendar-nudge.md's own
-# flow: Quiet (rail, nothing visible) -> Nudge (slides out, times out after
-# style.NUDGE_RETIRE_MS if untouched) -> Expand (hovering reveals the item
-# list) -> Gone, which collapses back to the same rail Quiet already is -
-# "snoozed and ignored both end here" per the spec, so there's no separate
-# terminal state to track: both retire() (timeout) and leave() (mouse
-# leaving an expanded nudge) land back on QUIET.
+# Pure state machine for the calendar nudge card: Quiet (rail, nothing
+# visible) -> Nudge (slides out) -> Expand (hovering reveals the item list)
+# -> Gone, which collapses back to the same rail Quiet already is. The card
+# stays on screen (nudge or expanded, whichever it's in) until dismiss()
+# fires - a click - so there's no timeout and hovering away doesn't close it.
 #
 # No Qt import, no timers of its own - CalendarNudgeAnimation is the Qt half
 # that reads/writes this, mirroring claudeEdgeDockState.py's split.
@@ -34,17 +32,11 @@ class CalendarNudgeState:
         if self.state == NUDGE:
             self.state = EXPANDED
 
-    def leave(self):
-        """Mouse leaving an expanded nudge closes it outright -
-        calendar-nudge.md has no accept flow, so there's nothing left to do
-        with a nudge once it's been looked at."""
-        if self.state == EXPANDED:
-            self._retreat()
-
-    def retire(self):
-        """The 12s untouched timeout - a no-op once EXPANDED, since hovering
-        already stops the timer on the animation side."""
-        if self.state == NUDGE:
+    def dismiss(self):
+        """A click, from either NUDGE or EXPANDED - calendar-nudge.md has no
+        accept flow, so there's nothing left to do with a nudge once the
+        user has clicked it away."""
+        if self.state != QUIET:
             self._retreat()
 
     def _retreat(self):

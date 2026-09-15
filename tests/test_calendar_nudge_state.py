@@ -45,38 +45,27 @@ class CalendarNudgeStateTests(unittest.TestCase):
         state.hover()
         self.assertEqual(state.state, QUIET)
 
-    def test_leave_closes_an_expanded_nudge_back_to_quiet(self):
+    def test_dismiss_closes_an_expanded_nudge_back_to_quiet(self):
         state = CalendarNudgeState()
         state.show(ITEMS, "sentence", "source")
         state.hover()
-        state.leave()
+        state.dismiss()
         self.assertEqual(state.state, QUIET)
         self.assertEqual(state.items, [])
 
-    def test_leave_is_a_no_op_from_nudge(self):
-        # Only expand (hover) is closed by leaving - a bare nudge (not yet
-        # hovered) only ever ends via retire(), never leave().
+    def test_dismiss_closes_a_bare_nudge_back_to_quiet(self):
+        # A click on an un-hovered nudge (not yet expanded) also dismisses it -
+        # there's no separate timeout path any more, only a click.
         state = CalendarNudgeState()
         state.show(ITEMS, "sentence", "source")
-        state.leave()
-        self.assertEqual(state.state, NUDGE)
-
-    def test_retire_closes_an_untouched_nudge_back_to_quiet(self):
-        state = CalendarNudgeState()
-        state.show(ITEMS, "sentence", "source")
-        state.retire()
+        state.dismiss()
         self.assertEqual(state.state, QUIET)
         self.assertEqual(state.items, [])
 
-    def test_retire_is_a_no_op_once_expanded(self):
-        # Hovering already stops the timeout on the animation side; this
-        # guards the state machine itself against a stray retire() call
-        # arriving after that.
+    def test_dismiss_is_a_no_op_from_quiet(self):
         state = CalendarNudgeState()
-        state.show(ITEMS, "sentence", "source")
-        state.hover()
-        state.retire()
-        self.assertEqual(state.state, EXPANDED)
+        state.dismiss()
+        self.assertEqual(state.state, QUIET)
 
 
 if __name__ == "__main__":

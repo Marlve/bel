@@ -41,10 +41,21 @@ class CalendarNudgeCardTests(unittest.TestCase):
         self.assertEqual(self.card.driver.state.state, EXPANDED)
         self.assertGreater(self.card.height(), nudge_height)
 
-    def test_leave_after_hover_collapses_back_to_quiet(self):
+    def test_leave_after_hover_does_not_collapse(self):
         self.card.showNudge(ITEMS, "Friday")
         self.card.enterEvent(None)
         self.card.leaveEvent(None)
+        self.assertEqual(self.card.driver.state.state, EXPANDED)
+
+    def test_click_while_expanded_dismisses_to_quiet(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.card.enterEvent(None)
+        self.card.mousePressEvent(None)
+        self.assertEqual(self.card.driver.state.state, QUIET)
+
+    def test_click_on_a_bare_nudge_dismisses_to_quiet(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.card.mousePressEvent(None)
         self.assertEqual(self.card.driver.state.state, QUIET)
 
 

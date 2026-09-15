@@ -254,13 +254,12 @@ NUDGE_TEXT_SECONDARY = LABEL  # source line / tone label, per calendar-nudge.md
 NUDGE_TEXT_MUTED = MUTED  # expanded item due-time text
 
 NUDGE_RAIL_SIZE = 5  # quiet rail's thickness, per calendar-nudge.md
-NUDGE_WIDTH = 260
-NUDGE_HEIGHT = 56  # sentence + source line
+NUDGE_WIDTH = 340
+NUDGE_HEIGHT = 72  # sentence + source line
 NUDGE_ITEM_ROW_HEIGHT = 22
 
 NUDGE_SLIDE_MS = 240  # calendar-nudge.md: "the card slides out (240ms, decelerating curve)"
 NUDGE_SLIDE_EASING = "OutCubic"  # a standard decelerating curve, matching CHAT_FLIGHT_EASING's own choice
-NUDGE_RETIRE_MS = 12_000  # "auto-retires after 12s if untouched"
 
 
 # --- Settings card. A short, fixed list of the ring's non-pinned wedges -
