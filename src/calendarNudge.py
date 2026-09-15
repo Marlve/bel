@@ -9,11 +9,14 @@
 # duplicating askBel's threading dance for this one extra call site.
 
 import json
+from datetime import date
 
 from PySide6.QtWidgets import QApplication
 
+import cardStore
 from actions.claudeAction import ClaudeRequest
 
+STORE_KEY = "calendar_nudge"
 NUDGE_WINDOW_DAYS = 7
 
 PROMPT = f"""Look at my Google Calendar for the next {NUDGE_WINDOW_DAYS} days.
@@ -60,10 +63,17 @@ def parse_response(text):
 
 
 class CalendarNudgeQuery:
-    """Runs the startup query once and reports parsed items when done - or
-    nothing at all on any failure or empty result, since a broken/quiet
-    startup nudge should never be visible as an error (calendar-nudge.md's
-    card has no error state, only quiet/nudge/expand)."""
+    """Runs the startup query at most once per day and reports parsed items
+    when done - or nothing at all on any failure or empty result, since a
+    broken/quiet startup nudge should never be visible as an error
+    (calendar-nudge.md's card has no error state, only quiet/nudge/expand).
+
+    A same-day result (items or the legitimate "nothing due" empty list) is
+    cached via cardStore so a later restart the same day reuses it instead
+    of firing another live query. The cache only records the query result,
+    not whether the card was dismissed - a restart always shows the day's
+    cached items again, since the point of caching is to let the user see
+    them again without re-asking Bel."""
 
     def __init__(self, on_items):
         self.on_items = on_items
@@ -80,6 +90,12 @@ class CalendarNudgeQuery:
             app.aboutToQuit.connect(self.request.cancel)
 
     def start(self):
+        cached = cardStore.load(STORE_KEY, None)
+        if isinstance(cached, dict) and cached.get("date") == date.today().isoformat():
+            items = cached.get("items")
+            if items:
+                self.on_items(items, cached.get("before"))
+            return
         self.request.start()
 
     def onChunk(self, text):
@@ -87,5 +103,8 @@ class CalendarNudgeQuery:
 
     def onFinished(self):
         data = parse_response(self.text)
-        if data and data["items"]:
+        if data is None:
+            return
+        cardStore.save(STORE_KEY, {"date": date.today().isoformat(), **data})
+        if data["items"]:
             self.on_items(data["items"], data["before"])
