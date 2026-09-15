@@ -40,13 +40,16 @@ class CalendarNudgeCard(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
 
-        self.driver = CalendarNudgeDriver(self, self.geometryFor, self.onMoved, self.onStateChanged, motion=motion)
+        self.driver = CalendarNudgeDriver(
+            self, self.geometryFor, self.onMoved, self.onStateChanged, motion=motion, on_landed=self.onLanded
+        )
+        self.retreat_snapshot = None  # (state, items, sentence, source) painted while the dismiss tween is in flight
 
         self.close_button = QPushButton("✕", self)
         self.close_button.setFixedSize(18, 18)
         self.close_button.setCursor(Qt.PointingHandCursor)
         self.close_button.setStyleSheet(style.chat_close_stylesheet())
-        self.close_button.clicked.connect(self.driver.dismiss)
+        self.close_button.clicked.connect(self.dismiss)
         self.close_button.hide()  # starts QUIET - onStateChanged reveals it on the next show()
 
         self.onMoved(self.driver.current_rect)
@@ -114,6 +117,16 @@ class CalendarNudgeCard(QWidget):
         self.close_button.setVisible(state != QUIET)
         self.update()
 
+    def onLanded(self):
+        """Fires once any geometry tween reaches its target. Only meaningful
+        here when that target was QUIET (show/hover's own landings are already
+        painting correctly) - that's the retreat tween finishing, so the
+        snapshot paintEvent has been drawing from can finally be dropped and
+        the card actually goes blank."""
+        if self.driver.state.state == QUIET:
+            self.retreat_snapshot = None
+            self.update()
+
     # --- input: hover expands it; the close button is the only thing that
     # dismisses it - the card stays on screen otherwise, per
     # calendar-nudge.md's "no accept flow" ---
@@ -125,12 +138,28 @@ class CalendarNudgeCard(QWidget):
     def mousePressEvent(self, event):
         pass  # body clicks no longer dismiss - only the close button does
 
+    def dismiss(self):
+        # Snapshots what's on screen before the state machine clears it, so
+        # paintEvent has something to keep drawing while the retreat tween
+        # slides the card back to the rail - the same reasoning as the
+        # entrance, which paints NUDGE's content the instant show() fires,
+        # not once the slide finishes.
+        if self.driver.motion and self.driver.state.state != QUIET:
+            s = self.driver.state
+            self.retreat_snapshot = (s.state, s.items, s.sentence, s.source)
+        self.driver.dismiss()
+
     # --- painting ---
 
     def paintEvent(self, event):
         state = self.driver.state.state
         if state == QUIET:
-            return  # "nothing visible", per calendar-nudge.md
+            if self.retreat_snapshot is None:
+                return  # "nothing visible", per calendar-nudge.md
+            state, items, sentence, source = self.retreat_snapshot
+        else:
+            s = self.driver.state
+            items, sentence, source = s.items, s.sentence, s.source
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -146,20 +175,20 @@ class CalendarNudgeCard(QWidget):
         painter.setFont(font)
         fm = QFontMetricsF(font)
 
-        sentence_h = wrappedTextHeight(self.driver.state.sentence, content_width, font)
+        sentence_h = wrappedTextHeight(sentence, content_width, font)
         sentence_rect = QRectF(frame.left() + pad, frame.top() + self.contentTopPad(), content_width, sentence_h)
         painter.setPen(QColor(style.NUDGE_TEXT))
-        painter.drawText(sentence_rect, Qt.TextWordWrap, self.driver.state.sentence)
+        painter.drawText(sentence_rect, Qt.TextWordWrap, sentence)
 
         source_rect = QRectF(frame.left() + pad, sentence_rect.bottom() + style.SPACE_1, content_width, fm.height())
         painter.setPen(QColor(style.NUDGE_TEXT_SECONDARY))
-        painter.drawText(source_rect, Qt.AlignLeft, fm.elidedText(self.driver.state.source, Qt.ElideRight, content_width))
+        painter.drawText(source_rect, Qt.AlignLeft, fm.elidedText(source, Qt.ElideRight, content_width))
 
         if state == EXPANDED:
-            self.paintItems(painter, frame, source_rect.bottom() + style.SPACE_2, pad, content_width, font)
+            self.paintItems(painter, frame, source_rect.bottom() + style.SPACE_2, pad, content_width, font, items)
 
-    def paintItems(self, painter, frame, y, pad, content_width, font):
-        for item in self.driver.state.items:
+    def paintItems(self, painter, frame, y, pad, content_width, font, items):
+        for item in items:
             row = QRectF(frame.left() + pad, y, content_width, style.NUDGE_ITEM_ROW_HEIGHT)
             due = item.get("due", "")
             title = elidedTitle(item.get("title", ""), due, content_width, font)

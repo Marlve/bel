@@ -13,11 +13,12 @@ from calendarNudgeState import CalendarNudgeState, QUIET, NUDGE, EXPANDED
 
 
 class CalendarNudgeDriver:
-    def __init__(self, parent, geometry_for, on_moved, on_state_changed=None, motion=True):
+    def __init__(self, parent, geometry_for, on_moved, on_state_changed=None, motion=True, on_landed=None):
         self.state = CalendarNudgeState()
         self.geometry_for = geometry_for
         self.on_moved = on_moved
         self.on_state_changed = on_state_changed
+        self.on_landed = on_landed  # fires once a geometry tween reaches its target, not on every tick
         self.motion = motion
         self.current_rect = geometry_for(QUIET)
 
@@ -25,7 +26,7 @@ class CalendarNudgeDriver:
             self.current_rect = rect
             on_moved(rect)
 
-        self.tween = Tween(parent, tick)
+        self.tween = Tween(parent, tick, self._onTweenFinished)
 
     def show(self, items, sentence, source):
         before = self.state.state
@@ -56,6 +57,10 @@ class CalendarNudgeDriver:
             self.on_moved(target)  # no animation to tick through, so apply the target directly
             return
         self.tween.run(self.current_rect, target, style.NUDGE_SLIDE_MS, curves.NUDGE_SLIDE)
+
+    def _onTweenFinished(self):
+        if self.on_landed:
+            self.on_landed()
 
     def _notify(self):
         if self.on_state_changed:

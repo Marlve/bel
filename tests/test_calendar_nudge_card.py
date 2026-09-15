@@ -102,6 +102,67 @@ class CalendarNudgeCardTests(unittest.TestCase):
         self.assertGreater(self.card.height(), short_height)
 
 
+class CalendarNudgeCardRetreatAnimationTests(unittest.TestCase):
+    """Dismiss must keep painting the card's last content while the slide
+    back to the rail is in flight (calendar-nudge.md's "Gone" step) - it
+    used to go blank the instant the close button was clicked, well before
+    the geometry tween finished, per .scratch/calendar-nudge/issues/06."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.card = CalendarNudgeCard(motion=True)
+        self.addCleanup(self.card.deleteLater)
+
+    def test_dismiss_snapshots_the_live_content_for_the_retreat_tween(self):
+        self.card.showNudge(ITEMS, "Friday")
+        live = self.card.driver.state
+        expected = (NUDGE, live.items, live.sentence, live.source)
+
+        self.card.close_button.click()
+
+        self.assertEqual(self.card.driver.state.state, QUIET)  # logical state lands immediately
+        self.assertEqual(self.card.retreat_snapshot, expected)  # but the snapshot keeps the old content around
+
+    def test_dismiss_from_expanded_snapshots_the_expanded_state_too(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.card.enterEvent(None)
+
+        self.card.close_button.click()
+
+        self.assertEqual(self.card.retreat_snapshot[0], EXPANDED)
+        self.assertEqual(self.card.retreat_snapshot[1], ITEMS)
+
+    def test_landing_at_quiet_drops_the_snapshot(self):
+        self.card.showNudge(ITEMS, "Friday")
+        self.card.close_button.click()
+        self.assertIsNotNone(self.card.retreat_snapshot)
+
+        self.card.onLanded()  # simulates the retreat tween reaching QUIET's geometry
+
+        self.assertIsNone(self.card.retreat_snapshot)
+
+    def test_landing_while_still_showing_does_not_touch_the_snapshot(self):
+        # onLanded also fires for the entrance tween reaching NUDGE - it must
+        # only clear the snapshot once the state is actually back to QUIET.
+        self.card.showNudge(ITEMS, "Friday")
+
+        self.card.onLanded()
+
+        self.assertIsNone(self.card.retreat_snapshot)  # nothing to drop yet, and no crash
+
+    def test_dismiss_with_motion_off_never_snapshots(self):
+        quiet_card = CalendarNudgeCard(motion=False)
+        self.addCleanup(quiet_card.deleteLater)
+        quiet_card.showNudge(ITEMS, "Friday")
+
+        quiet_card.close_button.click()
+
+        self.assertIsNone(quiet_card.retreat_snapshot)
+
+
 class ElidedTitleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
