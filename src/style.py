@@ -255,7 +255,7 @@ NUDGE_TEXT_MUTED = MUTED  # expanded item due-time text
 
 NUDGE_RAIL_SIZE = 5  # quiet rail's thickness, per calendar-nudge.md
 NUDGE_WIDTH = 340
-NUDGE_HEIGHT = 72  # sentence + source line
+NUDGE_HEIGHT = 72  # quiet rail's height; nudge/expanded height is measured from actual content
 NUDGE_ITEM_ROW_HEIGHT = 22
 
 NUDGE_SLIDE_MS = 240  # calendar-nudge.md: "the card slides out (240ms, decelerating curve)"
