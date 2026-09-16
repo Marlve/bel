@@ -4,10 +4,13 @@
 # same convention as CalendarNudgeQuery in calendarNudge.py) is only invoked
 # for the miss-case draft.
 #
-# The confirm-before-write dialog, the actual write to `3 Reference/`, and
-# the auto-inserted `[[Concept]]` link (issue 03 steps 4-5) aren't built
-# here yet - those need a concrete UI trigger point (which note surface,
-# what dialog) that hasn't been designed.
+# write_concept_note/append_vocab_row are the confirm-before-write half of
+# issue 03 steps 4-5: nothing writes to the vault until one of these is
+# called explicitly, which only happens after Derich confirms the drafted
+# text - ExplainQuery itself never calls them. The auto-inserted
+# `[[Concept]]` link is still deferred - it needs a concrete UI trigger
+# point (which note surface represents "the note Derich is currently
+# writing") that hasn't been designed yet.
 
 from pathlib import Path
 
@@ -68,6 +71,43 @@ def search_notes(query, db_path=None):
         return None
     finally:
         conn.close()
+
+
+def escape_table_cell(text):
+    """Escapes a value for embedding in a markdown table row - Obsidian's
+    table syntax breaks on a literal "|" (spurious column) or newline
+    (spurious row), and a drafted translation isn't guaranteed free of
+    either."""
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def write_concept_note(query, content, vault_path=None):
+    """Writes a confirmed miss-case explanation as a new atomic concept
+    note (issue 03 step 4). Call only after Derich has confirmed the draft
+    - this performs the write unconditionally, with no confirmation of its
+    own."""
+    if "/" in query or "\\" in query:
+        # pathlib treats both as separators on Windows - letting one through
+        # would write outside "Reference/" (or raise on a missing
+        # intermediate dir) instead of naming a single note.
+        raise ValueError(f"query must be a single note title, not a path: {query!r}")
+    vault_path = vault_path or vaultIndex.VAULT_PATH
+    reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
+    path = reference / f"{query}.md"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def append_vocab_row(word, translation, vault_path=None):
+    """Appends a confirmed word/translation pair to the Korean vocab table
+    (issue 03's "same shape applies to Korean vocab" note). Call only after
+    Derich has confirmed the row."""
+    vault_path = vault_path or vaultIndex.VAULT_PATH
+    areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
+    path = areas / "Korean" / "Vocab.md"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(f"| {escape_table_cell(word)} | {escape_table_cell(translation)} |\n")
+    return path
 
 
 class ExplainQuery:

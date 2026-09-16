@@ -122,6 +122,81 @@ class SearchNotesTests(unittest.TestCase):
         self.assertEqual(result["kind"], "concept")
 
 
+class WriteConfirmedTests(unittest.TestCase):
+    def setUp(self):
+        self.vault_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.vault_dir.cleanup)
+        self.vault = Path(self.vault_dir.name)
+
+    def test_write_concept_note_creates_file_under_reference_folder(self):
+        (self.vault / "3 Reference").mkdir()
+
+        path = vaultSearch.write_concept_note("Dijkstra", "Shortest path algorithm.", vault_path=self.vault)
+
+        self.assertEqual(path, self.vault / "3 Reference" / "Dijkstra.md")
+        self.assertEqual(path.read_text(encoding="utf-8"), "Shortest path algorithm.")
+
+    def test_write_concept_note_matches_reference_folder_ignoring_numeric_prefix(self):
+        (self.vault / "Reference").mkdir()
+
+        path = vaultSearch.write_concept_note("Dijkstra", "Explanation.", vault_path=self.vault)
+
+        self.assertEqual(path, self.vault / "Reference" / "Dijkstra.md")
+
+    def test_write_concept_note_raises_when_reference_folder_is_missing(self):
+        with self.assertRaises(FileNotFoundError):
+            vaultSearch.write_concept_note("Dijkstra", "Explanation.", vault_path=self.vault)
+
+    def test_write_concept_note_rejects_a_query_containing_a_path_separator(self):
+        # A concept like "async/await" is a plausible query, not an attack -
+        # but pathlib treats "/" (and "\\") as a separator on Windows too, so
+        # letting it through would write outside "3 Reference/" entirely.
+        (self.vault / "3 Reference").mkdir()
+
+        with self.assertRaises(ValueError):
+            vaultSearch.write_concept_note("async/await", "Explanation.", vault_path=self.vault)
+
+    def test_append_vocab_row_appends_to_existing_file(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
+
+        path = vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
+
+        self.assertEqual(path, korean / "Vocab.md")
+        self.assertEqual(path.read_text(encoding="utf-8"), "| 안녕 | hello |\n| 감사 | thanks |\n")
+
+    def test_append_vocab_row_matches_areas_folder_ignoring_numeric_prefix(self):
+        korean = self.vault / "Areas" / "Korean"
+        korean.mkdir(parents=True)
+
+        path = vaultSearch.append_vocab_row("안녕", "hello", vault_path=self.vault)
+
+        self.assertEqual(path, korean / "Vocab.md")
+
+    def test_append_vocab_row_raises_when_areas_folder_is_missing(self):
+        with self.assertRaises(FileNotFoundError):
+            vaultSearch.append_vocab_row("안녕", "hello", vault_path=self.vault)
+
+    def test_append_vocab_row_escapes_a_pipe_in_the_translation(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("", encoding="utf-8")
+
+        path = vaultSearch.append_vocab_row("or", "either|or", vault_path=self.vault)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), "| or | either\\|or |\n")
+
+    def test_append_vocab_row_strips_newlines_from_a_multiline_translation(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("", encoding="utf-8")
+
+        path = vaultSearch.append_vocab_row("word", "line one\nline two", vault_path=self.vault)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), "| word | line one line two |\n")
+
+
 class FakeSignal:
     """Stands in for a Qt Signal without needing a real QObject/QThread -
     connect() records the slot, emit() calls it straight away. Keeps

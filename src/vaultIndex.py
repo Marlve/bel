@@ -37,6 +37,19 @@ def folder_name(path):
     return re.sub(r"^\d+\s+", "", path.name)
 
 
+def resolve_top_folder(vault_path, name):
+    """Finds vault_path's top-level folder matching `name` once Obsidian's
+    numeric sort prefix is stripped (folder_name) - never hardcodes the
+    digits themselves. Raises rather than silently picking a fallback
+    location if the folder is missing, matching this module's own
+    fail-loud convention for vault-shape assumptions. Used by
+    vaultSearch.py's write-back functions (issue 03)."""
+    for entry in vault_path.iterdir():
+        if entry.is_dir() and folder_name(entry).casefold() == name.casefold():
+            return entry
+    raise FileNotFoundError(f'No "{name}" folder found under {vault_path}')
+
+
 def iter_markdown_files(vault_path):
     for entry in vault_path.iterdir():
         if entry.is_dir():
