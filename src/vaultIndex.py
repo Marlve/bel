@@ -34,7 +34,9 @@ EXCLUDED_FOLDERS = {"private"}
 
 
 def folder_name(path):
-    return re.sub(r"^\d+[\s._-]+", "", path.name)
+    # Stripped first so a stray leading space (" 6 Private") can't stop the
+    # prefix regex from matching at position 0.
+    return re.sub(r"^\d+[\s._-]+", "", path.name.strip())
 
 
 def resolve_top_folder(vault_path, name):

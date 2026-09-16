@@ -158,6 +158,17 @@ class VaultIndexTests(unittest.TestCase):
 
         self.assertEqual(self.notes(), [])
 
+    def test_excludes_private_folder_with_a_leading_space(self):
+        # " 6 Private" doesn't start with a digit, so the prefix strip alone
+        # would leave it unmatched against EXCLUDED_FOLDERS.
+        private_dir = self.vault / " 6 Private"
+        private_dir.mkdir()
+        (private_dir / "secret.md").write_text("secret content")
+
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        self.assertEqual(self.notes(), [])
+
     def test_refresh_keeps_old_entry_when_file_becomes_unreadable(self):
         reference = self.vault / "3 Reference"
         reference.mkdir()
