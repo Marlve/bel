@@ -416,11 +416,11 @@ class ChatCard(QWidget):
             and result["vocab"] is not None
         )
         if pickable and result["notes"]:
-            self.picker = NotePicker(result["notes"], self.replyWidth())
+            self.picker = NotePicker(result["notes"], self.contentWidth())
             picker = self.picker
             picker.picked.connect(lambda note: self.onNotePicked(picker, query, result, note))
         elif saveable_word:
-            self.picker = NotePicker([result["vocab"]], self.replyWidth(), header="new word — save to vocab")
+            self.picker = NotePicker([result["vocab"]], self.contentWidth(), header="new word — save to vocab")
             picker = self.picker
             picker.picked.connect(lambda note: self.onVocabPicked(picker, query, result))
         if self.picker is not None:
@@ -428,6 +428,7 @@ class ChatCard(QWidget):
             row.addWidget(picker)
             row.addStretch(1)
             self.insertTurnRow(row)
+            self.animation.popIn(picker)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def onNotePicked(self, picker, query, result, note):

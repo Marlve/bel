@@ -567,6 +567,33 @@ class ChatCardTests(unittest.TestCase):
         self.assertIn("thanks", self.card.turns[-1]["text"])
         self.assertIsNone(self.card.picker)
 
+    def test_the_picker_spans_the_full_chat_width(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result(VOCAB_MISS)
+
+        self.assertEqual(self.card.picker.width(), self.card.contentWidth())
+
+    def test_without_motion_the_picker_appears_without_an_effect(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result(VOCAB_MISS)
+
+        self.assertIsNone(self.card.picker.graphicsEffect())
+
+    def test_with_motion_the_picker_pops_in_and_drops_its_effect_when_done(self):
+        lookup = self.startLookup("? 감사")
+        self.card.motion = True
+
+        lookup.on_result(VOCAB_MISS)
+
+        effect = self.card.picker.graphicsEffect()
+        self.assertIsNotNone(effect)
+        self.assertEqual(effect.progress, 0.0)
+        pop = self.card.animation.pop_tween
+        pop.setCurrentTime(pop.duration())
+        self.assertIsNone(self.card.picker.graphicsEffect())
+
     def test_a_blank_translation_is_never_offered_for_saving(self):
         lookup = self.startLookup("? 감사")
 

@@ -10,9 +10,9 @@
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, QVariantAnimation
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QVariantAnimation
 from PySide6.QtGui import QTransform
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QGraphicsEffect
 
 import dockCorner
 import screenBounds
@@ -42,6 +42,35 @@ def _tabFootprint():
 TAB_WIDTH, TAB_HEIGHT, TAB_LEFT_INSET, TAB_TOP_INSET = _tabFootprint()
 
 
+class PopEffect(QGraphicsEffect):
+    """Paints its widget faded and shifted down by whatever part of
+    PICKER_POP_RISE it hasn't travelled yet, so the pop plays without moving
+    the widget in its layout - nothing around it jumps."""
+
+    def __init__(self):
+        super().__init__()
+        self.progress = 0.0
+
+    def setProgress(self, value):
+        self.progress = value
+        self.update()
+
+    def boundingRectFor(self, rect):
+        return rect.adjusted(0, 0, 0, style.PICKER_POP_RISE)
+
+    def draw(self, painter):
+        # drawSource() ignores the painter's opacity and translation, so the
+        # widget is painted from a pixmap instead. PySide can't hand back
+        # sourcePixmap's offset, but with NoPad the pixmap is exactly the
+        # source's bounding rect.
+        pixmap = self.sourcePixmap(Qt.LogicalCoordinates, QPoint(), QGraphicsEffect.NoPad)
+        painter.save()
+        painter.setOpacity(min(1.0, max(0.0, self.progress)))
+        painter.translate(0, (1 - self.progress) * style.PICKER_POP_RISE)
+        painter.drawPixmap(self.sourceBoundingRect(Qt.LogicalCoordinates).topLeft(), pixmap)
+        painter.restore()
+
+
 class ChatCardAnimation:
     def __init__(self, parent, state, born, screen, motion):
         self.parent = parent
@@ -58,6 +87,9 @@ class ChatCardAnimation:
         self.tilt_tween = Tween(parent, self.onTiltTick)
         self.typing_clock = Clock(parent, self.onTypingTick, lambda: None)
         self.typing_label = None
+        self.pop_tween = Tween(parent, self.onPopTick, self.onPopDone)
+        self.pop_widget = None
+        self.pop_effect = None
 
         self.edge_driver = None
         self.edge_trigger = None
@@ -114,6 +146,30 @@ class ChatCardAnimation:
             for b in brightnesses
         )
         self.typing_label.setText(dots)
+
+    # --- the note picker popping in under a `?` lookup's answer ---
+
+    def popIn(self, widget):
+        if not self.motion:
+            return
+        # A lookup can land while the last picker is still popping - finish
+        # that one first, so it isn't left half-faded.
+        if self.pop_tween.state() == QVariantAnimation.Running:
+            self.pop_tween.setCurrentTime(self.pop_tween.duration())
+        self.pop_widget = widget
+        self.pop_effect = PopEffect()
+        widget.setGraphicsEffect(self.pop_effect)
+        self.pop_tween.run(0.0, 1.0, style.PICKER_POP_MS, curves.PICKER_POP)
+
+    def onPopTick(self, value):
+        if self.pop_effect is not None:
+            self.pop_effect.setProgress(value)
+
+    def onPopDone(self):
+        # Dropped once it's done, so the picker paints normally again.
+        self.pop_widget.setGraphicsEffect(None)
+        self.pop_widget = None
+        self.pop_effect = None
 
     # --- the edge dock ---
 
