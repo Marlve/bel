@@ -95,7 +95,13 @@ def search_notes(query, db_path=None):
         for path in paths:
             if folder_matches(path, "Areas", "Korean", "Vocab.md"):
                 content = conn.execute("SELECT content FROM notes WHERE path = ?", (path,)).fetchone()[0]
-                if query.casefold() in content.casefold():
+                # Whole-cell match, not a substring of the file - "an" must
+                # not hit a row translated as "and, additionally" (issue 12).
+                if any(
+                    cell.casefold() == query.casefold()
+                    for line in content.splitlines()
+                    for cell in table_cells(line)
+                ):
                     return {"kind": "vocab", "path": path, "content": content}
 
         return None
@@ -170,6 +176,12 @@ def escape_table_cell(text):
     (spurious row), and a drafted translation isn't guaranteed free of
     either."""
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def table_cells(line):
+    """Splits a markdown table row into its cell values - the reverse of
+    escape_table_cell, so an escaped "\\|" stays inside its cell."""
+    return [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line)]
 
 
 def write_concept_note(query, content, vault_path=None, store_path=None):

@@ -110,6 +110,37 @@ class SearchNotesTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_vocab_miss_when_query_is_only_a_fragment_of_a_cell(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 그리고 | and, additionally |\n", encoding="utf-8")
+        self.refresh()
+
+        result = vaultSearch.search_notes("an", db_path=self.db_path)
+
+        self.assertIsNone(result)
+
+    def test_vocab_hit_matches_a_whole_cell_case_insensitively(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 안녕 | Hello |\n", encoding="utf-8")
+        self.refresh()
+
+        result = vaultSearch.search_notes("hello", db_path=self.db_path)
+
+        self.assertEqual(result["kind"], "vocab")
+
+    def test_vocab_hit_on_a_cell_containing_an_escaped_pipe(self):
+        # append_vocab_row escapes "|" as "\|" - the cell must still be read
+        # back as one cell, not split in two.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 또는 | or \\| either |\n", encoding="utf-8")
+        self.refresh()
+
+        self.assertIsNone(vaultSearch.search_notes("either", db_path=self.db_path))
+        self.assertIsNotNone(vaultSearch.search_notes("or | either", db_path=self.db_path))
+
     def test_reference_note_is_checked_before_vocab_row(self):
         reference = self.vault / "3 Reference"
         reference.mkdir()
