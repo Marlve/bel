@@ -291,6 +291,38 @@ class CurrentNoteAndLinkInsertTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertFalse((self.vault / "1 Project" / "Renamed.md").exists())
 
+    def test_insert_concept_link_refuses_a_designated_note_inside_private(self):
+        private = self.vault / "6 Private"
+        private.mkdir()
+        secret = private / "Secret.md"
+        secret.write_text("Private.", encoding="utf-8")
+
+        for designated in (
+            str(Path("6 Private") / "Secret.md"),
+            str(Path("6 PRIVATE") / "Secret.md"),
+            str(Path("1 Project") / ".." / "6 Private" / "Secret.md"),
+            str(secret),
+        ):
+            with self.subTest(designated=designated):
+                vaultSearch.set_current_note(designated, store_path=self.store_path)
+
+                result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+                self.assertIsNone(result)
+                self.assertEqual(secret.read_text(encoding="utf-8"), "Private.")
+
+    def test_insert_concept_link_refuses_a_designated_note_outside_the_vault(self):
+        outside_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_dir.cleanup)
+        outside = Path(outside_dir.name) / "Elsewhere.md"
+        outside.write_text("Not in the vault.", encoding="utf-8")
+        vaultSearch.set_current_note(str(outside), store_path=self.store_path)
+
+        result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertIsNone(result)
+        self.assertEqual(outside.read_text(encoding="utf-8"), "Not in the vault.")
+
     def test_write_concept_note_inserts_link_into_designated_note(self):
         (self.vault / "3 Reference").mkdir()
         (self.vault / "1 Project").mkdir()

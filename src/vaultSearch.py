@@ -140,6 +140,16 @@ def insert_concept_link(query, vault_path=None, store_path=None):
         return None
     vault_path = vault_path or vaultIndex.VAULT_PATH
     path = vault_path / current
+    # set_current_note accepts any string, so the Private exclusion has to
+    # be enforced here, before is_file() even stats the path. Resolved first
+    # so "..", an absolute path, or a path outside the vault can't sneak
+    # past the top-folder check.
+    try:
+        relative = path.resolve().relative_to(vault_path.resolve())
+    except ValueError:
+        return None
+    if not relative.parts or vaultIndex.folder_name(Path(relative.parts[0])).casefold() in vaultIndex.EXCLUDED_FOLDERS:
+        return None
     if not path.is_file():
         # Append mode (below) would otherwise happily create a stub file
         # here if just the file (not its parent folder) went missing since
