@@ -21,3 +21,17 @@ paint/input event handlers. Owns nothing that ticks on its own.
 A widget's Qt-facing half that owns every `Clock`/`Tween`/`QTimer` it drives,
 plus the tick/done callbacks that write into that widget's State. Never
 painted directly - it feeds values the View reads.
+
+**Vault**:
+Derich's Obsidian vault (`C:\Vault\ObsidianVault`), a second-brain note
+collection separate from this repo. Six numbered top-level folders (`0
+Inbox` … `5 Atlas`) plus `6 Private` and an unnumbered `Templates/` - the
+numeric prefixes are Obsidian file-explorer sort cosmetics only, never
+meaningful to matching logic. `6 Private` must never be opened, read, or
+listed by Bel under any circumstance.
+
+**Vault index**:
+The local SQLite FTS5 full-text index Bel keeps over the vault's markdown
+files (`src/vaultIndex.py`, see ADR-0008), refreshed incrementally rather
+than rescanned per call. Lives under Bel's own local state
+(`~/.bel/vault-index.sqlite3`), never inside the vault folder itself.
