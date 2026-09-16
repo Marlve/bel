@@ -83,19 +83,23 @@ def search_notes(query, db_path=None):
     Looks up paths first and only fetches a candidate's content once it has
     matched by path, rather than pulling every note's full text into memory
     up front - the FTS5 index exists precisely so this doesn't have to
-    rescan the whole vault's content per call."""
+    rescan the whole vault's content per call. Content is fetched by rowid,
+    not path - `WHERE path = ?` would be a second full scan (issue 20)."""
     conn = vaultIndex.connect(db_path)
     try:
-        paths = [row[0] for row in conn.execute("SELECT path FROM notes").fetchall()]
+        # One read transaction, so a refresh() committing between the two
+        # queries can't reuse a matched rowid for a different note.
+        conn.execute("BEGIN")
+        rows = conn.execute("SELECT rowid, path FROM notes").fetchall()
 
-        for path in paths:
+        for rowid, path in rows:
             if folder_matches(path, "Reference", f"{query}.md"):
-                content = conn.execute("SELECT content FROM notes WHERE path = ?", (path,)).fetchone()[0]
+                content = conn.execute("SELECT content FROM notes WHERE rowid = ?", (rowid,)).fetchone()[0]
                 return {"kind": "concept", "path": path, "content": content}
 
-        for path in paths:
+        for rowid, path in rows:
             if folder_matches(path, "Areas", "Korean", "Vocab.md"):
-                content = conn.execute("SELECT content FROM notes WHERE path = ?", (path,)).fetchone()[0]
+                content = conn.execute("SELECT content FROM notes WHERE rowid = ?", (rowid,)).fetchone()[0]
                 # Whole-cell match on real entries, not a substring of the
                 # file - "an" must not hit a row translated as "and,
                 # additionally" (issue 12).

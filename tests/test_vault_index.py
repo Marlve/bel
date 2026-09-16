@@ -1,6 +1,8 @@
 import os
+import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -87,6 +89,54 @@ class VaultIndexTests(unittest.TestCase):
 
         self.assertEqual(self.search("original"), [])
         self.assertEqual(len(self.search("updated")), 1)
+
+    def test_refresh_updates_only_the_modified_note_among_several(self):
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Kept.md").write_text("kept content")
+        edited = reference / "Edited.md"
+        edited.write_text("original content")
+        (reference / "Removed.md").write_text("removed content")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        edited.write_text("updated content")
+        future = time.time() + 5
+        os.utime(edited, (future, future))
+        (reference / "Removed.md").unlink()
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        self.assertEqual(sorted(self.notes()), [
+            str(Path("3 Reference") / "Edited.md"),
+            str(Path("3 Reference") / "Kept.md"),
+        ])
+        self.assertEqual(self.search("kept"), [str(Path("3 Reference") / "Kept.md")])
+        self.assertEqual(self.search("updated"), [str(Path("3 Reference") / "Edited.md")])
+        self.assertEqual(self.search("original"), [])
+
+    def test_overlapping_refreshes_do_not_duplicate_a_new_note(self):
+        # refresh() writes by rowid from a snapshot of the index, so a second
+        # refresh landing in between must not leave that snapshot stale.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "A.md").write_text("new content")
+        real_iter = vaultIndex.iter_markdown_files
+        other = threading.Thread(
+            target=lambda: vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        )
+
+        def iter_while_another_refresh_runs(vault_path):
+            if threading.current_thread() is not other:
+                other.start()
+                # Long enough for an unblocked refresh to finish; a correctly
+                # blocked one just waits for this refresh's commit instead.
+                other.join(timeout=1)
+            return real_iter(vault_path)
+
+        with mock.patch.object(vaultIndex, "iter_markdown_files", iter_while_another_refresh_runs):
+            vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        other.join()
+
+        self.assertEqual(self.notes(), [str(Path("3 Reference") / "A.md")])
 
     def test_refresh_removes_deleted_file_from_index(self):
         reference = self.vault / "3 Reference"
@@ -185,6 +235,26 @@ class VaultIndexTests(unittest.TestCase):
         # A transient/bad read shouldn't drop the file from the index the
         # way a real deletion does - the stale-but-valid entry stays put.
         self.assertEqual(len(self.search("original")), 1)
+
+    def test_connect_closes_connection_when_table_setup_fails(self):
+        # Not a SQLite database, so CREATE VIRTUAL TABLE raises (issue 19).
+        self.db_path.write_bytes(b"not a sqlite database" * 100)
+        closed = []
+
+        class TrackingConnection(sqlite3.Connection):
+            def close(self):
+                closed.append(True)
+                super().close()
+
+        real_connect = sqlite3.connect
+        with mock.patch.object(
+            vaultIndex.sqlite3, "connect",
+            lambda path: real_connect(path, factory=TrackingConnection),
+        ):
+            with self.assertRaises(sqlite3.DatabaseError):
+                vaultIndex.connect(self.db_path)
+
+        self.assertEqual(closed, [True])
 
 
 if __name__ == "__main__":

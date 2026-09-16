@@ -66,9 +66,15 @@ def connect(db_path=None):
     db_path = db_path or INDEX_DB_PATH
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
-    conn.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS notes USING fts5(path, content, mtime UNINDEXED)"
-    )
+    try:
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS notes USING fts5(path, content, mtime UNINDEXED)"
+        )
+    except Exception:
+        # A locked or corrupt db file raises here, before the caller ever
+        # gets a connection to close - so close it now (issue 19).
+        conn.close()
+        raise
     return conn
 
 
@@ -76,7 +82,15 @@ def refresh(vault_path=None, db_path=None):
     vault_path = vault_path or VAULT_PATH
     conn = connect(db_path)
     try:
-        stored_mtimes = dict(conn.execute("SELECT path, mtime FROM notes"))
+        # Rows are written by rowid, never `WHERE path = ?` - rowid is the
+        # only thing an FTS5 table can look up without scanning every row
+        # (issue 13). The write lock is taken before reading them, so another
+        # refresh (a second Bel process) can't change the table underneath
+        # and leave these rowids stale.
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute("SELECT rowid, path, mtime FROM notes").fetchall()
+        rowids = {path: rowid for rowid, path, mtime in rows}
+        stored_mtimes = {path: mtime for rowid, path, mtime in rows}
         seen_paths = set()
 
         for file_path in iter_markdown_files(vault_path):
@@ -94,14 +108,19 @@ def refresh(vault_path=None, db_path=None):
             except (OSError, UnicodeDecodeError):
                 continue
 
-            conn.execute("DELETE FROM notes WHERE path = ?", (relative,))
-            conn.execute(
-                "INSERT INTO notes (path, content, mtime) VALUES (?, ?, ?)",
-                (relative, content, mtime),
-            )
+            if relative in rowids:
+                conn.execute(
+                    "UPDATE notes SET content = ?, mtime = ? WHERE rowid = ?",
+                    (content, mtime, rowids[relative]),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO notes (path, content, mtime) VALUES (?, ?, ?)",
+                    (relative, content, mtime),
+                )
 
         for relative in set(stored_mtimes) - seen_paths:
-            conn.execute("DELETE FROM notes WHERE path = ?", (relative,))
+            conn.execute("DELETE FROM notes WHERE rowid = ?", (rowids[relative],))
 
         conn.commit()
     finally:
