@@ -272,6 +272,7 @@ class ExplainQuery:
                 # on-disk title.
                 concept_name = Path(hit["path"]).stem
                 insert_concept_link(concept_name, vault_path=self.vault_path, store_path=self.store_path)
+            self.disconnectAboutToQuit()
             self.on_result({"hit": True, **hit})
             return
 
@@ -287,6 +288,7 @@ class ExplainQuery:
         # `finished` still fires after cancel() (ClaudeWorker's own
         # guarantee, see claude.py) - without this guard a cancelled query
         # would still hand the caller a truncated/garbage draft.
+        self.disconnectAboutToQuit()
         if self.cancelled:
             return
         self.on_result({"hit": False, "draft": self.text})
@@ -295,6 +297,16 @@ class ExplainQuery:
         self.cancelled = True
         if self.request is not None:
             self.request.cancel()
+
+    def disconnectAboutToQuit(self):
+        # Undoes the __init__ wiring once this query resolves. aboutToQuit
+        # holds a strong reference to the connected bound method, so leaving
+        # it connected would keep every past ExplainQuery alive for the rest
+        # of the app's life - unbounded growth proportional to search count
+        # (issue 06).
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.disconnect(self.cancel)
 
 
 class TriageQuery:
@@ -327,6 +339,7 @@ class TriageQuery:
         try:
             content = self.path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
+            self.disconnectAboutToQuit()
             self.on_result({"path": self.path, "folder": None})
             return
         prompt = TRIAGE_PROMPT_TEMPLATE.format(title=self.path.stem, content=content)
@@ -342,6 +355,7 @@ class TriageQuery:
         # `finished` still fires after cancel() (ClaudeWorker's own
         # guarantee, see claude.py) - without this guard a cancelled query
         # would still hand the caller a stale proposal.
+        self.disconnectAboutToQuit()
         if self.cancelled:
             return
         self.on_result({"path": self.path, "folder": parse_triage_response(self.text)})
@@ -350,3 +364,12 @@ class TriageQuery:
         self.cancelled = True
         if self.request is not None:
             self.request.cancel()
+
+    def disconnectAboutToQuit(self):
+        # Mirrors ExplainQuery.disconnectAboutToQuit - same leak, same fix
+        # (issue 06): aboutToQuit holds a strong reference to self.cancel,
+        # so leaving it connected would keep every past TriageQuery alive
+        # for the rest of the app's life.
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.disconnect(self.cancel)

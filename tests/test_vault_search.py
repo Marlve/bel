@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -441,6 +442,27 @@ class FakeSignal:
             self.slot(*args)
 
 
+class TrackingSignal:
+    """Stands in for QApplication.aboutToQuit - unlike FakeSignal, tracks
+    every connected slot rather than just the latest one, so a test can
+    assert the connection count doesn't grow across repeated ExplainQuery
+    instantiations (issue 06)."""
+
+    def __init__(self):
+        self.slots = []
+
+    def connect(self, slot):
+        self.slots.append(slot)
+
+    def disconnect(self, slot):
+        self.slots.remove(slot)
+
+
+class FakeApp:
+    def __init__(self):
+        self.aboutToQuit = TrackingSignal()
+
+
 class FakeClaudeRequest:
     def __init__(self, prompt):
         self.prompt = prompt
@@ -579,6 +601,29 @@ class ExplainQueryTests(unittest.TestCase):
 
         self.assertEqual(self.results, [])
 
+    def test_a_hit_disconnects_from_aboutToQuit_without_waiting_for_a_request(self):
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Shortest path algorithm.")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        fake_app = FakeApp()
+
+        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+            self.start("Dijkstra")
+
+        self.assertEqual(fake_app.aboutToQuit.slots, [])
+
+    def test_repeated_instantiation_does_not_grow_the_aboutToQuit_connection_count(self):
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        fake_app = FakeApp()
+
+        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+            for _ in range(3):
+                explain = self.start("Nonexistent")
+                explain.request.finished.emit()
+
+        self.assertEqual(fake_app.aboutToQuit.slots, [])
+
 
 class TriageQueryTests(unittest.TestCase):
     def setUp(self):
@@ -643,6 +688,25 @@ class TriageQueryTests(unittest.TestCase):
 
         self.assertEqual(self.results, [{"path": self.entry, "folder": None}])
         self.assertIsNone(triage.request)
+
+    def test_an_unreadable_file_disconnects_from_aboutToQuit_without_waiting_for_a_request(self):
+        self.entry.unlink()
+        fake_app = FakeApp()
+
+        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+            self.start()
+
+        self.assertEqual(fake_app.aboutToQuit.slots, [])
+
+    def test_repeated_instantiation_does_not_grow_the_aboutToQuit_connection_count(self):
+        fake_app = FakeApp()
+
+        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+            for _ in range(3):
+                triage = self.start()
+                triage.request.finished.emit()
+
+        self.assertEqual(fake_app.aboutToQuit.slots, [])
 
 
 if __name__ == "__main__":
