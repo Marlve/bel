@@ -272,6 +272,34 @@ class WriteConfirmedTests(unittest.TestCase):
 
         self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n| 감사 | thanks |\n")
 
+    def test_append_vocab_row_goes_after_the_last_filled_row_not_after_empty_rows(self):
+        # Obsidian's table editor leaves empty rows and a trailing blank line
+        # - appending to the end of the file would land outside the table.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_bytes(
+            "---\ntype: vocab\n---\n\n| Word | Meaning |\n| ---- | ------- |\n| 안녕   | Hello   |\n|      |         |\n|      |         |\n\n\n".encode()
+        )
+
+        path = vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
+
+        self.assertEqual(
+            path.read_bytes().decode("utf-8"),
+            "---\ntype: vocab\n---\n\n| Word | Meaning |\n| ---- | ------- |\n| 안녕   | Hello   |\n| 감사 | thanks |\n|      |         |\n|      |         |\n\n\n",
+        )
+
+    def test_append_vocab_row_goes_right_after_the_separator_of_an_empty_table(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_bytes("| Word | Meaning |\n| ---- | ------- |\n|  |  |\n\nnotes below\n".encode())
+
+        path = vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
+
+        self.assertEqual(
+            path.read_bytes().decode("utf-8"),
+            "| Word | Meaning |\n| ---- | ------- |\n| 감사 | thanks |\n|  |  |\n\nnotes below\n",
+        )
+
     def test_append_vocab_row_matches_areas_folder_ignoring_numeric_prefix(self):
         korean = self.vault / "Areas" / "Korean"
         korean.mkdir(parents=True)

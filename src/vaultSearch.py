@@ -313,14 +313,35 @@ def append_vocab_row(word, translation, vault_path=None):
     vault_path = vault_path or vaultIndex.VAULT_PATH
     areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
     path = areas / "Korean" / "Vocab.md"
-    # Obsidian can save a note without a trailing newline, and the row must
-    # not glue onto the table's last line.
-    ends_mid_line = path.exists() and path.stat().st_size > 0 and not path.read_bytes().endswith(b"\n")
-    with path.open("a", encoding="utf-8") as f:
-        if ends_mid_line:
-            f.write("\n")
-        f.write(f"| {escape_table_cell(word)} | {escape_table_cell(translation)} |\n")
+    row = f"| {escape_table_cell(word)} | {escape_table_cell(translation)} |\n"
+    # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF.
+    lines = path.read_bytes().decode("utf-8").splitlines(keepends=True) if path.exists() else []
+    at = vocab_row_insert_index(lines)
+    if at == len(lines) and lines and not lines[-1].endswith("\n"):
+        # Obsidian can save a note without a trailing newline, and the row
+        # must not glue onto the table's last line.
+        lines[-1] += "\n"
+    lines.insert(at, row)
+    path.write_bytes("".join(lines).encode("utf-8"))
     return path
+
+
+def vocab_row_insert_index(lines):
+    """Where a new row goes: right after the first table's last filled-in
+    row. Obsidian's table editor leaves empty rows and blank lines after a
+    table, and a row appended past them would sit outside the table. With
+    no table, it goes at the end."""
+    for separator in range(1, len(lines)):
+        if lines[separator - 1].strip().startswith("|") and is_separator_row(lines[separator].strip()):
+            at = separator + 1
+            for index in range(separator + 1, len(lines)):
+                line = lines[index].strip()
+                if not line.startswith("|"):
+                    break
+                if any(table_cells(line)):
+                    at = index + 1
+            return at
+    return len(lines)
 
 
 def list_inbox_entries(vault_path=None):
