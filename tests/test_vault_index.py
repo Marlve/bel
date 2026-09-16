@@ -139,6 +139,25 @@ class VaultIndexTests(unittest.TestCase):
 
         self.assertEqual(len(self.search("keep")), 1)
 
+    def test_does_not_strip_digits_with_no_separator_at_all(self):
+        # "3Reference" (no separator after the digit) is not the numbered-
+        # folder pattern - it must stay unmatched against "Reference" so a
+        # typo'd folder name fails loudly instead of silently resolving.
+        self.assertEqual(vaultIndex.folder_name(Path("3Reference")), "3Reference")
+
+    def test_excludes_private_folder_with_non_whitespace_separator(self):
+        # A rename like "6.Private" (no space after the digit) must still
+        # be caught - the numeric-prefix strip can't require whitespace.
+        # Readable (not invalid-UTF-8) content, so a failure here can only
+        # mean the exclusion itself didn't match - not a masked read error.
+        private_dir = self.vault / "6.Private"
+        private_dir.mkdir()
+        (private_dir / "secret.md").write_text("secret content")
+
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        self.assertEqual(self.notes(), [])
+
     def test_refresh_keeps_old_entry_when_file_becomes_unreadable(self):
         reference = self.vault / "3 Reference"
         reference.mkdir()
