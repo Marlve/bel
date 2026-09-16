@@ -185,6 +185,21 @@ CHAT_PARAGRAPH_GAP = 6  # gap above a paragraph break *within* one Bel reply - d
 
 CHAT_COMPOSER_HEIGHT = 2 * SPACE_4  # 32px, per claude-chat-flow.md's composer height
 
+# --- A `?` lookup's note picker (card.md). The sand dot is card.md's one
+# deliberate exception to the no-hue palette above. ---
+
+PICKER_FILL = PALETTE["150"]
+PICKER_BORDER = PALETTE["250"]
+PICKER_RADIUS = 7
+PICKER_LIST_MAX_HEIGHT = 172
+PICKER_HEADER_TEXT = BODY
+PICKER_NOTE_TEXT = BODY_DIM  # brightens to BODY on hover - brightness-only hierarchy
+PICKER_FOLDER_TEXT = MUTED
+PICKER_DOT_RECENT = "#C8B08A"  # sand - card.md names the color but not a hex
+PICKER_DOT_OLDER = PALETTE["450"]
+PICKER_DOT_SIZE = 6
+PICKER_ICON_SIZE = 10
+
 
 # --- Todo & note cards. Persistent, draggable squares toggled from the
 # ring - same footprint, type, and neutral surface as the chat card (CHAT_*
@@ -333,6 +348,7 @@ _SCALE_INT_NAMES = [
     "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
     "CHAT_BUBBLE_GAP_EXTRA", "CHAT_REPLY_INSET", "CHAT_PARAGRAPH_GAP",
     "CHAT_COMPOSER_HEIGHT",
+    "PICKER_RADIUS", "PICKER_LIST_MAX_HEIGHT", "PICKER_DOT_SIZE", "PICKER_ICON_SIZE",
     "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
     "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
     "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",

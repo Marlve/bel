@@ -39,6 +39,28 @@ class FakeRequest(QObject):
     session_started = Signal(str)
 
 
+class FakeLookup:
+    """Stands in for vaultSearch.ExplainQuery - the test calls on_result by
+    hand instead of searching a real vault."""
+
+    def __init__(self, query, on_result):
+        self.query = query
+        self.on_result = on_result
+        self.started = False
+        self.cancelled = False
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+
+NOTES = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
+CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm."}
+CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation."}
+
+
 def teardownCard(card):
     """Mirrors ChatSlot.retire(): stop the real QTimer a landed card owns
     (EdgeTrigger's 50ms cursor poll) and any in-flight edge-dock tween
@@ -410,6 +432,134 @@ class ChatCardTests(unittest.TestCase):
         self.card.send("hello")
         self.assertEqual(self.card.animation.typing_clock.state(), QVariantAnimation.Stopped)
         self.assertNotEqual(self.card.streaming_label.text(), "")
+
+    # --- `?` lookups (card.md) ---
+
+    def fakeLookup(self, query, on_result):
+        lookup = FakeLookup(query, on_result)
+        self.lookups.append(lookup)
+        return lookup
+
+    def startLookup(self, text="? Dijkstra"):
+        self.lookups = []
+        self.card.lookup_factory = self.fakeLookup
+        self.card.fly()
+        self.card.send(text)
+        return self.lookups[0] if self.lookups else None
+
+    def test_a_question_mark_message_starts_a_lookup_instead_of_chat(self):
+        lookup = self.startLookup("? Dijkstra")
+
+        self.assertEqual(lookup.query, "Dijkstra")
+        self.assertTrue(lookup.started)
+        self.assertEqual(self.requests, [])
+        self.assertEqual([turn["role"] for turn in self.card.turns], ["user", "claude"])
+        self.assertTrue(self.card.composer.isReadOnly())
+        self.assertIsNotNone(self.card.animation.typing_label)
+        self.assertEqual(self.card.turn_count, 0)  # never sent to the Claude session
+
+    def test_chat_waits_while_a_lookup_is_running(self):
+        self.startLookup()
+
+        self.card.send("hello")
+
+        self.assertEqual(self.requests, [])
+
+    def test_a_concept_hit_shows_the_note_and_a_picker(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
+
+        self.assertIn("Shortest path algorithm.", self.card.turns[-1]["text"])
+        self.assertEqual(len(self.card.picker.rows), 1)
+        self.assertIsNone(self.card.animation.typing_label)
+        self.assertFalse(self.card.composer.isReadOnly())
+        self.assertIsNone(self.card.lookup)
+
+    def test_a_miss_shows_the_draft_and_a_picker(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES})
+
+        self.assertIn("A drafted explanation.", self.card.turns[-1]["text"])
+        self.assertEqual(len(self.card.picker.rows), 1)
+
+    def test_picking_a_note_confirms_it_and_says_where_it_connected(self):
+        lookup = self.startLookup()
+        result = {**CONCEPT_MISS, "notes": NOTES}
+        lookup.on_result(result)
+
+        with patch("claudeChatCard.vaultSearch.confirm_pick", return_value=Path("C:/vault/1 Project/Plan.md")) as confirm:
+            self.card.picker.picked.emit(NOTES[0]["path"])
+
+        confirm.assert_called_once_with("Dijkstra", result, NOTES[0]["path"])
+        self.assertIn("connected to <b>Plan</b>", self.card.picker.outcome_label.text())
+
+    def test_a_pick_that_cannot_be_saved_says_so(self):
+        lookup = self.startLookup()
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES})
+
+        with patch("claudeChatCard.vaultSearch.confirm_pick", side_effect=FileExistsError):
+            self.card.picker.picked.emit(NOTES[0]["path"])
+
+        self.assertEqual(self.card.picker.outcome_label.text(), "couldn't save the note")
+
+    def test_a_pick_whose_note_is_gone_says_the_link_was_skipped(self):
+        lookup = self.startLookup()
+        lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
+
+        with patch("claudeChatCard.vaultSearch.confirm_pick", return_value=None):
+            self.card.picker.picked.emit(NOTES[0]["path"])
+
+        self.assertEqual(self.card.picker.outcome_label.text(), "note not found — link skipped")
+
+    def test_a_vocab_hit_shows_the_row_without_a_picker(self):
+        lookup = self.startLookup("? 안녕")
+
+        lookup.on_result({"hit": True, "kind": "vocab", "path": "Vocab.md", "content": "...", "row": ["안녕", "hello"], "notes": NOTES})
+
+        self.assertIn("안녕", self.card.turns[-1]["text"])
+        self.assertIn("hello", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_a_vocab_miss_says_so_without_a_picker(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result({"hit": False, "kind": "vocab", "notes": NOTES})
+
+        self.assertIn("감사", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_an_empty_draft_offers_nothing_to_save(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_MISS, "draft": "", "notes": NOTES})
+
+        self.assertIsNone(self.card.picker)
+
+    def test_a_draft_that_could_never_be_saved_offers_no_picker(self):
+        # "TCP/IP" isn't a valid Windows filename, so picking would only fail.
+        lookup = self.startLookup("? TCP/IP")
+
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES})
+
+        self.assertIn("A drafted explanation.", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_no_candidate_notes_means_no_picker(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_HIT, "notes": []})
+
+        self.assertIsNone(self.card.picker)
+
+    def test_dismissing_cancels_an_in_flight_lookup(self):
+        lookup = self.startLookup()
+
+        self.card.dismiss()
+
+        self.assertTrue(lookup.cancelled)
+        self.assertIsNone(self.card.lookup)
 
 
 class ChatSlotTests(unittest.TestCase):

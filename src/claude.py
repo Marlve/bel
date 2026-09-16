@@ -155,6 +155,9 @@ class ClaudeWorker(QObject):
       self.prompt = prompt
       self.session_id = session_id
       self.process = None
+      # True once run() ends on an error or a non-zero CLI exit (including a
+      # cancel's terminate()) - the streamed text is then not a whole answer.
+      self.failed = False
 
   def run(self):
       # `finished` must always fire, even on error - it's what tells the
@@ -169,7 +172,9 @@ class ClaudeWorker(QObject):
               on_session=self.session_started.emit,
           ):
               self.chunk.emit(text)
+          self.failed = self.process is not None and self.process.returncode != 0
       except Exception as error:
+          self.failed = True
           self.chunk.emit(f"[error: {error}]")
       finally:
           self.finished.emit()

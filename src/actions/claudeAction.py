@@ -46,6 +46,12 @@ class ClaudeRequest(QObject):
         self.timeout_timer.setSingleShot(True)
         self.timeout_timer.timeout.connect(self.cancel)
 
+    @property
+    def failed(self):
+        """Whether the answer ended on an error, a timeout or a cancel rather
+        than completing - only meaningful once `finished` has fired."""
+        return self.worker.failed
+
     def start(self):
         self.thread.start()
         self.timeout_timer.start(CLAUDE_TIMEOUT_MS)

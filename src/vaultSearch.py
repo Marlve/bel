@@ -9,16 +9,16 @@
 # called explicitly, which only happens after Derich confirms the drafted
 # text - ExplainQuery itself never calls them.
 #
-# The `[[Concept]]` auto-insert (issue 03 steps 3-4) needed a concrete
-# answer to "which note is Derich currently writing" before it could be
-# built - issue 05 resolved that as manual designation: Derich points Bel at
-# a note (set_current_note), sticky until he changes it, no OS/Obsidian
-# integration required. insert_concept_link is a no-op rather than an error
-# when nothing's designated or the designated note can't be found - it's a
-# convenience on top of the primary explain/write flow, never something that
-# should block it. Only concept-note hits/writes get a link - a `[[word]]`
-# link to a Korean vocab table row wouldn't resolve to anything in Obsidian,
-# so append_vocab_row doesn't call it.
+# The `[[Concept]]` link goes into whichever note Derich clicks in card.md's
+# note picker, shown on every `?` lookup - nothing is remembered between
+# lookups (this replaced issue 05's sticky set_current_note designation). On
+# a miss, that click is also the confirmation for writing the draft
+# (confirm_pick). insert_concept_link is a no-op rather than an error when the
+# picked note can't be found - it's a convenience on top of the primary
+# explain/write flow, never something that should block it. Only
+# concept-note hits/writes get a link - a `[[word]]` link to a Korean vocab
+# table row wouldn't resolve to anything in Obsidian, so append_vocab_row
+# doesn't call it.
 #
 # TriageQuery (issue 04) follows the same confirm-before-write split: it
 # only proposes a destination folder for an Inbox entry (list_inbox_entries
@@ -31,6 +31,7 @@
 
 import os
 import re
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Signal
@@ -74,6 +75,50 @@ def folder_matches(path_str, *parts):
     )
 
 
+LOOKUP_PREFIX = "?"
+
+RECENT_NOTES_LIMIT = 20
+RECENT_SECONDS = 24 * 60 * 60  # edited within this long counts as "recent" (card.md's sand dot)
+
+
+def lookup_query(text):
+    """The search term of a `? Dijkstra`-style chat message, or None if the
+    message is normal chat (card.md's trigger). A bare "?" is not a lookup -
+    it would otherwise draft a note titled ".md"."""
+    if not text.startswith(LOOKUP_PREFIX):
+        return None
+    return text[len(LOOKUP_PREFIX):].strip() or None
+
+
+def recent_notes(db_path=None, now=None):
+    """The note picker's candidates (card.md): indexed notes, most recently
+    edited first. The index never contains `6 Private/`, so neither does
+    this list."""
+    now = time.time() if now is None else now
+    conn = vaultIndex.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT path, mtime FROM notes ORDER BY mtime DESC LIMIT ?", (RECENT_NOTES_LIMIT,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return [{"path": path, "recent": now - mtime <= RECENT_SECONDS} for path, mtime in rows]
+
+
+def is_vocab_query(query):
+    """A query containing Hangul is a Korean vocab lookup, not a concept."""
+    return re.search(r"[ᄀ-ᇿ㄰-㆏가-힣]", query) is not None
+
+
+def lookup(query, vault_path=None, db_path=None):
+    """Everything a `?` lookup needs from the vault, in one call so
+    SearchWorker can run it all off the UI thread: the index is refreshed
+    first (nothing else in the app refreshes it), then searched, then
+    listed for the note picker."""
+    vaultIndex.refresh(vault_path=vault_path, db_path=db_path)
+    return {"found": search_notes(query, db_path=db_path), "notes": recent_notes(db_path=db_path)}
+
+
 def search_notes(query, db_path=None):
     """Checks for an existing answer to `query` before Bel explains or files
     anything new: an atomic concept note at `<Reference>/<query>.md`, or a
@@ -104,41 +149,14 @@ def search_notes(query, db_path=None):
                 # file - "an" must not hit a row translated as "and,
                 # additionally" (issue 12).
                 wanted = query.strip().casefold()
-                if wanted and any(
-                    cell.casefold() == wanted
-                    for cells in table_rows(content)
-                    for cell in cells
-                ):
-                    return {"kind": "vocab", "path": path, "content": content}
+                for cells in table_rows(content):
+                    if wanted and any(cell.casefold() == wanted for cell in cells):
+                        row = [cell for cell in cells if cell]
+                        return {"kind": "vocab", "path": path, "content": content, "row": row}
 
         return None
     finally:
         conn.close()
-
-
-# Bel's own local state, matching the Path.home() / ".bel" convention already
-# used for vaultIndex.INDEX_DB_PATH and claude.py's CLAUDE_CWD.
-CURRENT_NOTE_PATH = Path.home() / ".bel" / "current-note.txt"
-
-
-def set_current_note(path, store_path=None):
-    """Designates `path` (vault-relative, matching search_notes' own "path"
-    format) as the note Derich is currently writing (issue 05's manual-
-    designation decision) - sticky until the next call to set_current_note.
-    Bel has no view onto Obsidian's own editor state, so this is the only
-    way it learns where insert_concept_link should write."""
-    store_path = store_path or CURRENT_NOTE_PATH
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(str(path), encoding="utf-8")
-
-
-def get_current_note(store_path=None):
-    """Returns the designated path, or None if Derich hasn't set one yet."""
-    store_path = store_path or CURRENT_NOTE_PATH
-    try:
-        return store_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
 
 
 def is_off_limits(relative):
@@ -152,26 +170,22 @@ def is_off_limits(relative):
     )
 
 
-def insert_concept_link(query, vault_path=None, store_path=None):
-    """Auto-inserts a `[[query]]` link into the currently-designated note
-    (issue 03 steps 3-4) - mechanical and low-risk, so no confirmation of
-    its own. Appended as its own line, matching append_vocab_row's
-    append-only style, since Bel has no notion of cursor position in a file
-    it doesn't render. A no-op, not an error, when no note is designated or
-    it can no longer be found - see the module comment above."""
-    current = get_current_note(store_path=store_path)
-    if current is None:
-        return None
+def insert_concept_link(query, note, vault_path=None):
+    """Inserts a `[[query]]` link into `note` (vault-relative), the note
+    Derich picked in card.md's picker. Appended as its own line, matching
+    append_vocab_row's append-only style, since Bel has no notion of cursor
+    position in a file it doesn't render. A no-op, not an error, when the
+    note can no longer be found - see the module comment above."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
-    # set_current_note accepts any string, so the Private exclusion has to
-    # be enforced here (issue 16). Checked on the path string first, so an
-    # ordinary Private designation is refused without touching the
-    # filesystem at all - even resolve() opens a handle on Windows. The
+    # `note` is any string as far as this function knows, so the Private
+    # exclusion has to be enforced here (issue 16). Checked on the path
+    # string first, so an ordinary Private path is refused without touching
+    # the filesystem at all - even resolve() opens a handle on Windows. The
     # resolved check after it catches aliases a string can't see (8.3 short
     # names, junctions, the trailing dots/spaces Windows ignores).
-    if is_off_limits(Path(os.path.normpath(current))):
+    if is_off_limits(Path(os.path.normpath(note))):
         return None
-    path = vault_path / current
+    path = vault_path / note
     try:
         if is_off_limits(path.resolve().relative_to(vault_path.resolve())):
             return None
@@ -220,17 +234,20 @@ def table_rows(content):
             yield table_cells(line)
 
 
-def write_concept_note(query, content, vault_path=None, store_path=None):
+def is_valid_note_title(query):
+    """False if `query` contains a character Windows forbids in filenames.
+    "/" and "\\" would write outside "Reference/"; ":" silently writes an
+    NTFS alternate data stream instead of a note; the rest raise an
+    OSError."""
+    return re.search(r'[<>:"/\\|?*\x00-\x1f]', query) is None
+
+
+def write_concept_note(query, content, vault_path=None):
     """Writes a confirmed miss-case explanation as a new atomic concept
     note (issue 03 step 4). Call only after Derich has confirmed the draft
     - this performs the write with no confirmation of its own, but refuses
-    to overwrite an existing note. Also auto-inserts the `[[query]]` link
-    into whatever note is currently designated (issue 03 step 4's "no separate confirmation for
-    the link itself") - see insert_concept_link."""
-    if re.search(r'[<>:"/\\|?*\x00-\x1f]', query):
-        # Windows' illegal filename characters. "/" and "\\" would write
-        # outside "Reference/"; ":" silently writes an NTFS alternate data
-        # stream instead of a note; the rest raise an OSError.
+    to overwrite an existing note."""
+    if not is_valid_note_title(query):
         raise ValueError(f"query must be a single valid note title: {query!r}")
     vault_path = vault_path or vaultIndex.VAULT_PATH
     reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
@@ -240,8 +257,22 @@ def write_concept_note(query, content, vault_path=None, store_path=None):
     # as move_inbox_entry.
     with path.open("x", encoding="utf-8") as f:
         f.write(content)
-    insert_concept_link(query, vault_path=vault_path, store_path=store_path)
     return path
+
+
+def confirm_pick(query, result, note, vault_path=None):
+    """Derich clicked `note` in the picker for ExplainQuery's `result` -
+    card.md's "clicking a row is the action". On a concept hit that only
+    inserts the link, named after the matched note's real filename (a hit
+    can be case-insensitive, so the query's casing isn't the title's). On a
+    miss the click is also the confirmation: the draft is written as a new
+    note first, and the link is only inserted once that write succeeds."""
+    if result["hit"]:
+        concept = Path(result["path"]).stem
+    else:
+        write_concept_note(query, result["draft"], vault_path=vault_path)
+        concept = query
+    return insert_concept_link(concept, note, vault_path=vault_path)
 
 
 def append_vocab_row(word, translation, vault_path=None):
@@ -300,44 +331,45 @@ def move_inbox_entry(path, folder, vault_path=None):
 
 
 class SearchWorker(QObject):
-    """Runs search_notes() on a background thread, mirroring ClaudeWorker's
-    cross-thread pattern (see claude.py). search_notes() pulls every
-    indexed path into memory and, on a hit, fetches the matched note's
-    content, all before returning - keeping that off the Qt main thread is
-    this worker's whole reason to exist (issue 08)."""
+    """Runs lookup() on a background thread, mirroring ClaudeWorker's
+    cross-thread pattern (see claude.py). lookup() refreshes the index,
+    searches it and lists the picker's notes, all before returning - keeping
+    that off the Qt main thread is this worker's whole reason to exist
+    (issue 08)."""
 
     finished = Signal(object)
 
-    def __init__(self, query, db_path=None):
+    def __init__(self, query, vault_path=None, db_path=None):
         super().__init__()
         self.query = query
+        self.vault_path = vault_path
         self.db_path = db_path
 
     def run(self):
         # `finished` must always fire, same as ClaudeWorker.run - it's the
         # only thing that resolves the query and lets ExplainQuery disconnect
         # from aboutToQuit (issue 18). A failed lookup (locked db, a row
-        # deleted mid-search) is reported as a miss.
+        # deleted mid-search) is reported as a miss with no notes to pick,
+        # so nothing can be written off the back of it.
         try:
-            hit = search_notes(self.query, db_path=self.db_path)
+            outcome = lookup(self.query, vault_path=self.vault_path, db_path=self.db_path)
         except Exception:
-            hit = None
-        self.finished.emit(hit)
+            outcome = {"found": None, "notes": []}
+        self.finished.emit(outcome)
 
 
 class SearchRequest(QObject):
-    """One search_notes() lookup, start to finish. Mirrors ClaudeRequest's
-    shape (actions/claudeAction.py): moves the actual lookup to a
-    background QThread so ExplainQuery.start() - which used to call
-    search_notes() straight on its own (UI) thread - doesn't block on it
-    (issue 08)."""
+    """One lookup(), start to finish. Mirrors ClaudeRequest's shape
+    (actions/claudeAction.py): moves the actual lookup to a background
+    QThread so ExplainQuery.start() - which used to call search_notes()
+    straight on its own (UI) thread - doesn't block on it (issue 08)."""
 
     finished = Signal(object)
 
-    def __init__(self, query, db_path=None, parent=None):
+    def __init__(self, query, vault_path=None, db_path=None, parent=None):
         super().__init__(parent)
         self.thread = QThread()
-        self.worker = SearchWorker(query, db_path=db_path)
+        self.worker = SearchWorker(query, vault_path=vault_path, db_path=db_path)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
@@ -346,17 +378,17 @@ class SearchRequest(QObject):
     def start(self):
         self.thread.start()
 
-    def onWorkerFinished(self, hit):
+    def onWorkerFinished(self, outcome):
         # Runs on the main thread - the worker emits this from its own
         # thread as run() returns, so by now there is nothing left to wait
         # for. Mirrors ClaudeRequest.onWorkerFinished.
         self.thread.quit()
         self.thread.wait(2000)
-        self.finished.emit(hit)
+        self.finished.emit(outcome)
 
     def cancel(self):
         # Unlike ClaudeRequest.cancel(), there's no subprocess to terminate
-        # - search_notes() is a bounded local SQLite read with nothing to
+        # - lookup() is a bounded local read/index refresh with nothing to
         # interrupt mid-flight - so this just confirms the thread has
         # stopped before returning (matters most when called from
         # aboutToQuit, since the app may not get another event loop turn
@@ -366,13 +398,17 @@ class SearchRequest(QObject):
 
 
 class ExplainQuery:
-    """Drives the explain-on-miss half of issue 03, using issue 02's chosen
-    architecture. Mirrors CalendarNudgeQuery's shape (calendarNudge.py): a
-    plain callback-based class wrapping one ClaudeRequest, rather than a
-    bare askBel() call, so the CLI subprocess still runs on a background
-    QThread instead of blocking the UI. The hit-path search_notes() lookup
-    is threaded the same way, via SearchRequest (issue 08) - neither path
-    touches the UI thread with slow work."""
+    """Drives one `? query` lookup for card.md's picker, using issue 02's
+    chosen architecture. Mirrors CalendarNudgeQuery's shape
+    (calendarNudge.py): a plain callback-based class wrapping one
+    ClaudeRequest, rather than a bare askBel() call, so the CLI subprocess
+    still runs on a background QThread instead of blocking the UI. The
+    lookup itself is threaded the same way, via SearchRequest (issue 08) -
+    neither path touches the UI thread with slow work.
+
+    Never writes to the vault: on_result gets the hit or draft plus the
+    notes to pick from, and confirm_pick does the writing once Derich
+    clicks one."""
 
     def __init__(
         self,
@@ -380,18 +416,17 @@ class ExplainQuery:
         on_result,
         db_path=None,
         vault_path=None,
-        store_path=None,
         request_factory=ClaudeRequest,
         search_request_factory=SearchRequest,
     ):
         self.query = query
         self.on_result = on_result
         self.db_path = db_path
-        self.vault_path = vault_path  # passed through to insert_concept_link on a concept hit
-        self.store_path = store_path  # passed through to insert_concept_link on a concept hit
+        self.vault_path = vault_path
         self.request_factory = request_factory  # swappable in tests, so the miss path never spawns a real `claude` subprocess
-        self.search_request_factory = search_request_factory  # swappable in tests, so the hit-path lookup doesn't need a real QThread/event loop
+        self.search_request_factory = search_request_factory  # swappable in tests, so the lookup doesn't need a real QThread/event loop
         self.text = ""
+        self.notes = []
         self.search_request = None
         self.request = None
         self.cancelled = False
@@ -403,35 +438,34 @@ class ExplainQuery:
             app.aboutToQuit.connect(self.cancel)
 
     def start(self):
-        self.search_request = self.search_request_factory(self.query, db_path=self.db_path)
+        self.search_request = self.search_request_factory(self.query, vault_path=self.vault_path, db_path=self.db_path)
         self.search_request.finished.connect(self.onSearchFinished)
         self.search_request.start()
 
-    def onSearchFinished(self, hit):
+    def onSearchFinished(self, outcome):
         # `finished` still fires after cancel() (SearchRequest mirrors
         # ClaudeRequest's guarantee here) - without this guard a cancelled
-        # query could still kick off the miss-case draft or a stale link
-        # insert after the caller has moved on. Must disconnect here too
-        # (not just return), same as onFinished's guard below - otherwise a
-        # query cancelled while its search is still in flight never
-        # disconnects from aboutToQuit and leaks for the app's lifetime
-        # (issue 06, reintroduced for this path).
+        # query could still kick off the miss-case draft after the caller
+        # has moved on. Must disconnect here too (not just return), same as
+        # onFinished's guard below - otherwise a query cancelled while its
+        # search is still in flight never disconnects from aboutToQuit and
+        # leaks for the app's lifetime (issue 06, reintroduced for this path).
         if self.cancelled:
             self.disconnectAboutToQuit()
             return
+        self.notes = outcome["notes"]
+        hit = outcome["found"]
         if hit is not None:
-            if hit["kind"] == "concept":
-                # A `[[word]]` link to a Korean vocab table row wouldn't
-                # resolve to anything in Obsidian - only concept-note hits
-                # get the auto-insert (see insert_concept_link). Linked by
-                # the matched note's real filename, not self.query - a hit
-                # can be case-insensitive (search_notes/folder_matches), so
-                # the query text isn't guaranteed to match the note's actual
-                # on-disk title.
-                concept_name = Path(hit["path"]).stem
-                insert_concept_link(concept_name, vault_path=self.vault_path, store_path=self.store_path)
             self.disconnectAboutToQuit()
-            self.on_result({"hit": True, **hit})
+            # Linking the matched note into itself is never what's wanted.
+            notes = [note for note in self.notes if note["path"] != hit["path"]]
+            self.on_result({"hit": True, **hit, "notes": notes})
+            return
+        if is_vocab_query(self.query):
+            # A vocab miss has no confirm design yet, and drafting would
+            # otherwise offer to write "3 Reference/<word>.md".
+            self.disconnectAboutToQuit()
+            self.on_result({"hit": False, "kind": "vocab", "notes": self.notes})
             return
 
         self.request = self.request_factory(EXPLAIN_PROMPT_TEMPLATE.format(query=self.query))
@@ -449,7 +483,10 @@ class ExplainQuery:
         self.disconnectAboutToQuit()
         if self.cancelled:
             return
-        self.on_result({"hit": False, "draft": self.text})
+        # An error or cut-off answer is reported as no draft at all, so it can
+        # never be offered for saving.
+        draft = "" if self.request.failed else self.text
+        self.on_result({"hit": False, "kind": "concept", "draft": draft, "notes": self.notes})
 
     def cancel(self):
         self.cancelled = True

@@ -23,12 +23,16 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
+from pathlib import Path
+
 import cardStore
 import chatMarkdown
 import dockCorner
 import style
+import vaultSearch
 import wedgeConfig
 from floatingCard import paint_card_bands
+from notePicker import NotePicker
 from anims import curves
 from claudeChatCardState import ChatCardState
 from claudeChatCardAnimation import ChatCardAnimation
@@ -95,6 +99,9 @@ class ChatCard(QWidget):
         self.streaming_index = None
         self.auto_scroll = True
         self.focus_composer_on_land = False
+        self.lookup = None  # the `?` lookup in flight, if any (card.md)
+        self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
+        self.picker = None  # the latest lookup's note picker, if it got one
 
         self.buildContent()
         self.setContent(False)
@@ -316,7 +323,11 @@ class ChatCard(QWidget):
     # --- the conversation ---
 
     def send(self, text):
-        if self.state.request is not None or self.state.action is None:
+        if self.state.request is not None or self.lookup is not None or self.state.action is None:
+            return
+        query = vaultSearch.lookup_query(text)
+        if query is not None:
+            self.startLookup(text, query)
             return
         if self.state.turn_count >= wedgeConfig.load_chat_context_limit():
             # The session has taken as much context as it's allowed to -
@@ -361,7 +372,66 @@ class ChatCard(QWidget):
         self.composer.setReadOnly(False)
         self.unwire()
 
+    # --- `?` lookups ---
+
+    def startLookup(self, text, query):
+        """A `? query` message searches the vault instead of chatting
+        (card.md). It never joins the Claude session, so turn_count and
+        session_id are left alone."""
+        self.appendUserTurn(text)
+        label = self.appendClaudeTurn()
+        index = self.streaming_index
+        self.composer.setReadOnly(True)
+        self.animation.startTyping(label)
+        self.lookup = self.lookup_factory(query, lambda result: self.onLookupResult(query, label, index, result))
+        self.lookup.start()
+
+    def onLookupResult(self, query, label, index, result):
+        self.animation.stopTyping()
+        self.lookup = None
+        self.picker = None
+        self.composer.setReadOnly(False)
+
+        if result["kind"] == "vocab":
+            text = " — ".join(result["row"]) if result["hit"] else f"{query} isn't in Vocab.md yet."
+        elif result["hit"]:
+            text = result["content"]
+        else:
+            text = result["draft"] or "couldn't draft an explanation."
+        self.state.turns[index]["text"] = text
+        self.setTurnHtml(label, text, caret=False)
+
+        # Only a concept gets a link, and there's nothing to confirm without
+        # a draft that could be saved or without a note to put the link in.
+        pickable = result["kind"] == "concept" and (
+            result["hit"] or (result["draft"] and vaultSearch.is_valid_note_title(query))
+        )
+        if pickable and result["notes"]:
+            self.picker = NotePicker(result["notes"], self.replyWidth())
+            picker = self.picker
+            picker.picked.connect(lambda note: self.onNotePicked(picker, query, result, note))
+            row = QHBoxLayout()
+            row.addWidget(picker)
+            row.addStretch(1)
+            self.insertTurnRow(row)
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
+    def onNotePicked(self, picker, query, result, note):
+        try:
+            linked = vaultSearch.confirm_pick(query, result, note)
+        except (OSError, ValueError):
+            picker.showFailed("couldn't save the note")
+            return
+        if linked is None:
+            picker.showFailed("note not found — link skipped")
+        else:
+            picker.showConnected(Path(note).stem)
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
     def unwire(self):
+        if self.lookup is not None:
+            self.lookup.cancel()
+            self.lookup = None
         if self.state.request is None:
             return
         self.state.request.chunk.disconnect(self.onChunk)

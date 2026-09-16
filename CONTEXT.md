@@ -36,10 +36,17 @@ files (`src/vaultIndex.py`, see ADR-0008), refreshed incrementally rather
 than rescanned per call. Lives under Bel's own local state
 (`~/.bel/vault-index.sqlite3`), never inside the vault folder itself.
 
-**Current note**:
-The vault note Derich manually designates as the one he's currently writing
-(`vaultSearch.set_current_note`/`get_current_note`), sticky until he changes
-it. Bel has no view onto Obsidian's own editor state, so this designation is
-what `insert_concept_link` targets for the `[[Concept]]` auto-insert.
+**Lookup**:
+A chat message prefixed `?` (`? Dijkstra`): Bel searches the vault for the
+rest of the message instead of sending it to Claude as normal chat
+(`vaultSearch.lookup_query`, `ExplainQuery`).
+
+**Picked note**:
+The vault note Derich clicks in a lookup's note picker (`card.md`) - where
+the `[[Concept]]` link goes. Chosen per lookup, never remembered. On a miss,
+picking a note is also the confirmation that writes the draft
+(`vaultSearch.confirm_pick`). Bel has no view onto Obsidian's own editor
+state, so the candidates are recently edited indexed notes.
 Distinct from `NoteCard` (`src/noteCard.py`), Bel's own sticky-note widget -
 not a view onto any actual vault `.md` file.
+_Avoid_: Current note - the earlier sticky designation this replaced.
