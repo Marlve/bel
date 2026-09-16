@@ -31,6 +31,7 @@
 import re
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication
 
 import vaultIndex
@@ -235,21 +236,93 @@ def move_inbox_entry(path, folder, vault_path=None):
     return destination
 
 
+class SearchWorker(QObject):
+    """Runs search_notes() on a background thread, mirroring ClaudeWorker's
+    cross-thread pattern (see claude.py). search_notes() pulls every
+    indexed path into memory and, on a hit, fetches the matched note's
+    content, all before returning - keeping that off the Qt main thread is
+    this worker's whole reason to exist (issue 08)."""
+
+    finished = Signal(object)
+
+    def __init__(self, query, db_path=None):
+        super().__init__()
+        self.query = query
+        self.db_path = db_path
+
+    def run(self):
+        hit = search_notes(self.query, db_path=self.db_path)
+        self.finished.emit(hit)
+
+
+class SearchRequest(QObject):
+    """One search_notes() lookup, start to finish. Mirrors ClaudeRequest's
+    shape (actions/claudeAction.py): moves the actual lookup to a
+    background QThread so ExplainQuery.start() - which used to call
+    search_notes() straight on its own (UI) thread - doesn't block on it
+    (issue 08)."""
+
+    finished = Signal(object)
+
+    def __init__(self, query, db_path=None, parent=None):
+        super().__init__(parent)
+        self.thread = QThread()
+        self.worker = SearchWorker(query, db_path=db_path)
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.onWorkerFinished)
+
+    def start(self):
+        self.thread.start()
+
+    def onWorkerFinished(self, hit):
+        # Runs on the main thread - the worker emits this from its own
+        # thread as run() returns, so by now there is nothing left to wait
+        # for. Mirrors ClaudeRequest.onWorkerFinished.
+        self.thread.quit()
+        self.thread.wait(2000)
+        self.finished.emit(hit)
+
+    def cancel(self):
+        # Unlike ClaudeRequest.cancel(), there's no subprocess to terminate
+        # - search_notes() is a bounded local SQLite read with nothing to
+        # interrupt mid-flight - so this just confirms the thread has
+        # stopped before returning (matters most when called from
+        # aboutToQuit, since the app may not get another event loop turn
+        # afterward).
+        self.thread.quit()
+        self.thread.wait(2000)
+
+
 class ExplainQuery:
     """Drives the explain-on-miss half of issue 03, using issue 02's chosen
     architecture. Mirrors CalendarNudgeQuery's shape (calendarNudge.py): a
     plain callback-based class wrapping one ClaudeRequest, rather than a
     bare askBel() call, so the CLI subprocess still runs on a background
-    QThread instead of blocking the UI."""
+    QThread instead of blocking the UI. The hit-path search_notes() lookup
+    is threaded the same way, via SearchRequest (issue 08) - neither path
+    touches the UI thread with slow work."""
 
-    def __init__(self, query, on_result, db_path=None, vault_path=None, store_path=None, request_factory=ClaudeRequest):
+    def __init__(
+        self,
+        query,
+        on_result,
+        db_path=None,
+        vault_path=None,
+        store_path=None,
+        request_factory=ClaudeRequest,
+        search_request_factory=SearchRequest,
+    ):
         self.query = query
         self.on_result = on_result
         self.db_path = db_path
         self.vault_path = vault_path  # passed through to insert_concept_link on a concept hit
         self.store_path = store_path  # passed through to insert_concept_link on a concept hit
         self.request_factory = request_factory  # swappable in tests, so the miss path never spawns a real `claude` subprocess
+        self.search_request_factory = search_request_factory  # swappable in tests, so the hit-path lookup doesn't need a real QThread/event loop
         self.text = ""
+        self.search_request = None
         self.request = None
         self.cancelled = False
 
@@ -260,7 +333,22 @@ class ExplainQuery:
             app.aboutToQuit.connect(self.cancel)
 
     def start(self):
-        hit = search_notes(self.query, db_path=self.db_path)
+        self.search_request = self.search_request_factory(self.query, db_path=self.db_path)
+        self.search_request.finished.connect(self.onSearchFinished)
+        self.search_request.start()
+
+    def onSearchFinished(self, hit):
+        # `finished` still fires after cancel() (SearchRequest mirrors
+        # ClaudeRequest's guarantee here) - without this guard a cancelled
+        # query could still kick off the miss-case draft or a stale link
+        # insert after the caller has moved on. Must disconnect here too
+        # (not just return), same as onFinished's guard below - otherwise a
+        # query cancelled while its search is still in flight never
+        # disconnects from aboutToQuit and leaks for the app's lifetime
+        # (issue 06, reintroduced for this path).
+        if self.cancelled:
+            self.disconnectAboutToQuit()
+            return
         if hit is not None:
             if hit["kind"] == "concept":
                 # A `[[word]]` link to a Korean vocab table row wouldn't
@@ -295,6 +383,8 @@ class ExplainQuery:
 
     def cancel(self):
         self.cancelled = True
+        if self.search_request is not None:
+            self.search_request.cancel()
         if self.request is not None:
             self.request.cancel()
 

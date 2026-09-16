@@ -478,6 +478,31 @@ class FakeClaudeRequest:
         self.cancelled = True
 
 
+class FakeSearchRequest:
+    """Stands in for SearchRequest (issue 08) - no real QThread, so
+    hit-path tests stay synchronous and controllable, mirroring
+    FakeClaudeRequest's role for the miss path. start() still runs the
+    real (cheap, local) search_notes() lookup and stashes the result on
+    self.hit; only the Signal is faked, so a test must explicitly emit
+    finished to resolve it, same as FakeClaudeRequest's explicit-emit
+    shape."""
+
+    def __init__(self, query, db_path=None):
+        self.query = query
+        self.db_path = db_path
+        self.finished = FakeSignal()
+        self.started = False
+        self.cancelled = False
+        self.hit = None
+
+    def start(self):
+        self.started = True
+        self.hit = vaultSearch.search_notes(self.query, db_path=self.db_path)
+
+    def cancel(self):
+        self.cancelled = True
+
+
 class ExplainQueryTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()
@@ -500,8 +525,13 @@ class ExplainQueryTests(unittest.TestCase):
             vault_path=self.vault,
             store_path=self.store_path,
             request_factory=FakeClaudeRequest,
+            search_request_factory=FakeSearchRequest,
         )
         explain.start()
+        # The hit-path lookup is threaded too now (issue 08) - resolve it
+        # synchronously here so every existing test below can keep treating
+        # a hit/miss outcome as available right after start().
+        explain.search_request.finished.emit(explain.search_request.hit)
         return explain
 
     def test_hit_reports_the_existing_note_without_starting_a_request(self):
@@ -600,6 +630,57 @@ class ExplainQueryTests(unittest.TestCase):
         explain.request.finished.emit()
 
         self.assertEqual(self.results, [])
+
+    def test_hit_after_cancel_does_not_report_a_stale_hit(self):
+        # Only possible now that the hit-path lookup is threaded (issue
+        # 08) - before, search_notes() resolved synchronously inside
+        # start(), so cancel() could never race it.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Shortest path algorithm.")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        explain = vaultSearch.ExplainQuery(
+            "Dijkstra",
+            lambda result: self.results.append(result),
+            db_path=self.db_path,
+            vault_path=self.vault,
+            store_path=self.store_path,
+            request_factory=FakeClaudeRequest,
+            search_request_factory=FakeSearchRequest,
+        )
+        explain.start()
+
+        explain.cancel()
+        explain.search_request.finished.emit(explain.search_request.hit)
+
+        self.assertEqual(self.results, [])
+
+    def test_a_cancel_during_search_still_disconnects_from_aboutToQuit(self):
+        # Regression: onSearchFinished's cancelled guard must disconnect
+        # before returning, same as onFinished's - otherwise a query
+        # cancelled while its search is still in flight leaks its
+        # aboutToQuit connection forever (issue 06, reintroduced by 08).
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Shortest path algorithm.")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        fake_app = FakeApp()
+
+        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+            explain = vaultSearch.ExplainQuery(
+                "Dijkstra",
+                lambda result: self.results.append(result),
+                db_path=self.db_path,
+                vault_path=self.vault,
+                store_path=self.store_path,
+                request_factory=FakeClaudeRequest,
+                search_request_factory=FakeSearchRequest,
+            )
+            explain.start()
+            explain.cancel()
+            explain.search_request.finished.emit(explain.search_request.hit)
+
+        self.assertEqual(fake_app.aboutToQuit.slots, [])
 
     def test_a_hit_disconnects_from_aboutToQuit_without_waiting_for_a_request(self):
         reference = self.vault / "3 Reference"
