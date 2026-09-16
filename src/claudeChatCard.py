@@ -392,8 +392,8 @@ class ChatCard(QWidget):
         self.picker = None
         self.composer.setReadOnly(False)
 
-        if result["kind"] == "vocab":
-            text = " — ".join(result["row"]) if result["hit"] else f"{query} isn't in Vocab.md yet."
+        if result["kind"] == "vocab" and result["hit"]:
+            text = " — ".join(result["row"])
         elif result["hit"]:
             text = result["content"]
         else:

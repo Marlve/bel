@@ -522,12 +522,20 @@ class ChatCardTests(unittest.TestCase):
         self.assertIn("hello", self.card.turns[-1]["text"])
         self.assertIsNone(self.card.picker)
 
-    def test_a_vocab_miss_says_so_without_a_picker(self):
+    def test_a_vocab_miss_shows_claudes_answer_without_a_picker(self):
         lookup = self.startLookup("? 감사")
 
-        lookup.on_result({"hit": False, "kind": "vocab", "notes": NOTES})
+        lookup.on_result({"hit": False, "kind": "vocab", "draft": "감사 means thanks.", "notes": NOTES})
 
-        self.assertIn("감사", self.card.turns[-1]["text"])
+        self.assertIn("감사 means thanks.", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_a_vocab_miss_without_an_answer_says_so(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result({"hit": False, "kind": "vocab", "draft": "", "notes": NOTES})
+
+        self.assertEqual(self.card.turns[-1]["text"], "couldn't draft an explanation.")
         self.assertIsNone(self.card.picker)
 
     def test_an_empty_draft_offers_nothing_to_save(self):

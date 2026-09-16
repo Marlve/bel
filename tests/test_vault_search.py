@@ -836,13 +836,27 @@ class ExplainQueryTests(unittest.TestCase):
 
         self.assertEqual([note["path"] for note in self.results[0]["notes"]], [str(Path("1 Project") / "Plan.md")])
 
-    def test_a_korean_miss_is_reported_without_drafting_a_concept_note(self):
-        # Vocab misses wait on their own confirm design - a Hangul query
-        # must not fall through to drafting "3 Reference/<word>.md".
+    def test_a_korean_miss_starts_a_request_and_reports_its_draft_as_kind_vocab(self):
+        # Issue 22: Claude answers what the word means, but as kind "vocab" -
+        # never a concept draft that could be saved as "3 Reference/<word>.md".
         explain = self.start("감사")
 
-        self.assertIsNone(explain.request)
-        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "notes": []}])
+        self.assertIsInstance(explain.request, FakeClaudeRequest)
+        self.assertTrue(explain.request.started)
+        self.assertIn("감사", explain.request.prompt)
+        explain.request.chunk.emit("Thanks.")
+        explain.request.finished.emit()
+
+        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": []}])
+
+    def test_a_failed_korean_answer_is_reported_as_no_draft(self):
+        explain = self.start("감사")
+
+        explain.request.chunk.emit("[error: claude exited]")
+        explain.request.failed = True
+        explain.request.finished.emit()
+
+        self.assertEqual((self.results[0]["kind"], self.results[0]["draft"]), ("vocab", ""))
 
     def test_cancel_before_a_request_starts_is_a_no_op(self):
         explain = vaultSearch.ExplainQuery(
@@ -901,7 +915,8 @@ class ExplainQueryTests(unittest.TestCase):
         fake_app = FakeApp()
 
         with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
-            self.start("감사")
+            explain = self.start("감사")
+            explain.request.finished.emit()
 
         self.assertEqual(fake_app.aboutToQuit.slots, [])
 

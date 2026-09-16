@@ -12,8 +12,9 @@
 # The `[[Concept]]` link goes into whichever note Derich clicks in card.md's
 # note picker, shown on every `?` lookup - nothing is remembered between
 # lookups (this replaced issue 05's sticky set_current_note designation). On
-# a miss, that click is also the confirmation for writing the draft
-# (confirm_pick). insert_concept_link is a no-op rather than an error when the
+# a concept miss, that click is also the confirmation for writing the draft
+# (confirm_pick). A Korean miss only shows Claude's answer - no picker, no
+# write - until korean.md's design is built (issue 22). insert_concept_link is a no-op rather than an error when the
 # picked note can't be found - it's a convenience on top of the primary
 # explain/write flow, never something that should block it. Only
 # concept-note hits/writes get a link - a `[[word]]` link to a Korean vocab
@@ -41,6 +42,8 @@ import vaultIndex
 from actions.claudeAction import ClaudeRequest
 
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
+
+KOREAN_PROMPT_TEMPLATE = 'Concisely explain what the Korean "{query}" means. If it is a sentence, also explain how its grammar works.'
 
 # The three inbox-triage destinations (issue 04) - deliberately excludes
 # "Inbox" itself and the other top-level folders (Atlas, Private, Templates),
@@ -427,6 +430,7 @@ class ExplainQuery:
         self.search_request_factory = search_request_factory  # swappable in tests, so the lookup doesn't need a real QThread/event loop
         self.text = ""
         self.notes = []
+        self.kind = None
         self.search_request = None
         self.request = None
         self.cancelled = False
@@ -462,13 +466,16 @@ class ExplainQuery:
             self.on_result({"hit": True, **hit, "notes": notes})
             return
         if is_vocab_query(self.query):
-            # A vocab miss has no confirm design yet, and drafting would
-            # otherwise offer to write "3 Reference/<word>.md".
-            self.disconnectAboutToQuit()
-            self.on_result({"hit": False, "kind": "vocab", "notes": self.notes})
-            return
+            # A vocab miss has no confirm design yet (korean.md), so Claude's
+            # answer is only shown, reported as kind "vocab" so it's never
+            # offered for saving as "3 Reference/<word>.md" (issue 22).
+            self.kind = "vocab"
+            prompt = KOREAN_PROMPT_TEMPLATE.format(query=self.query)
+        else:
+            self.kind = "concept"
+            prompt = EXPLAIN_PROMPT_TEMPLATE.format(query=self.query)
 
-        self.request = self.request_factory(EXPLAIN_PROMPT_TEMPLATE.format(query=self.query))
+        self.request = self.request_factory(prompt)
         self.request.chunk.connect(self.onChunk)
         self.request.finished.connect(self.onFinished)
         self.request.start()
@@ -486,7 +493,7 @@ class ExplainQuery:
         # An error or cut-off answer is reported as no draft at all, so it can
         # never be offered for saving.
         draft = "" if self.request.failed else self.text
-        self.on_result({"hit": False, "kind": "concept", "draft": draft, "notes": self.notes})
+        self.on_result({"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes})
 
     def cancel(self):
         self.cancelled = True
