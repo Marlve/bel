@@ -59,6 +59,8 @@ class FakeLookup:
 NOTES = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
 CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm."}
 CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation."}
+VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
+VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "vocab": VOCAB_NOTE}
 
 
 def teardownCard(card):
@@ -522,18 +524,60 @@ class ChatCardTests(unittest.TestCase):
         self.assertIn("hello", self.card.turns[-1]["text"])
         self.assertIsNone(self.card.picker)
 
-    def test_a_vocab_miss_shows_claudes_answer_without_a_picker(self):
+    def test_a_new_korean_word_shows_the_translation_and_offers_vocab_md(self):
         lookup = self.startLookup("? 감사")
 
-        lookup.on_result({"hit": False, "kind": "vocab", "draft": "감사 means thanks.", "notes": NOTES})
+        lookup.on_result(VOCAB_MISS)
 
-        self.assertIn("감사 means thanks.", self.card.turns[-1]["text"])
+        self.assertIn("thanks", self.card.turns[-1]["text"])
+        self.assertEqual([row.name_label.text() for row in self.card.picker.rows], ["Vocab"])
+
+    def test_picking_vocab_md_saves_the_word_and_its_translation(self):
+        lookup = self.startLookup("? 감사")
+        lookup.on_result({**VOCAB_MISS, "draft": "thanks\n"})
+
+        with patch("claudeChatCard.vaultSearch.append_vocab_row") as append:
+            self.card.picker.picked.emit(VOCAB_NOTE["path"])
+
+        append.assert_called_once_with("감사", "thanks")
+        self.assertIn("saved to <b>Vocab</b>", self.card.picker.outcome_label.text())
+
+    def test_a_vocab_save_that_fails_says_so(self):
+        lookup = self.startLookup("? 감사")
+        lookup.on_result(VOCAB_MISS)
+
+        with patch("claudeChatCard.vaultSearch.append_vocab_row", side_effect=OSError):
+            self.card.picker.picked.emit(VOCAB_NOTE["path"])
+
+        self.assertEqual(self.card.picker.outcome_label.text(), "couldn't save the word")
+
+    def test_a_korean_sentence_is_translated_but_never_offered_for_saving(self):
+        lookup = self.startLookup("? 감사 합니다")
+
+        lookup.on_result({**VOCAB_MISS, "draft": "thank you"})
+
+        self.assertIn("thank you", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_no_vocab_md_in_the_index_means_no_save_offer(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result({**VOCAB_MISS, "vocab": None})
+
+        self.assertIn("thanks", self.card.turns[-1]["text"])
+        self.assertIsNone(self.card.picker)
+
+    def test_a_blank_translation_is_never_offered_for_saving(self):
+        lookup = self.startLookup("? 감사")
+
+        lookup.on_result({**VOCAB_MISS, "draft": "  \n"})
+
         self.assertIsNone(self.card.picker)
 
     def test_a_vocab_miss_without_an_answer_says_so(self):
         lookup = self.startLookup("? 감사")
 
-        lookup.on_result({"hit": False, "kind": "vocab", "draft": "", "notes": NOTES})
+        lookup.on_result({**VOCAB_MISS, "draft": ""})
 
         self.assertEqual(self.card.turns[-1]["text"], "couldn't draft an explanation.")
         self.assertIsNone(self.card.picker)

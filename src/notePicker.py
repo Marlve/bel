@@ -1,13 +1,15 @@
 # The note picker a `?` lookup shows under Bel's answer or draft, per
 # card.md: one row per candidate vault note, and clicking a row *is* the
 # action - it picks where the `[[Concept]]` link goes and, on a miss,
-# confirms writing the draft. No buttons, no modal; the outcome appends as a
+# confirms writing the draft. A new Korean word reuses the same block with
+# Vocab.md as its only row and its own header, and clicking it confirms
+# saving the word (issue 23). No buttons, no modal; the outcome appends as a
 # row inside the same block. Only the first click counts, since the pick
 # may already have written to the vault.
 #
 # This widget never touches the vault itself - it only emits `picked`, and
-# ChatCard calls vaultSearch.confirm_pick and reports back via
-# showConnected/showFailed.
+# ChatCard calls vaultSearch.confirm_pick or append_vocab_row and reports
+# back via showConnected/showSaved/showFailed.
 
 import html
 from pathlib import Path
@@ -122,7 +124,7 @@ class NoteRow(QWidget):
 class NotePicker(QFrame):
     picked = Signal(str)
 
-    def __init__(self, notes, width, parent=None):
+    def __init__(self, notes, width, header="ambiguous — confirm the note", parent=None):
         super().__init__(parent)
         self.setObjectName("notePicker")
         self.setStyleSheet(
@@ -133,11 +135,12 @@ class NotePicker(QFrame):
         self.outcome_label = None
         self.outcome_dot = None
 
-        header = QHBoxLayout()
-        header.setSpacing(style.SPACE_2)
-        header.addWidget(SearchIcon())
-        header.addWidget(text_label("ambiguous — confirm the note", style.PICKER_HEADER_TEXT))
-        header.addStretch(1)
+        self.header_label = text_label(header, style.PICKER_HEADER_TEXT)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(style.SPACE_2)
+        header_row.addWidget(SearchIcon())
+        header_row.addWidget(self.header_label)
+        header_row.addStretch(1)
 
         rows_widget = QWidget()
         rows_layout = QVBoxLayout(rows_widget)
@@ -162,7 +165,7 @@ class NotePicker(QFrame):
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(style.SPACE_3, style.SPACE_2, style.SPACE_3, style.SPACE_2)
         self.body.setSpacing(style.SPACE_2)
-        self.body.addLayout(header)
+        self.body.addLayout(header_row)
         self.body.addWidget(self.scroll)
 
     def onRowClicked(self, path):
@@ -174,6 +177,9 @@ class NotePicker(QFrame):
 
     def showConnected(self, name):
         self.showOutcome(f"connected to <b>{html.escape(name)}</b>", style.PICKER_DOT_RECENT, Qt.RichText)
+
+    def showSaved(self, name):
+        self.showOutcome(f"saved to <b>{html.escape(name)}</b>", style.PICKER_DOT_RECENT, Qt.RichText)
 
     def showFailed(self, text):
         self.showOutcome(text, style.PICKER_DOT_OLDER, Qt.PlainText)

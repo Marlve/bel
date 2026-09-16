@@ -406,10 +406,24 @@ class ChatCard(QWidget):
         pickable = result["kind"] == "concept" and (
             result["hit"] or (result["draft"] and vaultSearch.is_valid_note_title(query))
         )
+        # A new Korean word is offered for saving with Vocab.md as the one
+        # row; a sentence never is (issue 23).
+        saveable_word = (
+            result["kind"] == "vocab"
+            and not result["hit"]
+            and result["draft"].strip()
+            and vaultSearch.is_single_word(query)
+            and result["vocab"] is not None
+        )
         if pickable and result["notes"]:
             self.picker = NotePicker(result["notes"], self.replyWidth())
             picker = self.picker
             picker.picked.connect(lambda note: self.onNotePicked(picker, query, result, note))
+        elif saveable_word:
+            self.picker = NotePicker([result["vocab"]], self.replyWidth(), header="new word — save to vocab")
+            picker = self.picker
+            picker.picked.connect(lambda note: self.onVocabPicked(picker, query, result))
+        if self.picker is not None:
             row = QHBoxLayout()
             row.addWidget(picker)
             row.addStretch(1)
@@ -426,6 +440,15 @@ class ChatCard(QWidget):
             picker.showFailed("note not found — link skipped")
         else:
             picker.showConnected(Path(note).stem)
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
+    def onVocabPicked(self, picker, query, result):
+        try:
+            vaultSearch.append_vocab_row(query, result["draft"].strip())
+        except OSError:
+            picker.showFailed("couldn't save the word")
+            return
+        picker.showSaved(Path(result["vocab"]["path"]).stem)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def unwire(self):

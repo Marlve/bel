@@ -252,6 +252,26 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual(path, korean / "Vocab.md")
         self.assertEqual(path.read_text(encoding="utf-8"), "| 안녕 | hello |\n| 감사 | thanks |\n")
 
+    def test_append_vocab_row_flattens_carriage_returns_so_the_row_stays_findable(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("", encoding="utf-8")
+
+        path = vaultSearch.append_vocab_row("감사", "thanks\r\ngratitude\rthank you", vault_path=self.vault)
+
+        self.assertEqual(path.read_bytes().decode("utf-8").splitlines(), ["| 감사 | thanks gratitude thank you |"])
+
+    def test_append_vocab_row_starts_a_new_line_when_the_file_does_not_end_with_one(self):
+        # Obsidian can save a note without a trailing newline - the new row
+        # must not glue onto the last table row.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |", encoding="utf-8")
+
+        path = vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n| 감사 | thanks |\n")
+
     def test_append_vocab_row_matches_areas_folder_ignoring_numeric_prefix(self):
         korean = self.vault / "Areas" / "Korean"
         korean.mkdir(parents=True)
@@ -732,7 +752,7 @@ class SearchWorkerTests(unittest.TestCase):
         with patch.object(vaultSearch, "lookup", side_effect=sqlite3.OperationalError("database is locked")):
             worker.run()
 
-        self.assertEqual(outcomes, [{"found": None, "notes": []}])
+        self.assertEqual(outcomes, [{"found": None, "notes": [], "vocab": None}])
 
 
 class ExplainQueryTests(unittest.TestCase):
@@ -849,7 +869,22 @@ class ExplainQueryTests(unittest.TestCase):
         explain.request.chunk.emit("Thanks.")
         explain.request.finished.emit()
 
-        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": []}])
+        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": [], "vocab": None}])
+
+    def test_a_korean_miss_reports_the_indexed_vocab_md_to_save_into(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n", encoding="utf-8")
+        explain = self.start("감사")
+
+        explain.request.finished.emit()
+
+        self.assertEqual(self.results[0]["vocab"], {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": True})
+
+    def test_a_korean_miss_asks_for_a_translation_only(self):
+        explain = self.start("감사")
+
+        self.assertIn("only the translation", explain.request.prompt)
 
     def test_a_failed_korean_answer_is_reported_as_no_draft(self):
         explain = self.start("감사")

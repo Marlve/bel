@@ -13,9 +13,11 @@
 # note picker, shown on every `?` lookup - nothing is remembered between
 # lookups (this replaced issue 05's sticky set_current_note designation). On
 # a concept miss, that click is also the confirmation for writing the draft
-# (confirm_pick). A Korean miss only shows Claude's answer - no picker, no
-# write - until korean.md's design is built (issue 22). insert_concept_link is a no-op rather than an error when the
-# picked note can't be found - it's a convenience on top of the primary
+# (confirm_pick). A Korean miss shows Claude's translation, and for a single
+# word the picker offers Vocab.md as its one row - clicking it appends the
+# word (issue 23). A sentence is never saved. insert_concept_link is a no-op
+# rather than an error when the picked note can't be found - it's a
+# convenience on top of the primary
 # explain/write flow, never something that should block it. Only
 # concept-note hits/writes get a link - a `[[word]]` link to a Korean vocab
 # table row wouldn't resolve to anything in Obsidian, so append_vocab_row
@@ -43,7 +45,7 @@ from backgroundRequest import BackgroundRequest
 
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
 
-KOREAN_PROMPT_TEMPLATE = 'Concisely explain what the Korean "{query}" means. If it is a sentence, also explain how its grammar works.'
+KOREAN_PROMPT_TEMPLATE = 'Translate the Korean "{query}" into English. Reply with only the translation, no explanation.'
 
 # The three inbox-triage destinations (issue 04) - deliberately excludes
 # "Inbox" itself and the other top-level folders (Atlas, Private, Templates),
@@ -108,9 +110,30 @@ def recent_notes(db_path=None, now=None):
     return [{"path": path, "recent": now - mtime <= RECENT_SECONDS} for path, mtime in rows]
 
 
+def vocab_note(db_path=None, now=None):
+    """The indexed Korean Vocab.md in the picker's note shape, or None if
+    there isn't one - a new word can only be offered for saving into a
+    Vocab.md that exists (issue 23)."""
+    now = time.time() if now is None else now
+    conn = vaultIndex.connect(db_path)
+    try:
+        rows = conn.execute("SELECT path, mtime FROM notes").fetchall()
+    finally:
+        conn.close()
+    for path, mtime in rows:
+        if folder_matches(path, "Areas", "Korean", "Vocab.md"):
+            return {"path": path, "recent": now - mtime <= RECENT_SECONDS}
+    return None
+
+
 def is_vocab_query(query):
     """A query containing Hangul is a Korean vocab lookup, not a concept."""
     return re.search(r"[ᄀ-ᇿ㄰-㆏가-힣]", query) is not None
+
+
+def is_single_word(query):
+    """Only a single Korean word is offered for saving, never a sentence."""
+    return bool(query) and not any(char.isspace() for char in query)
 
 
 def lookup(query, vault_path=None, db_path=None):
@@ -119,7 +142,11 @@ def lookup(query, vault_path=None, db_path=None):
     first (nothing else in the app refreshes it), then searched, then
     listed for the note picker."""
     vaultIndex.refresh(vault_path=vault_path, db_path=db_path)
-    return {"found": search_notes(query, db_path=db_path), "notes": recent_notes(db_path=db_path)}
+    return {
+        "found": search_notes(query, db_path=db_path),
+        "notes": recent_notes(db_path=db_path),
+        "vocab": vocab_note(db_path=db_path),
+    }
 
 
 def search_notes(query, db_path=None):
@@ -213,7 +240,7 @@ def escape_table_cell(text):
     table syntax breaks on a literal "|" (spurious column) or newline
     (spurious row), and a drafted translation isn't guaranteed free of
     either."""
-    return text.replace("|", "\\|").replace("\n", " ")
+    return re.sub(r"\r\n|\r|\n", " ", text.replace("|", "\\|"))
 
 
 def table_cells(line):
@@ -281,11 +308,17 @@ def confirm_pick(query, result, note, vault_path=None):
 def append_vocab_row(word, translation, vault_path=None):
     """Appends a confirmed word/translation pair to the Korean vocab table
     (issue 03's "same shape applies to Korean vocab" note). Call only after
-    Derich has confirmed the row."""
+    Derich has confirmed the row - clicking Vocab.md in the chat card's
+    picker (issue 23)."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
     areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
     path = areas / "Korean" / "Vocab.md"
+    # Obsidian can save a note without a trailing newline, and the row must
+    # not glue onto the table's last line.
+    ends_mid_line = path.exists() and path.stat().st_size > 0 and not path.read_bytes().endswith(b"\n")
     with path.open("a", encoding="utf-8") as f:
+        if ends_mid_line:
+            f.write("\n")
         f.write(f"| {escape_table_cell(word)} | {escape_table_cell(translation)} |\n")
     return path
 
@@ -357,7 +390,7 @@ class SearchWorker(QObject):
         try:
             outcome = lookup(self.query, vault_path=self.vault_path, db_path=self.db_path)
         except Exception:
-            outcome = {"found": None, "notes": []}
+            outcome = {"found": None, "notes": [], "vocab": None}
         self.finished.emit(outcome)
 
 
@@ -416,6 +449,7 @@ class ExplainQuery(ClaudeQuery):
         self.vault_path = vault_path
         self.search_request_factory = search_request_factory  # swappable in tests, so the lookup doesn't need a real QThread/event loop
         self.notes = []
+        self.vocab = None
         self.kind = None
         self.search_request = None
 
@@ -437,6 +471,7 @@ class ExplainQuery(ClaudeQuery):
             self.disconnectAboutToQuit()
             return
         self.notes = outcome["notes"]
+        self.vocab = outcome["vocab"]
         hit = outcome["found"]
         if hit is not None:
             self.disconnectAboutToQuit()
@@ -445,9 +480,9 @@ class ExplainQuery(ClaudeQuery):
             self.on_result({"hit": True, **hit, "notes": notes})
             return
         if is_vocab_query(self.query):
-            # A vocab miss has no confirm design yet (korean.md), so Claude's
-            # answer is only shown, reported as kind "vocab" so it's never
-            # offered for saving as "3 Reference/<word>.md" (issue 22).
+            # Reported as kind "vocab", so the translation is only ever
+            # offered for saving into Vocab.md, never as
+            # "3 Reference/<word>.md" (issues 22, 23).
             self.kind = "vocab"
             prompt = KOREAN_PROMPT_TEMPLATE.format(query=self.query)
         else:
@@ -459,7 +494,10 @@ class ExplainQuery(ClaudeQuery):
         # An error or cut-off answer is reported as no draft at all, so it can
         # never be offered for saving.
         draft = "" if failed else text
-        self.on_result({"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes})
+        result = {"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes}
+        if self.kind == "vocab":
+            result["vocab"] = self.vocab
+        self.on_result(result)
 
     def cancel(self):
         super().cancel()

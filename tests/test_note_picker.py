@@ -70,6 +70,20 @@ class NotePickerTests(unittest.TestCase):
         self.assertIn("<b>Plan</b>", self.picker.outcome_label.text())
         self.assertEqual(self.picker.outcome_dot.color, style.PICKER_DOT_RECENT)
 
+    def test_the_header_defaults_to_the_note_question_and_can_be_replaced(self):
+        self.assertEqual(self.picker.header_label.text(), "ambiguous — confirm the note")
+
+        picker = NotePicker(self.notes, 360, header="new word — save it?")
+        self.addCleanup(picker.deleteLater)
+
+        self.assertEqual(picker.header_label.text(), "new word — save it?")
+
+    def test_a_saved_row_appends_after_a_vocab_pick(self):
+        self.picker.showSaved("Vocab")
+
+        self.assertIn("saved to <b>Vocab</b>", self.picker.outcome_label.text())
+        self.assertEqual(self.picker.outcome_dot.color, style.PICKER_DOT_RECENT)
+
     def test_a_failed_pick_says_so_with_a_grey_dot(self):
         self.picker.showFailed("couldn't save the note")
 
