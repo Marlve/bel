@@ -24,8 +24,9 @@
 # only proposes a destination folder for an Inbox entry (list_inbox_entries
 # + parse_triage_response), never moves anything itself. move_inbox_entry is
 # the separate, explicit call for after Derich confirms the proposal - like
-# issue 03's write functions, it performs the move unconditionally with no
-# confirmation of its own. Wiring a UI surface to drive this per-entry is
+# issue 03's write functions, it performs the move with no confirmation of
+# its own (and, like write_concept_note, refuses to clobber an existing
+# file). Wiring a UI surface to drive this per-entry is
 # also still deferred, same as the `[[Concept]]` link above.
 
 import re
@@ -164,19 +165,23 @@ def escape_table_cell(text):
 def write_concept_note(query, content, vault_path=None, store_path=None):
     """Writes a confirmed miss-case explanation as a new atomic concept
     note (issue 03 step 4). Call only after Derich has confirmed the draft
-    - this performs the write unconditionally, with no confirmation of its
-    own. Also auto-inserts the `[[query]]` link into whatever note is
-    currently designated (issue 03 step 4's "no separate confirmation for
+    - this performs the write with no confirmation of its own, but refuses
+    to overwrite an existing note. Also auto-inserts the `[[query]]` link
+    into whatever note is currently designated (issue 03 step 4's "no separate confirmation for
     the link itself") - see insert_concept_link."""
-    if "/" in query or "\\" in query:
-        # pathlib treats both as separators on Windows - letting one through
-        # would write outside "Reference/" (or raise on a missing
-        # intermediate dir) instead of naming a single note.
-        raise ValueError(f"query must be a single note title, not a path: {query!r}")
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', query):
+        # Windows' illegal filename characters. "/" and "\\" would write
+        # outside "Reference/"; ":" silently writes an NTFS alternate data
+        # stream instead of a note; the rest raise an OSError.
+        raise ValueError(f"query must be a single valid note title: {query!r}")
     vault_path = vault_path or vaultIndex.VAULT_PATH
     reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
     path = reference / f"{query}.md"
-    path.write_text(content, encoding="utf-8")
+    # "x" (exclusive create) raises FileExistsError rather than clobbering a
+    # real note that search_notes() missed on a stale index - same refusal
+    # as move_inbox_entry.
+    with path.open("x", encoding="utf-8") as f:
+        f.write(content)
     insert_concept_link(query, vault_path=vault_path, store_path=store_path)
     return path
 

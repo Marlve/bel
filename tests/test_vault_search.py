@@ -157,6 +157,38 @@ class WriteConfirmedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             vaultSearch.write_concept_note("async/await", "Explanation.", vault_path=self.vault)
 
+    def test_write_concept_note_refuses_to_overwrite_an_existing_note(self):
+        # A stale index can report a miss for a note Derich just created in
+        # Obsidian - confirming the draft must not clobber the real note.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("real note - must not be clobbered")
+
+        with self.assertRaises(FileExistsError):
+            vaultSearch.write_concept_note("Dijkstra", "Drafted explanation.", vault_path=self.vault)
+
+        self.assertEqual((reference / "Dijkstra.md").read_text(), "real note - must not be clobbered")
+
+    def test_write_concept_note_does_not_insert_a_link_when_the_note_already_exists(self):
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("real note")
+        with patch.object(vaultSearch, "insert_concept_link") as insert:
+            with self.assertRaises(FileExistsError):
+                vaultSearch.write_concept_note("Dijkstra", "Drafted explanation.", vault_path=self.vault)
+        insert.assert_not_called()
+
+    def test_write_concept_note_rejects_a_query_containing_an_illegal_filename_character(self):
+        # Windows rejects these in filenames (":" instead silently writes an
+        # NTFS alternate data stream) - callers expect the documented
+        # ValueError for an unusable query instead.
+        (self.vault / "3 Reference").mkdir()
+
+        for query in ["What is X?", "C++ : templates", 'say "hi"', "a<b", "a>b", "a|b", "a*b", "a\\b", "a\tb", "a\nb"]:
+            with self.subTest(query=query):
+                with self.assertRaises(ValueError):
+                    vaultSearch.write_concept_note(query, "Explanation.", vault_path=self.vault)
+
     def test_append_vocab_row_appends_to_existing_file(self):
         korean = self.vault / "2 Areas" / "Korean"
         korean.mkdir(parents=True)
