@@ -36,10 +36,9 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication
 
 import vaultIndex
-from actions.claudeAction import ClaudeRequest
+from actions.claudeAction import ClaudeQuery, ClaudeRequest
 from backgroundRequest import BackgroundRequest
 
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
@@ -389,14 +388,13 @@ class SearchRequest(BackgroundRequest):
         self.stopThread()
 
 
-class ExplainQuery:
+class ExplainQuery(ClaudeQuery):
     """Drives one `? query` lookup for card.md's picker, using issue 02's
-    chosen architecture. Mirrors CalendarNudgeQuery's shape
-    (calendarNudge.py): a plain callback-based class wrapping one
-    ClaudeRequest, rather than a bare askBel() call, so the CLI subprocess
-    still runs on a background QThread instead of blocking the UI. The
-    lookup itself is threaded the same way, via SearchRequest (issue 08) -
-    neither path touches the UI thread with slow work.
+    chosen architecture. A ClaudeQuery, rather than a bare askBel() call, so
+    the CLI subprocess still runs on a background QThread instead of
+    blocking the UI. The lookup itself is threaded the same way, via
+    SearchRequest (issue 08) - neither path touches the UI thread with slow
+    work.
 
     Never writes to the vault: on_result gets the hit or draft plus the
     notes to pick from, and confirm_pick does the writing once Derich
@@ -411,24 +409,15 @@ class ExplainQuery:
         request_factory=ClaudeRequest,
         search_request_factory=SearchRequest,
     ):
+        super().__init__(request_factory)
         self.query = query
         self.on_result = on_result
         self.db_path = db_path
         self.vault_path = vault_path
-        self.request_factory = request_factory  # swappable in tests, so the miss path never spawns a real `claude` subprocess
         self.search_request_factory = search_request_factory  # swappable in tests, so the lookup doesn't need a real QThread/event loop
-        self.text = ""
         self.notes = []
         self.kind = None
         self.search_request = None
-        self.request = None
-        self.cancelled = False
-
-        # Mirrors CalendarNudgeQuery's/ClaudeAction's own aboutToQuit wiring
-        # so an in-flight miss-case request can't outlive the app.
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(self.cancel)
 
     def start(self):
         self.search_request = self.search_request_factory(self.query, vault_path=self.vault_path, db_path=self.db_path)
@@ -440,9 +429,10 @@ class ExplainQuery:
         # ClaudeRequest's guarantee here) - without this guard a cancelled
         # query could still kick off the miss-case draft after the caller
         # has moved on. Must disconnect here too (not just return), same as
-        # onFinished's guard below - otherwise a query cancelled while its
+        # ClaudeQuery.onFinished's guard - otherwise a query cancelled while its
         # search is still in flight never disconnects from aboutToQuit and
         # leaks for the app's lifetime (issue 06, reintroduced for this path).
+        # ClaudeQuery only covers the Claude half, so this guard stays here.
         if self.cancelled:
             self.disconnectAboutToQuit()
             return
@@ -463,66 +453,32 @@ class ExplainQuery:
         else:
             self.kind = "concept"
             prompt = EXPLAIN_PROMPT_TEMPLATE.format(query=self.query)
+        self.ask(prompt)
 
-        self.request = self.request_factory(prompt)
-        self.request.chunk.connect(self.onChunk)
-        self.request.finished.connect(self.onFinished)
-        self.request.start()
-
-    def onChunk(self, text):
-        self.text += text
-
-    def onFinished(self):
-        # `finished` still fires after cancel() (ClaudeWorker's own
-        # guarantee, see claude.py) - without this guard a cancelled query
-        # would still hand the caller a truncated/garbage draft.
-        self.disconnectAboutToQuit()
-        if self.cancelled:
-            return
+    def answered(self, text, failed):
         # An error or cut-off answer is reported as no draft at all, so it can
         # never be offered for saving.
-        draft = "" if self.request.failed else self.text
+        draft = "" if failed else text
         self.on_result({"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes})
 
     def cancel(self):
-        self.cancelled = True
+        super().cancel()
         if self.search_request is not None:
             self.search_request.cancel()
-        if self.request is not None:
-            self.request.cancel()
-
-    def disconnectAboutToQuit(self):
-        # Undoes the __init__ wiring once this query resolves. aboutToQuit
-        # holds a strong reference to the connected bound method, so leaving
-        # it connected would keep every past ExplainQuery alive for the rest
-        # of the app's life - unbounded growth proportional to search count
-        # (issue 06).
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.disconnect(self.cancel)
 
 
-class TriageQuery:
+class TriageQuery(ClaudeQuery):
     """Drives the inbox-triage flow (issue 04) for one Inbox entry, using
     issue 02's chosen architecture: Bel's own code calls this directly and
     the miss/hit-style branching from ExplainQuery doesn't apply here - every
     entry gets a proposal, shown to Derich to confirm before move_inbox_entry
-    ever runs. Mirrors ExplainQuery's shape (one ClaudeRequest per query, a
-    background QThread so the CLI subprocess doesn't block the UI)."""
+    ever runs. A ClaudeQuery like ExplainQuery (one ClaudeRequest per query,
+    a background QThread so the CLI subprocess doesn't block the UI)."""
 
     def __init__(self, path, on_result, request_factory=ClaudeRequest):
+        super().__init__(request_factory)
         self.path = Path(path)
         self.on_result = on_result
-        self.request_factory = request_factory  # swappable in tests, so triage never spawns a real `claude` subprocess
-        self.text = ""
-        self.request = None
-        self.cancelled = False
-
-        # Mirrors ExplainQuery's/CalendarNudgeQuery's own aboutToQuit wiring
-        # so an in-flight triage request can't outlive the app.
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(self.cancel)
 
     def start(self):
         # Mirrors vaultIndex.refresh()'s own tolerance for a file that
@@ -535,34 +491,7 @@ class TriageQuery:
             self.disconnectAboutToQuit()
             self.on_result({"path": self.path, "folder": None})
             return
-        prompt = TRIAGE_PROMPT_TEMPLATE.format(title=self.path.stem, content=content)
-        self.request = self.request_factory(prompt)
-        self.request.chunk.connect(self.onChunk)
-        self.request.finished.connect(self.onFinished)
-        self.request.start()
+        self.ask(TRIAGE_PROMPT_TEMPLATE.format(title=self.path.stem, content=content))
 
-    def onChunk(self, text):
-        self.text += text
-
-    def onFinished(self):
-        # `finished` still fires after cancel() (ClaudeWorker's own
-        # guarantee, see claude.py) - without this guard a cancelled query
-        # would still hand the caller a stale proposal.
-        self.disconnectAboutToQuit()
-        if self.cancelled:
-            return
-        self.on_result({"path": self.path, "folder": parse_triage_response(self.text)})
-
-    def cancel(self):
-        self.cancelled = True
-        if self.request is not None:
-            self.request.cancel()
-
-    def disconnectAboutToQuit(self):
-        # Mirrors ExplainQuery.disconnectAboutToQuit - same leak, same fix
-        # (issue 06): aboutToQuit holds a strong reference to self.cancel,
-        # so leaving it connected would keep every past TriageQuery alive
-        # for the rest of the app's life.
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.disconnect(self.cancel)
+    def answered(self, text, failed):
+        self.on_result({"path": self.path, "folder": parse_triage_response(text)})

@@ -66,6 +66,61 @@ class ClaudeRequest(BackgroundRequest):
         self.stopThread()
 
 
+class ClaudeQuery:
+    """A plain callback-based class that asks one ClaudeRequest and hands
+    the whole answer to `answered(text, failed)`, which subclasses define.
+    ExplainQuery and TriageQuery (vaultSearch.py) build on it. The cancel and
+    aboutToQuit handling lives here once, so a fix to it can't reach only
+    some of them (issue 14)."""
+
+    def __init__(self, request_factory=ClaudeRequest):
+        self.request_factory = request_factory  # swappable in tests, so a query never spawns a real `claude` subprocess
+        self.text = ""
+        self.request = None
+        self.cancelled = False
+
+        # Mirrors ClaudeAction's own aboutToQuit wiring so an in-flight
+        # request can't outlive the app.
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.cancel)
+
+    def ask(self, prompt):
+        self.request = self.request_factory(prompt)
+        self.request.chunk.connect(self.onChunk)
+        self.request.finished.connect(self.onFinished)
+        self.request.start()
+
+    def onChunk(self, text):
+        self.text += text
+
+    def onFinished(self):
+        # `finished` still fires after cancel() (ClaudeWorker's own
+        # guarantee, see claude.py) - without this guard a cancelled query
+        # would still hand the caller a stale or cut-off answer.
+        self.disconnectAboutToQuit()
+        if self.cancelled:
+            return
+        self.answered(self.text, self.request.failed)
+
+    def answered(self, text, failed):
+        raise NotImplementedError
+
+    def cancel(self):
+        self.cancelled = True
+        if self.request is not None:
+            self.request.cancel()
+
+    def disconnectAboutToQuit(self):
+        # Undoes the __init__ wiring once this query resolves. aboutToQuit
+        # holds a strong reference to the connected bound method, so leaving
+        # it connected would keep every past query alive for the rest of the
+        # app's life - unbounded growth proportional to query count (issue 06).
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.disconnect(self.cancel)
+
+
 class ClaudeAction(QObject):
     """Callable wedge action for "Claude". Each call starts a ClaudeRequest
     and returns it, so whoever asked can follow that answer alone.

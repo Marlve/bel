@@ -9,6 +9,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtWidgets import QApplication
+
 import vaultIndex
 import vaultSearch
 
@@ -864,6 +866,16 @@ class ExplainQueryTests(unittest.TestCase):
         )
         explain.cancel()  # must not raise even though start() was never called
 
+    def test_cancel_reaches_both_the_search_and_the_claude_request(self):
+        # Otherwise quitting mid-draft would leave the `claude` subprocess
+        # running - ExplainQuery.cancel must still call ClaudeQuery.cancel.
+        explain = self.start("Nonexistent")
+
+        explain.cancel()
+
+        self.assertTrue(explain.search_request.cancelled)
+        self.assertTrue(explain.request.cancelled)
+
     def test_finished_after_cancel_does_not_report_a_stale_draft(self):
         explain = self.start("Nonexistent")
 
@@ -894,7 +906,7 @@ class ExplainQueryTests(unittest.TestCase):
         self.dijkstra_note()
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             explain = self.explain("Dijkstra")
             explain.start()
             explain.cancel()
@@ -906,7 +918,7 @@ class ExplainQueryTests(unittest.TestCase):
         self.dijkstra_note()
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             self.start("Dijkstra")
 
         self.assertEqual(fake_app.aboutToQuit.slots, [])
@@ -914,7 +926,7 @@ class ExplainQueryTests(unittest.TestCase):
     def test_a_korean_miss_disconnects_from_aboutToQuit(self):
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             explain = self.start("감사")
             explain.request.finished.emit()
 
@@ -923,7 +935,7 @@ class ExplainQueryTests(unittest.TestCase):
     def test_repeated_instantiation_does_not_grow_the_aboutToQuit_connection_count(self):
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             for _ in range(3):
                 explain = self.start("Nonexistent")
                 explain.request.finished.emit()
@@ -999,7 +1011,7 @@ class TriageQueryTests(unittest.TestCase):
         self.entry.unlink()
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             self.start()
 
         self.assertEqual(fake_app.aboutToQuit.slots, [])
@@ -1007,7 +1019,7 @@ class TriageQueryTests(unittest.TestCase):
     def test_repeated_instantiation_does_not_grow_the_aboutToQuit_connection_count(self):
         fake_app = FakeApp()
 
-        with patch.object(vaultSearch.QApplication, "instance", return_value=fake_app):
+        with patch.object(QApplication, "instance", return_value=fake_app):
             for _ in range(3):
                 triage = self.start()
                 triage.request.finished.emit()
