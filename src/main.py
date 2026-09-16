@@ -6,9 +6,6 @@ from PySide6.QtWidgets import QApplication
 from pieMenu import PieMenu
 from hotkey import HotkeyListener
 from claude import resetClaudeHistory
-from calendarNudgeCard import CalendarNudgeCard
-from calendarNudge import CalendarNudgeQuery
-from util import reduced_motion
 import style
 
 PIE_MENU_HOTKEY = "ctrl+shift+space"
@@ -31,10 +28,6 @@ def main():
     hotkey = HotkeyListener(PIE_MENU_HOTKEY)
     hotkey.triggered.connect(pie_menu.onKeyPress)
     hotkey.start()
-
-    nudge_card = CalendarNudgeCard(motion=not reduced_motion())
-    nudge_query = CalendarNudgeQuery(nudge_card.showNudge)
-    nudge_query.start()
 
     sys.exit(app.exec())
 

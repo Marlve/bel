@@ -1,8 +1,7 @@
 # The issue-02 integration point (.scratch/vault-search/issues/02): Bel's
 # own Qt-side code calls search_notes() directly and decides hit/miss
-# itself - no MCP tool, no agent-loop wiring. askBel() (via ClaudeRequest,
-# same convention as CalendarNudgeQuery in calendarNudge.py) is only invoked
-# for the miss-case draft.
+# itself - no MCP tool, no agent-loop wiring. askBel() (via ClaudeRequest)
+# is only invoked for the miss-case draft.
 #
 # write_concept_note/append_vocab_row are the confirm-before-write half of
 # issue 03 steps 4-5: nothing writes to the vault until one of these is
