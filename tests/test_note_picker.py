@@ -118,5 +118,93 @@ class NotePickerTests(unittest.TestCase):
         self.assertEqual(picker.scroll.height(), style.PICKER_LIST_MAX_HEIGHT)
 
 
+class NotePickerFilterTests(unittest.TestCase):
+    """Issue 24: a type-to-filter field between the header and the list."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.all_notes = [
+            {"path": str(Path("1 Project") / "Plan.md"), "recent": True},
+            {"path": str(Path("2 Areas") / "School" / "FIT3143 Week 3.md"), "recent": False},
+            {"path": str(Path("2 Areas") / "Korean" / "Grammar.md"), "recent": False},
+            {"path": str(Path("2 Areas") / "School" / "FIT3161 Notes.md"), "recent": False},
+        ]
+        self.recent = self.all_notes[:1]
+        self.picked = []
+        self.picker = NotePicker(self.recent, 360, all_notes=self.all_notes)
+        self.picker.picked.connect(self.picked.append)
+        self.addCleanup(self.picker.deleteLater)
+
+    def names(self):
+        return [row.name_label.full_text for row in self.picker.rows]
+
+    def test_the_field_starts_empty_showing_the_recent_list(self):
+        self.assertEqual(self.picker.filter_field.text(), "")
+        self.assertEqual(self.picker.filter_field.placeholderText(), "filter notes…")
+        self.assertEqual(self.names(), ["Plan"])
+
+    def test_a_picker_without_all_notes_has_no_field(self):
+        # The one-row "new word — save to vocab" picker.
+        picker = NotePicker(self.recent, 360, header="new word — save to vocab")
+        self.addCleanup(picker.deleteLater)
+
+        self.assertIsNone(picker.filter_field)
+
+    def test_typing_matches_note_names_across_the_whole_index_in_recency_order(self):
+        self.picker.filter_field.setText("fit31")
+
+        self.assertEqual(self.names(), ["FIT3143 Week 3", "FIT3161 Notes"])
+
+    def test_typing_matches_the_folder_path_too(self):
+        self.picker.filter_field.setText("SCHOOL")
+
+        self.assertEqual(self.names(), ["FIT3143 Week 3", "FIT3161 Notes"])
+
+    def test_either_slash_matches_a_folder_separator(self):
+        for text in ("areas/school", "areas\\school"):
+            with self.subTest(text=text):
+                self.picker.filter_field.setText(text)
+
+                self.assertEqual(self.names(), ["FIT3143 Week 3", "FIT3161 Notes"])
+
+    def test_the_md_suffix_is_not_matched(self):
+        self.picker.filter_field.setText(".md")
+
+        self.assertEqual(self.names(), [])
+
+    def test_clearing_the_field_restores_the_recent_list(self):
+        self.picker.filter_field.setText("grammar")
+        self.picker.filter_field.setText("")
+
+        self.assertEqual(self.names(), ["Plan"])
+        self.assertTrue(self.picker.empty_label.isHidden())
+
+    def test_no_match_says_so(self):
+        self.picker.filter_field.setText("nothing like this")
+
+        self.assertEqual(self.names(), [])
+        self.assertFalse(self.picker.empty_label.isHidden())
+        self.assertEqual(self.picker.empty_label.text(), "no matching notes")
+
+    def test_clicking_a_filtered_row_picks_that_note(self):
+        self.picker.filter_field.setText("grammar")
+
+        click(self.picker.rows[0])
+
+        self.assertEqual(self.picked, [str(Path("2 Areas") / "Korean" / "Grammar.md")])
+
+    def test_the_field_locks_with_the_rows_after_a_pick(self):
+        click(self.picker.rows[0])
+
+        self.assertTrue(self.picker.filter_field.isReadOnly())
+
+    def test_the_field_only_takes_focus_when_clicked(self):
+        # The composer keeps focus when the picker pops in.
+        self.assertEqual(self.picker.filter_field.focusPolicy(), Qt.ClickFocus)
+
+
 if __name__ == "__main__":
     unittest.main()

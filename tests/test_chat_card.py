@@ -57,10 +57,11 @@ class FakeLookup:
 
 
 NOTES = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
-CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm."}
-CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation."}
+ALL_NOTES = NOTES + [{"path": str(Path("2 Areas") / "School" / "FIT3143 Week 3.md"), "recent": False}]
+CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm.", "all_notes": ALL_NOTES}
+CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation.", "all_notes": ALL_NOTES}
 VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
-VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "vocab": VOCAB_NOTE}
+VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "all_notes": ALL_NOTES, "vocab": VOCAB_NOTE}
 
 
 def teardownCard(card):
@@ -486,6 +487,15 @@ class ChatCardTests(unittest.TestCase):
         self.assertIn("A drafted explanation.", self.card.turns[-1]["text"])
         self.assertEqual(len(self.card.picker.rows), 1)
 
+    def test_the_note_picker_filters_across_every_indexed_note(self):
+        # Issue 24 - the one-row vocab picker gets no field (checked below).
+        lookup = self.startLookup()
+        lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
+
+        self.card.picker.filter_field.setText("fit")
+
+        self.assertEqual([row.name_label.full_text for row in self.card.picker.rows], ["FIT3143 Week 3"])
+
     def test_picking_a_note_confirms_it_and_says_where_it_connected(self):
         lookup = self.startLookup()
         result = {**CONCEPT_MISS, "notes": NOTES}
@@ -531,6 +541,7 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertIn("thanks", self.card.turns[-1]["text"])
         self.assertEqual([row.name_label.text() for row in self.card.picker.rows], ["Vocab"])
+        self.assertIsNone(self.card.picker.filter_field)
 
     def test_picking_vocab_md_saves_the_word_and_its_translation(self):
         lookup = self.startLookup("? 감사")

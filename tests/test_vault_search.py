@@ -348,7 +348,7 @@ class LookupQueryTests(unittest.TestCase):
                 self.assertIsNone(vaultSearch.lookup_query(text))
 
 
-class RecentNotesTests(unittest.TestCase):
+class AllNotesTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()
         self.db_dir = tempfile.TemporaryDirectory()
@@ -370,7 +370,7 @@ class RecentNotesTests(unittest.TestCase):
         self.note(Path("2 Areas") / "Middle.md", now - 2 * 86400)
         vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
 
-        notes = vaultSearch.recent_notes(db_path=self.db_path, now=now)
+        notes = vaultSearch.all_notes(db_path=self.db_path, now=now)
 
         self.assertEqual([note["path"] for note in notes], [
             str(Path("1 Project") / "New.md"),
@@ -384,7 +384,7 @@ class RecentNotesTests(unittest.TestCase):
         self.note(Path("1 Project") / "Older.md", now - 2 * 86400)
         vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
 
-        notes = vaultSearch.recent_notes(db_path=self.db_path, now=now)
+        notes = vaultSearch.all_notes(db_path=self.db_path, now=now)
 
         self.assertEqual([note["recent"] for note in notes], [True, False])
 
@@ -394,19 +394,9 @@ class RecentNotesTests(unittest.TestCase):
         self.note(Path("1 Project") / "Plan.md", now - 120)
         vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
 
-        notes = vaultSearch.recent_notes(db_path=self.db_path, now=now)
+        notes = vaultSearch.all_notes(db_path=self.db_path, now=now)
 
         self.assertEqual([note["path"] for note in notes], [str(Path("1 Project") / "Plan.md")])
-
-    def test_caps_the_list_length(self):
-        now = 1_000_000
-        for i in range(vaultSearch.RECENT_NOTES_LIMIT + 5):
-            self.note(Path("1 Project") / f"Note {i}.md", now - i)
-        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
-
-        notes = vaultSearch.recent_notes(db_path=self.db_path, now=now)
-
-        self.assertEqual(len(notes), vaultSearch.RECENT_NOTES_LIMIT)
 
 
 class LinkInsertTests(unittest.TestCase):
@@ -422,16 +412,78 @@ class LinkInsertTests(unittest.TestCase):
         plan.write_text("Today I learned about pathfinding.", encoding="utf-8")
         return plan
 
-    def test_insert_concept_link_appends_link_to_the_picked_note(self):
+    def insert(self, concept="Dijkstra", gist="shortest paths in weighted graphs"):
+        return vaultSearch.insert_concept_link(concept, self.picked, gist=gist, vault_path=self.vault)
+
+    def test_insert_concept_link_starts_a_concepts_section_with_a_gist_bullet(self):
+        # Issue 25. The note has no trailing newline, as Obsidian can save it.
         plan = self.plan()
 
-        result = vaultSearch.insert_concept_link("Dijkstra", self.picked, vault_path=self.vault)
+        result = self.insert()
 
         self.assertEqual(result, plan)
         self.assertEqual(
-            plan.read_text(encoding="utf-8"),
-            "Today I learned about pathfinding.\n[[Dijkstra]]\n",
+            plan.read_bytes(),
+            b"Today I learned about pathfinding.\n\n## Concepts\n- [[Dijkstra]] \xe2\x80\x94 shortest paths in weighted graphs\n",
         )
+
+    def test_insert_concept_link_adds_after_the_existing_sections_last_bullet(self):
+        # The heading is found case-insensitively, and `*` bullets count too.
+        plan = self.plan()
+        plan.write_bytes(b"Notes.\n\n## concepts\n- [[Big O]] \xe2\x80\x94 growth rate\n* [[Heap]]\n")
+
+        self.insert()
+
+        self.assertEqual(
+            plan.read_bytes().decode("utf-8"),
+            "Notes.\n\n## concepts\n- [[Big O]] — growth rate\n* [[Heap]]\n- [[Dijkstra]] — shortest paths in weighted graphs\n",
+        )
+
+    def test_insert_concept_link_stays_inside_a_section_followed_by_other_content(self):
+        plan = self.plan()
+        plan.write_bytes(b"## Concepts\n- [[Big O]]\n\n## Later\nMore notes.")
+
+        self.insert()
+
+        self.assertEqual(
+            plan.read_bytes().decode("utf-8"),
+            "## Concepts\n- [[Big O]]\n- [[Dijkstra]] — shortest paths in weighted graphs\n\n## Later\nMore notes.",
+        )
+
+    def test_insert_concept_link_skips_a_concept_the_section_already_lists(self):
+        plan = self.plan()
+        plan.write_bytes(b"## Concepts\n- [[dijkstra]] \xe2\x80\x94 older gist\n")
+
+        result = self.insert()
+
+        self.assertEqual(result, plan)  # still reported as connected
+        self.assertEqual(plan.read_bytes(), b"## Concepts\n- [[dijkstra]] \xe2\x80\x94 older gist\n")
+
+    def test_insert_concept_link_counts_heading_and_alias_links_as_already_listed(self):
+        plan = self.plan()
+        for listed in ("- [[Dijkstra#Proof]]\n", "- [[Dijkstra|shortest path]]\n"):
+            with self.subTest(listed=listed):
+                plan.write_text("## Concepts\n" + listed, encoding="utf-8")
+
+                self.insert()
+
+                self.assertEqual(plan.read_text(encoding="utf-8"), "## Concepts\n" + listed)
+
+    def test_insert_concept_link_ignores_a_link_inside_another_bullets_gist(self):
+        # Only a bullet's own leading link says which concept it lists.
+        plan = self.plan()
+        plan.write_bytes(b"## Concepts\n- [[Big O]] \xe2\x80\x94 cost of [[Dijkstra]]\n")
+
+        self.insert()
+
+        self.assertTrue(plan.read_text(encoding="utf-8").endswith("- [[Dijkstra]] — shortest paths in weighted graphs\n"))
+
+    def test_insert_concept_link_without_a_gist_writes_a_bare_bullet(self):
+        plan = self.plan()
+
+        self.insert(gist="")
+
+        self.assertTrue(plan.read_text(encoding="utf-8").endswith("## Concepts\n- [[Dijkstra]]\n"))
 
     def test_insert_concept_link_is_a_noop_when_the_picked_note_no_longer_exists(self):
         result = vaultSearch.insert_concept_link("Dijkstra", str(Path("1 Project") / "Gone.md"), vault_path=self.vault)
@@ -493,6 +545,30 @@ class LinkInsertTests(unittest.TestCase):
         self.assertEqual(outside.read_text(encoding="utf-8"), "Not in the vault.")
 
 
+class ConceptGistTests(unittest.TestCase):
+    """The one-line gist beside a `[[Concept]]` bullet (issue 25)."""
+
+    def test_the_first_sentence_without_its_full_stop(self):
+        self.assertEqual(
+            vaultSearch.concept_gist("Finds shortest paths in weighted graphs. It is greedy."),
+            "Finds shortest paths in weighted graphs",
+        )
+
+    def test_skips_frontmatter_and_headings(self):
+        text = "---\ntags: [algo]\n---\n# Dijkstra\n\nFinds shortest\npaths. It is greedy."
+
+        self.assertEqual(vaultSearch.concept_gist(text), "Finds shortest paths")
+
+    def test_a_long_sentence_is_cut_at_a_word(self):
+        gist = vaultSearch.concept_gist("word " * 30)
+
+        self.assertLessEqual(len(gist), vaultSearch.GIST_MAX_LENGTH)
+        self.assertTrue(gist.endswith("word…"))
+
+    def test_no_text_means_no_gist(self):
+        self.assertEqual(vaultSearch.concept_gist("# Only a heading\n"), "")
+
+
 class ConfirmPickTests(unittest.TestCase):
     """Clicking a note in card.md's picker - the only thing that writes to
     the vault in the explain flow."""
@@ -516,16 +592,16 @@ class ConfirmPickTests(unittest.TestCase):
 
         vaultSearch.confirm_pick("dijkstra", hit, self.picked, vault_path=self.vault)
 
-        self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.\n[[Dijkstra]]\n")
+        self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.\n\n## Concepts\n- [[Dijkstra]] — Shortest path algorithm\n")
         self.assertEqual(sorted(p.name for p in self.reference.iterdir()), ["Dijkstra.md"])
 
     def test_a_miss_writes_the_draft_then_links_it(self):
-        miss = {"hit": False, "draft": "Shortest path algorithm."}
+        miss = {"hit": False, "draft": "Finds shortest paths. It is greedy."}
 
         vaultSearch.confirm_pick("Dijkstra", miss, self.picked, vault_path=self.vault)
 
-        self.assertEqual((self.reference / "Dijkstra.md").read_text(encoding="utf-8"), "Shortest path algorithm.")
-        self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.\n[[Dijkstra]]\n")
+        self.assertEqual((self.reference / "Dijkstra.md").read_text(encoding="utf-8"), "Finds shortest paths. It is greedy.")
+        self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.\n\n## Concepts\n- [[Dijkstra]] — Finds shortest paths\n")
 
     def test_a_miss_that_would_overwrite_a_note_links_nothing(self):
         # A stale index can miss a note Derich just created in Obsidian.
@@ -767,6 +843,24 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(outcome["found"]["path"], str(Path("3 Reference") / "Dijkstra.md"))
         self.assertEqual([note["path"] for note in outcome["notes"]], [str(Path("3 Reference") / "Dijkstra.md")])
 
+    def test_also_lists_every_indexed_note_for_the_picker_filter(self):
+        # Issue 24: the filter searches the whole index, not just the recent
+        # notes, and filters in memory rather than querying per keystroke.
+        project = self.vault / "1 Project"
+        project.mkdir()
+        for i in range(vaultSearch.RECENT_NOTES_LIMIT + 5):
+            (project / f"Note {i}.md").write_text("content", encoding="utf-8")
+        private = self.vault / "6 Private"
+        private.mkdir()
+        (private / "Secret.md").write_text("Private.", encoding="utf-8")
+
+        outcome = vaultSearch.lookup("Dijkstra", vault_path=self.vault, db_path=self.db_path)
+
+        self.assertEqual(len(outcome["notes"]), vaultSearch.RECENT_NOTES_LIMIT)
+        self.assertEqual(len(outcome["all_notes"]), vaultSearch.RECENT_NOTES_LIMIT + 5)
+        self.assertEqual(outcome["all_notes"][:vaultSearch.RECENT_NOTES_LIMIT], outcome["notes"])
+        self.assertFalse(any("Private" in note["path"] for note in outcome["all_notes"]))
+
 
 class SearchWorkerTests(unittest.TestCase):
     def test_run_still_emits_finished_as_a_miss_when_the_lookup_raises(self):
@@ -780,7 +874,7 @@ class SearchWorkerTests(unittest.TestCase):
         with patch.object(vaultSearch, "lookup", side_effect=sqlite3.OperationalError("database is locked")):
             worker.run()
 
-        self.assertEqual(outcomes, [{"found": None, "notes": [], "vocab": None}])
+        self.assertEqual(outcomes, [{"found": None, "notes": [], "all_notes": [], "vocab": None}])
 
 
 class ExplainQueryTests(unittest.TestCase):
@@ -859,11 +953,13 @@ class ExplainQueryTests(unittest.TestCase):
         explain.request.chunk.emit("explanation.")
         explain.request.finished.emit()
 
+        plan = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
         self.assertEqual(self.results, [{
             "hit": False,
             "kind": "concept",
             "draft": "A drafted explanation.",
-            "notes": [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}],
+            "notes": plan,
+            "all_notes": plan,
         }])
 
     def test_a_failed_draft_is_reported_as_no_draft(self):
@@ -885,6 +981,7 @@ class ExplainQueryTests(unittest.TestCase):
         self.start("Dijkstra")
 
         self.assertEqual([note["path"] for note in self.results[0]["notes"]], [str(Path("1 Project") / "Plan.md")])
+        self.assertEqual([note["path"] for note in self.results[0]["all_notes"]], [str(Path("1 Project") / "Plan.md")])
 
     def test_a_korean_miss_starts_a_request_and_reports_its_draft_as_kind_vocab(self):
         # Issue 22: Claude answers what the word means, but as kind "vocab" -
@@ -897,7 +994,7 @@ class ExplainQueryTests(unittest.TestCase):
         explain.request.chunk.emit("Thanks.")
         explain.request.finished.emit()
 
-        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": [], "vocab": None}])
+        self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": [], "all_notes": [], "vocab": None}])
 
     def test_a_korean_miss_reports_the_indexed_vocab_md_to_save_into(self):
         korean = self.vault / "2 Areas" / "Korean"

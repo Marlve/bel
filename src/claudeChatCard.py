@@ -416,7 +416,7 @@ class ChatCard(QWidget):
             and result["vocab"] is not None
         )
         if pickable and result["notes"]:
-            self.picker = NotePicker(result["notes"], self.contentWidth())
+            self.picker = NotePicker(result["notes"], self.contentWidth(), all_notes=result["all_notes"])
             picker = self.picker
             picker.picked.connect(lambda note: self.onNotePicked(picker, query, result, note))
         elif saveable_word:

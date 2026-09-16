@@ -15,8 +15,8 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QPainter, QPalette, QPen
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import style
 
@@ -121,10 +121,22 @@ class NoteRow(QWidget):
             self.clicked.emit(self.path)
 
 
+def matching_notes(notes, text):
+    """The notes whose name or folder path contains `text`, ignoring case,
+    the ".md" suffix and which slash separates folders, in their given (most
+    recently edited) order."""
+    wanted = text.replace("\\", "/").casefold()
+    return [note for note in notes if wanted in Path(note["path"]).with_suffix("").as_posix().casefold()]
+
+
 class NotePicker(QFrame):
+    """`all_notes`, when given, adds issue 24's filter field: empty, the list
+    is `notes` (the recent ones); typed into, it's every match in
+    `all_notes`, filtered in memory rather than queried per keystroke."""
+
     picked = Signal(str)
 
-    def __init__(self, notes, width, header="ambiguous — confirm the note", parent=None):
+    def __init__(self, notes, width, header="ambiguous — confirm the note", all_notes=None, parent=None):
         super().__init__(parent)
         self.setObjectName("notePicker")
         self.setStyleSheet(
@@ -142,37 +154,78 @@ class NotePicker(QFrame):
         header_row.addWidget(self.header_label)
         header_row.addStretch(1)
 
-        rows_widget = QWidget()
-        rows_layout = QVBoxLayout(rows_widget)
-        rows_layout.setContentsMargins(0, 0, 0, 0)
-        rows_layout.setSpacing(0)
+        self.notes = notes
+        self.all_notes = all_notes
+        self.filter_field = None
+        if all_notes is not None:
+            self.filter_field = QLineEdit()
+            self.filter_field.setPlaceholderText("filter notes…")
+            self.filter_field.setFocusPolicy(Qt.ClickFocus)  # the composer keeps focus when the picker pops in
+            self.filter_field.setFixedHeight(style.PICKER_FILTER_HEIGHT)
+            self.filter_field.setStyleSheet(
+                f"background: {style.PICKER_FILTER_FILL}; color: {style.PICKER_HEADER_TEXT};"
+                f" font-family: {style.FONT_FAMILY}; font-size: {style.CHAT_BODY_SIZE}px;"
+                f" border: none; border-radius: {style.PICKER_FILTER_RADIUS}px; padding: 0 {style.SPACE_2}px;"
+            )
+            palette = self.filter_field.palette()
+            palette.setColor(QPalette.PlaceholderText, QColor(style.MUTED))
+            self.filter_field.setPalette(palette)
+            self.filter_field.textChanged.connect(self.onFilterChanged)
+
+        self.rows_widget = QWidget()
+        self.rows_layout = QVBoxLayout(self.rows_widget)
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.rows_layout.setSpacing(0)
+        self.empty_label = text_label("no matching notes", style.PICKER_FOLDER_TEXT)
+        self.empty_label.setContentsMargins(0, style.SPACE_1, 0, style.SPACE_1)
+        self.empty_label.setVisible(False)
+        self.rows_layout.addWidget(self.empty_label)
         self.rows = []
-        for note in notes:
-            row = NoteRow(note)
-            row.clicked.connect(self.onRowClicked)
-            rows_layout.addWidget(row)
-            self.rows.append(row)
 
         self.scroll = QScrollArea()
-        self.scroll.setWidget(rows_widget)
+        self.scroll.setWidget(self.rows_widget)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setStyleSheet(style.chat_scrollbar_stylesheet())
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # same as the chat transcript - wheel still scrolls
-        self.scroll.setFixedHeight(min(rows_widget.sizeHint().height(), style.PICKER_LIST_MAX_HEIGHT))
+        self.showNotes(notes)
 
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(style.SPACE_3, style.SPACE_2, style.SPACE_3, style.SPACE_2)
         self.body.setSpacing(style.SPACE_2)
         self.body.addLayout(header_row)
+        if self.filter_field is not None:
+            self.body.addWidget(self.filter_field)
         self.body.addWidget(self.scroll)
+
+    def showNotes(self, notes):
+        """Replaces the listed rows with `notes`, or the "no matching notes"
+        line when there are none."""
+        for row in self.rows:
+            self.rows_layout.removeWidget(row)
+            row.hide()
+            row.deleteLater()
+        self.rows = []
+        for note in notes:
+            row = NoteRow(note)
+            row.clicked.connect(self.onRowClicked)
+            self.rows_layout.addWidget(row)
+            self.rows.append(row)
+        self.empty_label.setVisible(not notes)
+        self.scroll.setFixedHeight(min(self.rows_widget.sizeHint().height(), style.PICKER_LIST_MAX_HEIGHT))
+
+    def onFilterChanged(self, text):
+        text = text.strip()
+        self.showNotes(matching_notes(self.all_notes, text) if text else self.notes)
 
     def onRowClicked(self, path):
         for row in self.rows:
             row.enabled = False
             row.setCursor(Qt.ArrowCursor)
             row.setNameColor(style.PICKER_NOTE_TEXT)
+        if self.filter_field is not None:
+            self.filter_field.setReadOnly(True)
         self.picked.emit(path)
 
     def showConnected(self, name):

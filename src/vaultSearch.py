@@ -95,16 +95,14 @@ def lookup_query(text):
     return text[len(LOOKUP_PREFIX):].strip() or None
 
 
-def recent_notes(db_path=None, now=None):
-    """The note picker's candidates (card.md): indexed notes, most recently
-    edited first. The index never contains `6 Private/`, so neither does
-    this list."""
+def all_notes(db_path=None, now=None):
+    """Every indexed note, most recently edited first - what the note
+    picker's filter field searches (issue 24). The index never contains
+    `6 Private/`, so neither does this list."""
     now = time.time() if now is None else now
     conn = vaultIndex.connect(db_path)
     try:
-        rows = conn.execute(
-            "SELECT path, mtime FROM notes ORDER BY mtime DESC LIMIT ?", (RECENT_NOTES_LIMIT,)
-        ).fetchall()
+        rows = conn.execute("SELECT path, mtime FROM notes ORDER BY mtime DESC").fetchall()
     finally:
         conn.close()
     return [{"path": path, "recent": now - mtime <= RECENT_SECONDS} for path, mtime in rows]
@@ -140,11 +138,14 @@ def lookup(query, vault_path=None, db_path=None):
     """Everything a `?` lookup needs from the vault, in one call so
     SearchWorker can run it all off the UI thread: the index is refreshed
     first (nothing else in the app refreshes it), then searched, then
-    listed for the note picker."""
+    listed for the note picker: the recent notes it shows while its filter is
+    empty, and every note for the filter to search."""
     vaultIndex.refresh(vault_path=vault_path, db_path=db_path)
+    notes = all_notes(db_path=db_path)
     return {
         "found": search_notes(query, db_path=db_path),
-        "notes": recent_notes(db_path=db_path),
+        "notes": notes[:RECENT_NOTES_LIMIT],
+        "all_notes": notes,
         "vocab": vocab_note(db_path=db_path),
     }
 
@@ -200,12 +201,78 @@ def is_off_limits(relative):
     )
 
 
-def insert_concept_link(query, note, vault_path=None):
-    """Inserts a `[[query]]` link into `note` (vault-relative), the note
-    Derich picked in card.md's picker. Appended as its own line, matching
-    append_vocab_row's append-only style, since Bel has no notion of cursor
-    position in a file it doesn't render. A no-op, not an error, when the
-    note can no longer be found - see the module comment above."""
+CONCEPTS_HEADING = "## Concepts"
+GIST_MAX_LENGTH = 80
+
+
+def concept_gist(text):
+    """The one-line gist beside a `[[Concept]]` bullet (issue 25): the first
+    sentence of the concept's note or draft, skipping frontmatter and
+    headings, cut at a word to GIST_MAX_LENGTH."""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        closing = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+        if closing is not None:
+            lines = lines[closing + 1:]
+    paragraph = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#"):
+            paragraph.append(line)
+        elif paragraph:
+            break
+    text = " ".join(paragraph)
+    sentence = re.match(r".+?[.!?](?=\s|$)", text)
+    gist = (sentence.group() if sentence else text).removesuffix(".")
+    if len(gist) > GIST_MAX_LENGTH:
+        cut = gist[:GIST_MAX_LENGTH - 1]
+        gist = (cut[:cut.rindex(" ")] if " " in cut else cut).rstrip(" ,;:") + "…"
+    return gist
+
+
+def with_concept_bullet(lines, concept, bullet):
+    """`lines` with `bullet` added to the note's Concepts section: after the
+    section's last bullet, so it stays inside the section even when other
+    content follows it, or under a new heading at the end. None if the
+    section already links `concept`."""
+    lines = list(lines)
+    heading = next(
+        (index for index, line in enumerate(lines) if line.strip().casefold() == CONCEPTS_HEADING.casefold()),
+        None,
+    )
+    if heading is None:
+        at = len(lines)
+        added = [CONCEPTS_HEADING + "\n", bullet]
+        if lines and lines[-1].strip():
+            added.insert(0, "\n")
+    else:
+        at = heading + 1
+        added = [bullet]
+        # Only the bullet's own leading link, so a link inside another
+        # bullet's gist doesn't count. `[[X#Heading]]` and `[[X|alias]]` do.
+        listed = re.compile(rf"[-*+] \[\[{re.escape(concept)}(\]\]|\||#)", re.IGNORECASE)
+        for index in range(heading + 1, len(lines)):
+            line = lines[index].strip()
+            if line.startswith(("- ", "* ", "+ ")):
+                if listed.match(line):
+                    return None
+                at = index + 1
+            elif line:
+                break
+    if at == len(lines) and lines and not lines[-1].endswith("\n"):
+        # Obsidian can save a note without a trailing newline.
+        lines[-1] += "\n"
+    return lines[:at] + added + lines[at:]
+
+
+def insert_concept_link(query, note, gist="", vault_path=None):
+    """Adds a `- [[query]] — gist` bullet to the `## Concepts` section of
+    `note` (vault-relative), the note Derich picked in card.md's picker
+    (issue 25). Bel has no notion of cursor position in a file it doesn't
+    render, so the link always goes in that section. A no-op, not an error,
+    when the note can no longer be found - see the module comment above.
+    A concept the section already lists is left alone but still returns
+    the note, since it is connected."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
     # `note` is any string as far as this function knows, so the Private
     # exclusion has to be enforced here (issue 16). Checked on the path
@@ -222,15 +289,16 @@ def insert_concept_link(query, note, vault_path=None):
     except ValueError:
         return None
     if not path.is_file():
-        # Append mode (below) would otherwise happily create a stub file
-        # here if just the file (not its parent folder) went missing since
-        # it was designated - that would violate this function's own
-        # no-op-when-not-found contract.
+        # Checked up front so a note that went missing since it was listed
+        # is reported as not found - this function never creates a stub.
         return None
+    bullet = f"- [[{query}]] — {gist}\n" if gist else f"- [[{query}]]\n"
     try:
-        with path.open("a", encoding="utf-8") as f:
-            f.write(f"\n[[{query}]]\n")
-    except OSError:
+        # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF.
+        lines = with_concept_bullet(path.read_bytes().decode("utf-8").splitlines(keepends=True), query, bullet)
+        if lines is not None:
+            path.write_bytes("".join(lines).encode("utf-8"))
+    except (OSError, UnicodeDecodeError):
         return None
     return path
 
@@ -299,10 +367,12 @@ def confirm_pick(query, result, note, vault_path=None):
     note first, and the link is only inserted once that write succeeds."""
     if result["hit"]:
         concept = Path(result["path"]).stem
+        gist = concept_gist(result["content"])
     else:
         write_concept_note(query, result["draft"], vault_path=vault_path)
         concept = query
-    return insert_concept_link(concept, note, vault_path=vault_path)
+        gist = concept_gist(result["draft"])
+    return insert_concept_link(concept, note, gist=gist, vault_path=vault_path)
 
 
 def append_vocab_row(word, translation, vault_path=None):
@@ -411,7 +481,7 @@ class SearchWorker(QObject):
         try:
             outcome = lookup(self.query, vault_path=self.vault_path, db_path=self.db_path)
         except Exception:
-            outcome = {"found": None, "notes": [], "vocab": None}
+            outcome = {"found": None, "notes": [], "all_notes": [], "vocab": None}
         self.finished.emit(outcome)
 
 
@@ -470,6 +540,7 @@ class ExplainQuery(ClaudeQuery):
         self.vault_path = vault_path
         self.search_request_factory = search_request_factory  # swappable in tests, so the lookup doesn't need a real QThread/event loop
         self.notes = []
+        self.all_notes = []
         self.vocab = None
         self.kind = None
         self.search_request = None
@@ -492,13 +563,15 @@ class ExplainQuery(ClaudeQuery):
             self.disconnectAboutToQuit()
             return
         self.notes = outcome["notes"]
+        self.all_notes = outcome["all_notes"]
         self.vocab = outcome["vocab"]
         hit = outcome["found"]
         if hit is not None:
             self.disconnectAboutToQuit()
             # Linking the matched note into itself is never what's wanted.
             notes = [note for note in self.notes if note["path"] != hit["path"]]
-            self.on_result({"hit": True, **hit, "notes": notes})
+            all_notes = [note for note in self.all_notes if note["path"] != hit["path"]]
+            self.on_result({"hit": True, **hit, "notes": notes, "all_notes": all_notes})
             return
         if is_vocab_query(self.query):
             # Reported as kind "vocab", so the translation is only ever
@@ -515,7 +588,7 @@ class ExplainQuery(ClaudeQuery):
         # An error or cut-off answer is reported as no draft at all, so it can
         # never be offered for saving.
         draft = "" if failed else text
-        result = {"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes}
+        result = {"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes, "all_notes": self.all_notes}
         if self.kind == "vocab":
             result["vocab"] = self.vocab
         self.on_result(result)
