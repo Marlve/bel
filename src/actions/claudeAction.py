@@ -1,19 +1,19 @@
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
+from backgroundRequest import BackgroundRequest
 from claude import ClaudeWorker
 
 CLAUDE_TIMEOUT_MS = 60_000  # give up on a hung request rather than staying stuck forever
 DEFAULT_PROMPT = "Can you make a todo for, ETW assignment, meet a friend"  # used when a wedge asks for no input
 
 
-class ClaudeRequest(QObject):
+class ClaudeRequest(BackgroundRequest):
     """One call to the CLI, start to finish, streaming its response as it
     arrives.
 
-    Runs askBel() on a background QThread (mirroring HotkeyListener's
-    cross-thread pattern in hotkey.py) so the slow, blocking CLI call doesn't
-    freeze the Qt main thread/UI.
+    Runs askBel() on a background QThread (via BackgroundRequest) so the
+    slow, blocking CLI call doesn't freeze the Qt main thread/UI.
 
     The signals belong to this one request rather than to the wedge, so a
     listener - a chat card, say - follows the answer to its own question
@@ -32,12 +32,7 @@ class ClaudeRequest(QObject):
     session_started = Signal(str)
 
     def __init__(self, prompt, session_id=None, parent=None):
-        super().__init__(parent)
-        self.thread = QThread()
-        self.worker = ClaudeWorker(prompt, session_id)
-        self.worker.moveToThread(self.thread)
-
-        self.thread.started.connect(self.worker.run)
+        super().__init__(ClaudeWorker(prompt, session_id), parent)
         self.worker.chunk.connect(self.chunk)
         self.worker.session_started.connect(self.session_started)
         self.worker.finished.connect(self.onWorkerFinished)
@@ -53,26 +48,22 @@ class ClaudeRequest(QObject):
         return self.worker.failed
 
     def start(self):
-        self.thread.start()
+        super().start()
         self.timeout_timer.start(CLAUDE_TIMEOUT_MS)
 
     def onWorkerFinished(self):
         # Runs on the main thread - the worker emits this from its own thread
         # as run() returns, so by now there is nothing left to wait for.
         self.timeout_timer.stop()
-        self.thread.quit()
-        self.thread.wait(2000)
+        self.stopThread()
         self.finished.emit()
 
     def cancel(self):
         # Terminates the subprocess so askBel()'s blocking read unblocks and
         # run() can finish normally instead of leaving the thread running
-        # forever. Then quit()+wait() so the QThread is confirmed stopped
-        # before this returns - matters most when called from aboutToQuit,
-        # since the app may not get another event loop turn afterward.
+        # forever.
         self.worker.cancel()
-        self.thread.quit()
-        self.thread.wait(2000)
+        self.stopThread()
 
 
 class ClaudeAction(QObject):

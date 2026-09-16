@@ -35,11 +35,12 @@ import re
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 import vaultIndex
 from actions.claudeAction import ClaudeRequest
+from backgroundRequest import BackgroundRequest
 
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
 
@@ -361,43 +362,31 @@ class SearchWorker(QObject):
         self.finished.emit(outcome)
 
 
-class SearchRequest(QObject):
-    """One lookup(), start to finish. Mirrors ClaudeRequest's shape
-    (actions/claudeAction.py): moves the actual lookup to a background
-    QThread so ExplainQuery.start() - which used to call search_notes()
-    straight on its own (UI) thread - doesn't block on it (issue 08)."""
+class SearchRequest(BackgroundRequest):
+    """One lookup(), start to finish. Shares ClaudeRequest's thread lifecycle
+    via BackgroundRequest: moves the actual lookup to a background QThread
+    so ExplainQuery.start() - which used to call search_notes() straight on
+    its own (UI) thread - doesn't block on it (issue 08)."""
 
     finished = Signal(object)
 
     def __init__(self, query, vault_path=None, db_path=None, parent=None):
-        super().__init__(parent)
-        self.thread = QThread()
-        self.worker = SearchWorker(query, vault_path=vault_path, db_path=db_path)
-        self.worker.moveToThread(self.thread)
-
-        self.thread.started.connect(self.worker.run)
+        super().__init__(SearchWorker(query, vault_path=vault_path, db_path=db_path), parent)
         self.worker.finished.connect(self.onWorkerFinished)
-
-    def start(self):
-        self.thread.start()
 
     def onWorkerFinished(self, outcome):
         # Runs on the main thread - the worker emits this from its own
         # thread as run() returns, so by now there is nothing left to wait
         # for. Mirrors ClaudeRequest.onWorkerFinished.
-        self.thread.quit()
-        self.thread.wait(2000)
+        self.stopThread()
         self.finished.emit(outcome)
 
     def cancel(self):
         # Unlike ClaudeRequest.cancel(), there's no subprocess to terminate
         # - lookup() is a bounded local read/index refresh with nothing to
         # interrupt mid-flight - so this just confirms the thread has
-        # stopped before returning (matters most when called from
-        # aboutToQuit, since the app may not get another event loop turn
-        # afterward).
-        self.thread.quit()
-        self.thread.wait(2000)
+        # stopped.
+        self.stopThread()
 
 
 class ExplainQuery:
