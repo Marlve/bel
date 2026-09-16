@@ -211,6 +211,10 @@ class NotePicker(QFrame):
             row = NoteRow(note)
             row.clicked.connect(self.onRowClicked)
             self.rows_layout.addWidget(row)
+            # A row added to a picker already on screen stays hidden until
+            # the next event loop pass, and the layout skips hidden rows -
+            # the height below would come out 0 and the list look empty.
+            row.setVisible(True)
             self.rows.append(row)
         self.empty_label.setVisible(not notes)
         self.scroll.setFixedHeight(min(self.rows_widget.sizeHint().height(), style.PICKER_LIST_MAX_HEIGHT))

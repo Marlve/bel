@@ -163,6 +163,19 @@ class NotePickerFilterTests(unittest.TestCase):
 
         self.assertEqual(self.names(), ["FIT3143 Week 3", "FIT3161 Notes"])
 
+    def test_filtering_a_shown_picker_keeps_the_list_tall_enough_to_see_the_rows(self):
+        # Rows added to a visible picker aren't shown until the next event
+        # loop pass, so a height measured right away used to come out 0.
+        self.picker.show()
+        QApplication.processEvents()
+
+        self.picker.filter_field.setText("fit31")
+        QApplication.processEvents()
+
+        self.assertEqual(len(self.picker.rows), 2)
+        self.assertTrue(all(row.isVisible() for row in self.picker.rows))
+        self.assertGreaterEqual(self.picker.scroll.height(), sum(row.sizeHint().height() for row in self.picker.rows))
+
     def test_either_slash_matches_a_folder_separator(self):
         for text in ("areas/school", "areas\\school"):
             with self.subTest(text=text):
