@@ -398,6 +398,23 @@ class AllNotesTests(unittest.TestCase):
 
         self.assertEqual([note["path"] for note in notes], [str(Path("1 Project") / "Plan.md")])
 
+    def test_never_lists_a_folder_a_link_should_not_go_in(self):
+        # Archive, Templates, Atlas (links-only hubs) and Reference (Bel's
+        # concept notes) stay indexed, but are never offered in the picker.
+        now = 1_000_000
+        for folder in ("4 Archive", "Templates", "5 Atlas", "3 Reference", "5 ATLAS"):
+            self.note(Path(folder) / "Skipped.md", now - 60)
+        self.note(Path("2 Areas") / "Archive" / "Kept.md", now - 120)
+        self.note(Path("Second Brain.md"), now - 180)
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        notes = vaultSearch.all_notes(db_path=self.db_path, now=now)
+
+        self.assertEqual([note["path"] for note in notes], [
+            str(Path("2 Areas") / "Archive" / "Kept.md"),
+            "Second Brain.md",
+        ])
+
 
 class LinkInsertTests(unittest.TestCase):
     def setUp(self):
@@ -841,7 +858,6 @@ class LookupTests(unittest.TestCase):
         outcome = vaultSearch.lookup("Dijkstra", vault_path=self.vault, db_path=self.db_path)
 
         self.assertEqual(outcome["found"]["path"], str(Path("3 Reference") / "Dijkstra.md"))
-        self.assertEqual([note["path"] for note in outcome["notes"]], [str(Path("3 Reference") / "Dijkstra.md")])
 
     def test_also_lists_every_indexed_note_for_the_picker_filter(self):
         # Issue 24: the filter searches the whole index, not just the recent

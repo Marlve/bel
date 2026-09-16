@@ -95,17 +95,32 @@ def lookup_query(text):
     return text[len(LOOKUP_PREFIX):].strip() or None
 
 
+# Top-level folders a `[[Concept]]` link never goes in, so the note picker
+# never lists them: old notes, Obsidian's templates, the links-only Atlas
+# hubs, and Bel's own concept notes. They are still indexed and searched.
+PICKER_EXCLUDED_FOLDERS = {"archive", "templates", "atlas", "reference"}
+
+
 def all_notes(db_path=None, now=None):
-    """Every indexed note, most recently edited first - what the note
-    picker's filter field searches (issue 24). The index never contains
-    `6 Private/`, so neither does this list."""
+    """Every indexed note a link can go in, most recently edited first -
+    what the note picker's filter field searches (issue 24). The index never
+    contains `6 Private/`, so neither does this list."""
     now = time.time() if now is None else now
     conn = vaultIndex.connect(db_path)
     try:
         rows = conn.execute("SELECT path, mtime FROM notes ORDER BY mtime DESC").fetchall()
     finally:
         conn.close()
-    return [{"path": path, "recent": now - mtime <= RECENT_SECONDS} for path, mtime in rows]
+    return [
+        {"path": path, "recent": now - mtime <= RECENT_SECONDS}
+        for path, mtime in rows
+        if not is_in_excluded_picker_folder(path)
+    ]
+
+
+def is_in_excluded_picker_folder(path_str):
+    parts = Path(path_str).parts
+    return len(parts) > 1 and vaultIndex.folder_name(Path(parts[0])).casefold() in PICKER_EXCLUDED_FOLDERS
 
 
 def vocab_note(db_path=None, now=None):
