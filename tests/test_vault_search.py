@@ -197,6 +197,105 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), "| word | line one line two |\n")
 
 
+class CurrentNoteAndLinkInsertTests(unittest.TestCase):
+    def setUp(self):
+        self.vault_dir = tempfile.TemporaryDirectory()
+        self.store_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.vault_dir.cleanup)
+        self.addCleanup(self.store_dir.cleanup)
+        self.vault = Path(self.vault_dir.name)
+        self.store_path = Path(self.store_dir.name) / "current-note.txt"
+
+    def test_get_current_note_returns_none_when_nothing_designated(self):
+        self.assertIsNone(vaultSearch.get_current_note(store_path=self.store_path))
+
+    def test_set_current_note_then_get_returns_it(self):
+        vaultSearch.set_current_note("3 Reference/Journal.md", store_path=self.store_path)
+
+        self.assertEqual(vaultSearch.get_current_note(store_path=self.store_path), "3 Reference/Journal.md")
+
+    def test_set_current_note_is_sticky_until_changed_again(self):
+        vaultSearch.set_current_note("3 Reference/Journal.md", store_path=self.store_path)
+        vaultSearch.set_current_note("1 Project/Plan.md", store_path=self.store_path)
+
+        self.assertEqual(vaultSearch.get_current_note(store_path=self.store_path), "1 Project/Plan.md")
+
+    def test_insert_concept_link_is_a_noop_when_no_note_designated(self):
+        result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertIsNone(result)
+
+    def test_insert_concept_link_appends_link_to_designated_note(self):
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Today I learned about pathfinding.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertEqual(result, journal)
+        self.assertEqual(
+            journal.read_text(encoding="utf-8"),
+            "Today I learned about pathfinding.\n[[Dijkstra]]\n",
+        )
+
+    def test_insert_concept_link_is_a_noop_when_designated_note_no_longer_exists(self):
+        vaultSearch.set_current_note(str(Path("1 Project") / "Gone.md"), store_path=self.store_path)
+
+        result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertIsNone(result)
+
+    def test_insert_concept_link_does_not_create_a_stub_file_when_only_the_file_itself_is_missing(self):
+        # Distinct from the folder-also-missing case above: append mode
+        # would otherwise happily fabricate a new file here, since the
+        # parent folder still exists.
+        (self.vault / "1 Project").mkdir()
+        vaultSearch.set_current_note(str(Path("1 Project") / "Renamed.md"), store_path=self.store_path)
+
+        result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertIsNone(result)
+        self.assertFalse((self.vault / "1 Project" / "Renamed.md").exists())
+
+    def test_write_concept_note_inserts_link_into_designated_note(self):
+        (self.vault / "3 Reference").mkdir()
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Today I learned about pathfinding.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        vaultSearch.write_concept_note("Dijkstra", "Shortest path algorithm.", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertEqual(
+            journal.read_text(encoding="utf-8"),
+            "Today I learned about pathfinding.\n[[Dijkstra]]\n",
+        )
+
+    def test_write_concept_note_does_not_touch_anything_when_no_note_designated(self):
+        (self.vault / "3 Reference").mkdir()
+
+        path = vaultSearch.write_concept_note("Dijkstra", "Shortest path algorithm.", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), "Shortest path algorithm.")
+
+    def test_append_vocab_row_does_not_insert_a_link(self):
+        # A `[[word]]` link to a Vocab.md table row wouldn't resolve to
+        # anything in Obsidian - vocab appends deliberately skip the
+        # auto-insert that concept-note writes get.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("", encoding="utf-8")
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Notes.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
+
+        self.assertEqual(journal.read_text(encoding="utf-8"), "Notes.")
+
+
 class InboxTriageTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()
@@ -365,6 +464,10 @@ class ExplainQueryTests(unittest.TestCase):
         self.addCleanup(self.db_dir.cleanup)
         self.vault = Path(self.vault_dir.name)
         self.db_path = Path(self.db_dir.name) / "vault-index.sqlite3"
+        # Scoped to the temp vault_dir so a designated current note (this
+        # session's or a real one of Derich's under ~/.bel) is never touched
+        # by these tests - see insert_concept_link.
+        self.store_path = Path(self.db_dir.name) / "current-note.txt"
         self.results = []
 
     def start(self, query):
@@ -372,6 +475,8 @@ class ExplainQueryTests(unittest.TestCase):
             query,
             lambda result: self.results.append(result),
             db_path=self.db_path,
+            vault_path=self.vault,
+            store_path=self.store_path,
             request_factory=FakeClaudeRequest,
         )
         explain.start()
@@ -392,6 +497,51 @@ class ExplainQueryTests(unittest.TestCase):
             "content": "Shortest path algorithm.",
         }])
         self.assertIsNone(explain.request)
+
+    def test_hit_on_a_concept_note_inserts_link_into_the_designated_note(self):
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Shortest path algorithm.")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Notes.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        self.start("Dijkstra")
+
+        self.assertEqual(journal.read_text(encoding="utf-8"), "Notes.\n[[Dijkstra]]\n")
+
+    def test_hit_on_a_case_insensitive_match_links_the_notes_real_filename(self):
+        # search_notes/folder_matches match filenames case-insensitively -
+        # the inserted link must use the note's real on-disk title, not
+        # whatever casing Derich happened to type.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Shortest path algorithm.")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Notes.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        self.start("dijkstra")
+
+        self.assertEqual(journal.read_text(encoding="utf-8"), "Notes.\n[[Dijkstra]]\n")
+
+    def test_hit_on_vocab_does_not_insert_a_link(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        (self.vault / "1 Project").mkdir()
+        journal = self.vault / "1 Project" / "Plan.md"
+        journal.write_text("Notes.", encoding="utf-8")
+        vaultSearch.set_current_note(str(Path("1 Project") / "Plan.md"), store_path=self.store_path)
+
+        self.start("안녕")
+
+        self.assertEqual(journal.read_text(encoding="utf-8"), "Notes.")
 
     def test_miss_starts_a_request_for_the_draft(self):
         vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)

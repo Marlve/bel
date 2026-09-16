@@ -35,3 +35,11 @@ The local SQLite FTS5 full-text index Bel keeps over the vault's markdown
 files (`src/vaultIndex.py`, see ADR-0008), refreshed incrementally rather
 than rescanned per call. Lives under Bel's own local state
 (`~/.bel/vault-index.sqlite3`), never inside the vault folder itself.
+
+**Current note**:
+The vault note Derich manually designates as the one he's currently writing
+(`vaultSearch.set_current_note`/`get_current_note`), sticky until he changes
+it. Bel has no view onto Obsidian's own editor state, so this designation is
+what `insert_concept_link` targets for the `[[Concept]]` auto-insert.
+Distinct from `NoteCard` (`src/noteCard.py`), Bel's own sticky-note widget -
+not a view onto any actual vault `.md` file.

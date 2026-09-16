@@ -7,10 +7,18 @@
 # write_concept_note/append_vocab_row are the confirm-before-write half of
 # issue 03 steps 4-5: nothing writes to the vault until one of these is
 # called explicitly, which only happens after Derich confirms the drafted
-# text - ExplainQuery itself never calls them. The auto-inserted
-# `[[Concept]]` link is still deferred - it needs a concrete UI trigger
-# point (which note surface represents "the note Derich is currently
-# writing") that hasn't been designed yet.
+# text - ExplainQuery itself never calls them.
+#
+# The `[[Concept]]` auto-insert (issue 03 steps 3-4) needed a concrete
+# answer to "which note is Derich currently writing" before it could be
+# built - issue 05 resolved that as manual designation: Derich points Bel at
+# a note (set_current_note), sticky until he changes it, no OS/Obsidian
+# integration required. insert_concept_link is a no-op rather than an error
+# when nothing's designated or the designated note can't be found - it's a
+# convenience on top of the primary explain/write flow, never something that
+# should block it. Only concept-note hits/writes get a link - a `[[word]]`
+# link to a Korean vocab table row wouldn't resolve to anything in Obsidian,
+# so append_vocab_row doesn't call it.
 #
 # TriageQuery (issue 04) follows the same confirm-before-write split: it
 # only proposes a destination folder for an Inbox entry (list_inbox_entries
@@ -93,6 +101,57 @@ def search_notes(query, db_path=None):
         conn.close()
 
 
+# Bel's own local state, matching the Path.home() / ".bel" convention already
+# used for vaultIndex.INDEX_DB_PATH and claude.py's CLAUDE_CWD.
+CURRENT_NOTE_PATH = Path.home() / ".bel" / "current-note.txt"
+
+
+def set_current_note(path, store_path=None):
+    """Designates `path` (vault-relative, matching search_notes' own "path"
+    format) as the note Derich is currently writing (issue 05's manual-
+    designation decision) - sticky until the next call to set_current_note.
+    Bel has no view onto Obsidian's own editor state, so this is the only
+    way it learns where insert_concept_link should write."""
+    store_path = store_path or CURRENT_NOTE_PATH
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(str(path), encoding="utf-8")
+
+
+def get_current_note(store_path=None):
+    """Returns the designated path, or None if Derich hasn't set one yet."""
+    store_path = store_path or CURRENT_NOTE_PATH
+    try:
+        return store_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def insert_concept_link(query, vault_path=None, store_path=None):
+    """Auto-inserts a `[[query]]` link into the currently-designated note
+    (issue 03 steps 3-4) - mechanical and low-risk, so no confirmation of
+    its own. Appended as its own line, matching append_vocab_row's
+    append-only style, since Bel has no notion of cursor position in a file
+    it doesn't render. A no-op, not an error, when no note is designated or
+    it can no longer be found - see the module comment above."""
+    current = get_current_note(store_path=store_path)
+    if current is None:
+        return None
+    vault_path = vault_path or vaultIndex.VAULT_PATH
+    path = vault_path / current
+    if not path.is_file():
+        # Append mode (below) would otherwise happily create a stub file
+        # here if just the file (not its parent folder) went missing since
+        # it was designated - that would violate this function's own
+        # no-op-when-not-found contract.
+        return None
+    try:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"\n[[{query}]]\n")
+    except OSError:
+        return None
+    return path
+
+
 def escape_table_cell(text):
     """Escapes a value for embedding in a markdown table row - Obsidian's
     table syntax breaks on a literal "|" (spurious column) or newline
@@ -101,11 +160,13 @@ def escape_table_cell(text):
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def write_concept_note(query, content, vault_path=None):
+def write_concept_note(query, content, vault_path=None, store_path=None):
     """Writes a confirmed miss-case explanation as a new atomic concept
     note (issue 03 step 4). Call only after Derich has confirmed the draft
     - this performs the write unconditionally, with no confirmation of its
-    own."""
+    own. Also auto-inserts the `[[query]]` link into whatever note is
+    currently designated (issue 03 step 4's "no separate confirmation for
+    the link itself") - see insert_concept_link."""
     if "/" in query or "\\" in query:
         # pathlib treats both as separators on Windows - letting one through
         # would write outside "Reference/" (or raise on a missing
@@ -115,6 +176,7 @@ def write_concept_note(query, content, vault_path=None):
     reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
     path = reference / f"{query}.md"
     path.write_text(content, encoding="utf-8")
+    insert_concept_link(query, vault_path=vault_path, store_path=store_path)
     return path
 
 
@@ -180,10 +242,12 @@ class ExplainQuery:
     bare askBel() call, so the CLI subprocess still runs on a background
     QThread instead of blocking the UI."""
 
-    def __init__(self, query, on_result, db_path=None, request_factory=ClaudeRequest):
+    def __init__(self, query, on_result, db_path=None, vault_path=None, store_path=None, request_factory=ClaudeRequest):
         self.query = query
         self.on_result = on_result
         self.db_path = db_path
+        self.vault_path = vault_path  # passed through to insert_concept_link on a concept hit
+        self.store_path = store_path  # passed through to insert_concept_link on a concept hit
         self.request_factory = request_factory  # swappable in tests, so the miss path never spawns a real `claude` subprocess
         self.text = ""
         self.request = None
@@ -198,6 +262,16 @@ class ExplainQuery:
     def start(self):
         hit = search_notes(self.query, db_path=self.db_path)
         if hit is not None:
+            if hit["kind"] == "concept":
+                # A `[[word]]` link to a Korean vocab table row wouldn't
+                # resolve to anything in Obsidian - only concept-note hits
+                # get the auto-insert (see insert_concept_link). Linked by
+                # the matched note's real filename, not self.query - a hit
+                # can be case-insensitive (search_notes/folder_matches), so
+                # the query text isn't guaranteed to match the note's actual
+                # on-disk title.
+                concept_name = Path(hit["path"]).stem
+                insert_concept_link(concept_name, vault_path=self.vault_path, store_path=self.store_path)
             self.on_result({"hit": True, **hit})
             return
 
