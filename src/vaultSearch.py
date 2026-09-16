@@ -266,7 +266,14 @@ class SearchWorker(QObject):
         self.db_path = db_path
 
     def run(self):
-        hit = search_notes(self.query, db_path=self.db_path)
+        # `finished` must always fire, same as ClaudeWorker.run - it's the
+        # only thing that resolves the query and lets ExplainQuery disconnect
+        # from aboutToQuit (issue 18). A failed lookup (locked db, a row
+        # deleted mid-search) is reported as a miss.
+        try:
+            hit = search_notes(self.query, db_path=self.db_path)
+        except Exception:
+            hit = None
         self.finished.emit(hit)
 
 

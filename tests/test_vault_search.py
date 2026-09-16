@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -565,6 +566,20 @@ class FakeSearchRequest:
 
     def cancel(self):
         self.cancelled = True
+
+
+class SearchWorkerTests(unittest.TestCase):
+    def test_run_still_emits_finished_as_a_miss_when_search_notes_raises(self):
+        # Otherwise nothing downstream ever resolves - the query hangs and
+        # ExplainQuery never disconnects from aboutToQuit (issue 18).
+        worker = vaultSearch.SearchWorker("Dijkstra")
+        hits = []
+        worker.finished.connect(hits.append)
+
+        with patch.object(vaultSearch, "search_notes", side_effect=sqlite3.OperationalError("database is locked")):
+            worker.run()
+
+        self.assertEqual(hits, [None])
 
 
 class ExplainQueryTests(unittest.TestCase):
