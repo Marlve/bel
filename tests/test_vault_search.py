@@ -130,7 +130,28 @@ class SearchNotesTests(unittest.TestCase):
 
         self.assertEqual(result["kind"], "vocab")
 
-    def test_vocab_hit_on_a_cell_containing_an_escaped_pipe(self):
+    def test_vocab_miss_on_header_separator_heading_and_empty_query(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text(
+            "# Korean vocab\n\n| Korean | English |\n| --- | --- |\n| 안녕 | hello |\n",
+            encoding="utf-8",
+        )
+        self.refresh()
+
+        for query in ("English", "---", "# Korean vocab", ""):
+            with self.subTest(query=query):
+                self.assertIsNone(vaultSearch.search_notes(query, db_path=self.db_path))
+
+    def test_vocab_hit_ignores_surrounding_whitespace_in_the_query(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
+        self.refresh()
+
+        self.assertIsNotNone(vaultSearch.search_notes(" 안녕 ", db_path=self.db_path))
+
+    def test_vocab_escaped_pipe_stays_inside_one_cell(self):
         # append_vocab_row escapes "|" as "\|" - the cell must still be read
         # back as one cell, not split in two.
         korean = self.vault / "2 Areas" / "Korean"
@@ -333,6 +354,7 @@ class CurrentNoteAndLinkInsertTests(unittest.TestCase):
             str(Path("6 Private") / "Secret.md"),
             str(Path("6 PRIVATE") / "Secret.md"),
             str(Path("1 Project") / ".." / "6 Private" / "Secret.md"),
+            str(Path("6 Private.") / "Secret.md"),
             str(secret),
         ):
             with self.subTest(designated=designated):
@@ -342,6 +364,20 @@ class CurrentNoteAndLinkInsertTests(unittest.TestCase):
 
                 self.assertIsNone(result)
                 self.assertEqual(secret.read_text(encoding="utf-8"), "Private.")
+
+    def test_insert_concept_link_refuses_a_private_note_without_touching_the_filesystem(self):
+        # Even resolve() opens a handle to its target on Windows - the
+        # refusal has to be decided from the path string alone.
+        untouchable = AssertionError("touched the filesystem for a Private path")
+
+        with patch.object(vaultSearch, "get_current_note", return_value=str(Path("6 Private") / "Secret.md")), \
+                patch.object(Path, "resolve", side_effect=untouchable), \
+                patch.object(Path, "is_file", side_effect=untouchable), \
+                patch.object(Path, "stat", side_effect=untouchable), \
+                patch.object(Path, "open", side_effect=untouchable):
+            result = vaultSearch.insert_concept_link("Dijkstra", vault_path=self.vault, store_path=self.store_path)
+
+        self.assertIsNone(result)
 
     def test_insert_concept_link_refuses_a_designated_note_outside_the_vault(self):
         outside_dir = tempfile.TemporaryDirectory()

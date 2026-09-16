@@ -29,6 +29,7 @@
 # file). Wiring a UI surface to drive this per-entry is
 # also still deferred, same as the `[[Concept]]` link above.
 
+import os
 import re
 from pathlib import Path
 
@@ -95,12 +96,14 @@ def search_notes(query, db_path=None):
         for path in paths:
             if folder_matches(path, "Areas", "Korean", "Vocab.md"):
                 content = conn.execute("SELECT content FROM notes WHERE path = ?", (path,)).fetchone()[0]
-                # Whole-cell match, not a substring of the file - "an" must
-                # not hit a row translated as "and, additionally" (issue 12).
-                if any(
-                    cell.casefold() == query.casefold()
-                    for line in content.splitlines()
-                    for cell in table_cells(line)
+                # Whole-cell match on real entries, not a substring of the
+                # file - "an" must not hit a row translated as "and,
+                # additionally" (issue 12).
+                wanted = query.strip().casefold()
+                if wanted and any(
+                    cell.casefold() == wanted
+                    for cells in table_rows(content)
+                    for cell in cells
                 ):
                     return {"kind": "vocab", "path": path, "content": content}
 
@@ -134,6 +137,17 @@ def get_current_note(store_path=None):
         return None
 
 
+def is_off_limits(relative):
+    """True if a vault-relative path escapes the vault or lands in the
+    Private folder."""
+    return (
+        not relative.parts
+        or bool(relative.anchor)
+        or relative.parts[0] == ".."
+        or vaultIndex.folder_name(Path(relative.parts[0])).casefold() in vaultIndex.EXCLUDED_FOLDERS
+    )
+
+
 def insert_concept_link(query, vault_path=None, store_path=None):
     """Auto-inserts a `[[query]]` link into the currently-designated note
     (issue 03 steps 3-4) - mechanical and low-risk, so no confirmation of
@@ -145,16 +159,19 @@ def insert_concept_link(query, vault_path=None, store_path=None):
     if current is None:
         return None
     vault_path = vault_path or vaultIndex.VAULT_PATH
-    path = vault_path / current
     # set_current_note accepts any string, so the Private exclusion has to
-    # be enforced here, before is_file() even stats the path. Resolved first
-    # so "..", an absolute path, or a path outside the vault can't sneak
-    # past the top-folder check.
-    try:
-        relative = path.resolve().relative_to(vault_path.resolve())
-    except ValueError:
+    # be enforced here (issue 16). Checked on the path string first, so an
+    # ordinary Private designation is refused without touching the
+    # filesystem at all - even resolve() opens a handle on Windows. The
+    # resolved check after it catches aliases a string can't see (8.3 short
+    # names, junctions, the trailing dots/spaces Windows ignores).
+    if is_off_limits(Path(os.path.normpath(current))):
         return None
-    if not relative.parts or vaultIndex.folder_name(Path(relative.parts[0])).casefold() in vaultIndex.EXCLUDED_FOLDERS:
+    path = vault_path / current
+    try:
+        if is_off_limits(path.resolve().relative_to(vault_path.resolve())):
+            return None
+    except ValueError:
         return None
     if not path.is_file():
         # Append mode (below) would otherwise happily create a stub file
@@ -179,9 +196,24 @@ def escape_table_cell(text):
 
 
 def table_cells(line):
-    """Splits a markdown table row into its cell values - the reverse of
-    escape_table_cell, so an escaped "\\|" stays inside its cell."""
+    """Splits a markdown table row into its cell values, undoing
+    escape_table_cell's pipe escaping so an escaped "\\|" stays inside its
+    cell."""
     return [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line)]
+
+
+def is_separator_row(line):
+    return line.startswith("|") and re.fullmatch(r"[|:\-\s]+", line) is not None
+
+
+def table_rows(content):
+    """Yields the cells of each data row in `content`'s markdown tables -
+    headings, prose, header rows, and `| --- |` separator rows are skipped,
+    so only real entries can count as a vocab hit."""
+    lines = [line.strip() for line in content.splitlines()]
+    for line, next_line in zip(lines, lines[1:] + [""]):
+        if line.startswith("|") and not is_separator_row(line) and not is_separator_row(next_line):
+            yield table_cells(line)
 
 
 def write_concept_note(query, content, vault_path=None, store_path=None):
