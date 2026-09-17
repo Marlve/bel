@@ -78,6 +78,18 @@ class NotePickerTests(unittest.TestCase):
 
         self.assertEqual(picker.header_label.text(), "new word — save it?")
 
+    def test_a_long_header_is_shortened_to_fit_the_picker(self):
+        header = "a very long inbox note title that keeps going and going past the edge — pick a folder"
+        picker = NotePicker(self.notes, 360, header=header)
+        self.addCleanup(picker.deleteLater)
+
+        picker.show()
+        QApplication.processEvents()
+
+        self.assertTrue(picker.header_label.text().endswith("…"))
+        self.assertLessEqual(picker.header_label.geometry().right(), picker.width())
+        self.assertEqual(picker.header_label.full_text, header)
+
     def test_a_saved_row_appends_after_a_vocab_pick(self):
         self.picker.showSaved("Vocab")
 

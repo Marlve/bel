@@ -244,19 +244,19 @@ def concept_gist(text):
     return gist
 
 
-def with_concept_bullet(lines, concept, bullet):
-    """`lines` with `bullet` added to the note's Concepts section: after the
-    section's last bullet, so it stays inside the section even when other
-    content follows it, or under a new heading at the end. None if the
-    section already links `concept`."""
+def with_concept_bullet(lines, concept, bullet, section=CONCEPTS_HEADING):
+    """`lines` with `bullet` added to the note's Concepts section (or the
+    one headed `section`): after the section's last bullet, so it stays
+    inside the section even when other content follows it, or under a new
+    heading at the end. None if the section already links `concept`."""
     lines = list(lines)
     heading = next(
-        (index for index, line in enumerate(lines) if line.strip().casefold() == CONCEPTS_HEADING.casefold()),
+        (index for index, line in enumerate(lines) if line.strip().casefold() == section.casefold()),
         None,
     )
     if heading is None:
         at = len(lines)
-        added = [CONCEPTS_HEADING + "\n", bullet]
+        added = [section + "\n", bullet]
         if lines and lines[-1].strip():
             added.insert(0, "\n")
     else:

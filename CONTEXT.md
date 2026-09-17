@@ -42,7 +42,7 @@ rest of the message instead of sending it to Claude as normal chat
 (`vaultSearch.lookup_query`, `ExplainQuery`).
 
 **Command**:
-A chat message prefixed `!` (`! today`, `! week`): Bel runs that command
+A chat message prefixed `!` (`! today`, `! week`, `! organize`): Bel runs that command
 instead of sending the message to Claude as normal chat, and like a lookup it
 never joins the Claude session (`claudeChatCard.command_name`). A bare `!` is
 normal chat.

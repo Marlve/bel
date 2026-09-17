@@ -28,6 +28,7 @@ from pathlib import Path
 import cardStore
 import chatMarkdown
 import dockCorner
+import inboxOrganize
 import style
 import timetable
 import vaultSearch
@@ -51,6 +52,23 @@ def command_name(text):
     if not text.startswith(COMMAND_PREFIX):
         return None
     return text[len(COMMAND_PREFIX):].strip().casefold() or None
+
+
+def organize_summary(proposal):
+    """One bullet saying what clicking a note's row will do, beyond the
+    folder the row already shows."""
+    if proposal["folder"] is None:
+        return f"- **{proposal['path'].stem}** → pick a folder"
+    changes = []
+    if proposal["new_folder"]:
+        changes.append("new folder")
+    if proposal["name"] != proposal["path"].stem:
+        changes.append(f"renamed {proposal['name']}")
+    if proposal["related"]:
+        changes.append("links " + ", ".join(proposal["related"]))
+    if proposal["atlas"]:
+        changes.append(f"listed in {Path(proposal['atlas']).stem}")
+    return f"- **{proposal['path'].stem}**" + (" → " + ", ".join(changes) if changes else "")
 
 
 class Composer(QPlainTextEdit):
@@ -113,6 +131,8 @@ class ChatCard(QWidget):
         self.lookup = None  # the `?` lookup or `!` command in flight, if any (card.md)
         self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.calendar_factory = timetable.CalendarQuery  # swappable in tests, so no real fetch
+        self.organize_factory = inboxOrganize.OrganizeQuery  # swappable in tests, so no real vault or `claude` subprocess
+        self.organize_pickers = []  # the latest `! organize`'s rows, one picker per Inbox note
         self.picker = None  # the latest lookup's note picker, if it got one
 
         self.buildContent()
@@ -440,11 +460,7 @@ class ChatCard(QWidget):
             picker = self.picker
             picker.picked.connect(lambda note: self.onVocabPicked(picker, query, result))
         if self.picker is not None:
-            row = QHBoxLayout()
-            row.addWidget(picker)
-            row.addStretch(1)
-            self.insertTurnRow(row)
-            self.animation.popIn(picker)
+            self.showPicker(picker)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def onNotePicked(self, picker, query, result, note):
@@ -476,12 +492,15 @@ class ChatCard(QWidget):
         self.appendUserTurn(text)
         label = self.appendClaudeTurn()
         index = self.streaming_index
-        if command not in timetable.COMMANDS:
-            self.showReply(label, index, "unknown command — try ! today or ! week")
+        if command in timetable.COMMANDS:
+            self.lookup = self.calendar_factory(command, lambda reply: self.onCommandResult(label, index, reply))
+        elif command == "organize":
+            self.lookup = self.organize_factory(lambda result: self.onOrganizeResult(label, index, result))
+        else:
+            self.showReply(label, index, "unknown command — try ! today, ! week or ! organize")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)
-        self.lookup = self.calendar_factory(command, lambda reply: self.onCommandResult(label, index, reply))
         self.lookup.start()
 
     def onCommandResult(self, label, index, reply):
@@ -489,6 +508,55 @@ class ChatCard(QWidget):
         self.lookup = None
         self.composer.setReadOnly(False)
         self.showReply(label, index, reply)
+
+    def onOrganizeResult(self, label, index, result):
+        """One picker per Inbox note (issue inbox-organize/01): a single
+        row with Claude's proposal, or every folder to filter and pick from
+        when there's no usable proposal. Clicking files that note alone."""
+        self.organize_pickers = []
+        if "error" in result:
+            self.onCommandResult(label, index, result["error"])
+            return
+        proposals = result["proposals"]
+        if not proposals:
+            self.onCommandResult(label, index, "Inbox is empty")
+            return
+
+        count = f"{len(proposals)} note{'s' if len(proposals) != 1 else ''} in Inbox — click a row to file it"
+        if result["failed"]:
+            count += "\ncouldn't get suggestions, so pick a folder for each"
+        self.onCommandResult(label, index, count + "\n\n" + "\n".join(organize_summary(proposal) for proposal in proposals))
+
+        for proposal in proposals:
+            stem = proposal["path"].stem
+            if proposal["folder"] is not None:
+                row = {"path": f"{proposal['folder']}/{proposal['name']}.md", "recent": False}
+                picker = NotePicker([row], self.contentWidth(), header=stem)
+            else:
+                rows = [{"path": folder, "recent": False} for folder in result["folders"]]
+                picker = NotePicker(rows, self.contentWidth(), header=f"{stem} — pick a folder", all_notes=rows, placeholder="filter folders…")
+            picker.picked.connect(
+                lambda path, picker=picker, proposal=proposal: self.onOrganizePicked(picker, proposal, proposal["folder"] or path)
+            )
+            self.organize_pickers.append(picker)
+            self.showPicker(picker)
+
+    def onOrganizePicked(self, picker, proposal, folder):
+        try:
+            outcome = inboxOrganize.organize(proposal, folder)
+        except (OSError, ValueError):
+            picker.showFailed("couldn't move the note")
+            return
+        picker.showMoved(outcome["path"].parent.name, outcome["linked"])
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
+    def showPicker(self, picker):
+        row = QHBoxLayout()
+        row.addWidget(picker)
+        row.addStretch(1)
+        self.insertTurnRow(row)
+        self.animation.popIn(picker)
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def showReply(self, label, index, text):
         self.state.turns[index]["text"] = text

@@ -136,7 +136,7 @@ class NotePicker(QFrame):
 
     picked = Signal(str)
 
-    def __init__(self, notes, width, header="ambiguous — confirm the note", all_notes=None, parent=None):
+    def __init__(self, notes, width, header="ambiguous — confirm the note", all_notes=None, placeholder="filter notes…", parent=None):
         super().__init__(parent)
         self.setObjectName("notePicker")
         self.setStyleSheet(
@@ -147,19 +147,19 @@ class NotePicker(QFrame):
         self.outcome_label = None
         self.outcome_dot = None
 
-        self.header_label = text_label(header, style.PICKER_HEADER_TEXT)
+        # Elided, since `! organize` puts a note's own (any length) name here.
+        self.header_label = ElidedLabel(header, style.PICKER_HEADER_TEXT, Qt.ElideRight)
         header_row = QHBoxLayout()
         header_row.setSpacing(style.SPACE_2)
         header_row.addWidget(SearchIcon())
-        header_row.addWidget(self.header_label)
-        header_row.addStretch(1)
+        header_row.addWidget(self.header_label, 1)
 
         self.notes = notes
         self.all_notes = all_notes
         self.filter_field = None
         if all_notes is not None:
             self.filter_field = QLineEdit()
-            self.filter_field.setPlaceholderText("filter notes…")
+            self.filter_field.setPlaceholderText(placeholder)
             self.filter_field.setFocusPolicy(Qt.ClickFocus)  # the composer keeps focus when the picker pops in
             self.filter_field.setFixedHeight(style.PICKER_FILTER_HEIGHT)
             self.filter_field.setStyleSheet(
@@ -237,6 +237,12 @@ class NotePicker(QFrame):
 
     def showSaved(self, name):
         self.showOutcome(f"saved to <b>{html.escape(name)}</b>", style.PICKER_DOT_RECENT, Qt.RichText)
+
+    def showMoved(self, folder, linked):
+        text = f"moved to <b>{html.escape(folder)}</b>"
+        if not linked:
+            text += ", but couldn't add its links"
+        self.showOutcome(text, style.PICKER_DOT_RECENT, Qt.RichText)
 
     def showFailed(self, text):
         self.showOutcome(text, style.PICKER_DOT_OLDER, Qt.PlainText)

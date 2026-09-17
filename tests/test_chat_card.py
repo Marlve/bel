@@ -62,6 +62,15 @@ CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") /
 CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation.", "all_notes": ALL_NOTES}
 VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
 VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "all_notes": ALL_NOTES, "vocab": VOCAB_NOTE}
+FOLDERS = ["1 Project", "2 Areas", "2 Areas/School"]
+PLACED = {
+    "path": Path("C:/vault/0 Inbox/Assignment ETW.md"), "folder": "2 Areas/School/ETW2001", "new_folder": True,
+    "title": "ETW Report", "name": "ETW Report", "related": ["Week 3"], "atlas": "5 Atlas/School.md",
+}
+UNPLACED = {
+    "path": Path("C:/vault/0 Inbox/Loose idea.md"), "folder": None, "new_folder": False,
+    "title": "Loose idea", "name": "Loose idea", "related": [], "atlas": None,
+}
 
 
 def teardownCard(card):
@@ -711,6 +720,107 @@ class ChatCardTests(unittest.TestCase):
         self.card.dismiss()
 
         self.assertTrue(query.cancelled)
+
+    # --- `! organize` ---
+
+    def startOrganize(self):
+        self.lookups = []
+        self.card.organize_factory = lambda on_result: self.fakeLookup("organize", on_result)
+        self.card.fly()
+        self.card.send("! organize")
+        return self.lookups[0]
+
+    def test_bang_organize_asks_about_the_inbox_instead_of_chatting(self):
+        query = self.startOrganize()
+
+        self.assertTrue(query.started)
+        self.assertEqual(self.requests, [])
+        self.assertTrue(self.card.composer.isReadOnly())
+        self.assertEqual(self.card.turn_count, 0)
+
+    def test_an_empty_inbox_says_so(self):
+        query = self.startOrganize()
+
+        query.on_result({"proposals": [], "folders": FOLDERS, "failed": False})
+
+        self.assertEqual(self.card.turns[-1]["text"], "Inbox is empty")
+        self.assertEqual(self.card.organize_pickers, [])
+        self.assertFalse(self.card.composer.isReadOnly())
+        self.assertIsNone(self.card.lookup)
+
+    def test_an_organize_error_is_the_reply(self):
+        query = self.startOrganize()
+
+        query.on_result({"error": "no Inbox folder in the vault"})
+
+        self.assertEqual(self.card.turns[-1]["text"], "no Inbox folder in the vault")
+
+    def test_each_inbox_note_gets_its_own_row_to_click(self):
+        query = self.startOrganize()
+
+        query.on_result({"proposals": [PLACED, UNPLACED], "folders": FOLDERS, "failed": False})
+
+        placed, unplaced = self.card.organize_pickers
+        self.assertEqual([row.name_label.full_text for row in placed.rows], ["ETW Report"])
+        self.assertEqual([row.folder_label.full_text for row in placed.rows], [str(Path("2 Areas/School/ETW2001"))])
+        self.assertIsNone(placed.filter_field)
+        self.assertIsNotNone(unplaced.filter_field)
+        self.assertEqual([row.path for row in unplaced.rows], FOLDERS)
+        text = self.card.turns[-1]["text"]
+        self.assertIn("2 notes in Inbox", text)
+        self.assertIn("**Assignment ETW** → new folder, renamed ETW Report, links Week 3, listed in School", text)
+        self.assertIn("**Loose idea** → pick a folder", text)
+
+    def test_a_failed_answer_says_every_note_needs_a_folder(self):
+        query = self.startOrganize()
+
+        query.on_result({"proposals": [UNPLACED], "folders": FOLDERS, "failed": True})
+
+        self.assertIn("couldn't get suggestions", self.card.turns[-1]["text"])
+
+    def test_clicking_a_proposal_files_the_note_there(self):
+        query = self.startOrganize()
+        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
+        [picker] = self.card.organize_pickers
+
+        moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
+        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
+            picker.rows[0].clicked.emit(picker.rows[0].path)
+
+        organize.assert_called_once_with(PLACED, "2 Areas/School/ETW2001")
+        self.assertEqual(picker.outcome_label.text(), "moved to <b>ETW2001</b>")
+
+    def test_picking_a_folder_files_an_unplaced_note_there(self):
+        query = self.startOrganize()
+        query.on_result({"proposals": [UNPLACED], "folders": FOLDERS, "failed": False})
+        [picker] = self.card.organize_pickers
+
+        moved = Path("C:/vault/1 Project/Loose idea.md")
+        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
+            picker.rows[0].clicked.emit("1 Project")
+
+        organize.assert_called_once_with(UNPLACED, "1 Project")
+
+    def test_a_move_that_fails_says_so(self):
+        query = self.startOrganize()
+        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
+        [picker] = self.card.organize_pickers
+
+        with patch("claudeChatCard.inboxOrganize.organize", side_effect=OSError):
+            picker.rows[0].clicked.emit(picker.rows[0].path)
+
+        self.assertEqual(picker.outcome_label.text(), "couldn't move the note")
+
+    def test_a_move_whose_links_failed_says_so(self):
+        query = self.startOrganize()
+        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
+        [picker] = self.card.organize_pickers
+
+        moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
+        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": False}):
+            picker.rows[0].clicked.emit(picker.rows[0].path)
+
+        self.assertEqual(picker.outcome_label.text(), "moved to <b>ETW2001</b>, but couldn't add its links")
 
 
 class ChatSlotTests(unittest.TestCase):
