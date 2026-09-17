@@ -9,8 +9,8 @@
 # chrome around it (marked transparent-for-mouse, see buildContent) and the
 # bare margins - not covered by any child widget - fall through to it.
 
-from PySide6.QtWidgets import QWidget, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QApplication
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtWidgets import QWidget, QLabel, QPlainTextEdit, QPlainTextDocumentLayout, QPushButton, QVBoxLayout, QHBoxLayout, QApplication
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTextDocument
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
@@ -26,6 +26,23 @@ STORE_KEY = "note"
 
 def margin():
     return style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
+
+
+class WrapWidthLayout(QPlainTextDocumentLayout):
+    """Works around a Qt bug: QPlainTextDocumentLayout.blockWidth adds a
+    hardcoded 8px (Qt's default document margin, both sides) to a line's
+    width, so with the body's zero margin a line within 8px of the edge
+    reported the document wider than the field and showed a horizontal
+    scrollbar. The body wraps to its viewport, so no line is ever wider."""
+
+    def __init__(self, document, field):
+        super().__init__(document)
+        self.field = field
+
+    def documentSize(self):
+        size = super().documentSize()
+        size.setWidth(min(size.width(), self.field.viewport().width()))
+        return size
 
 
 class NoteCard(FloatingCard, QWidget):
@@ -96,6 +113,9 @@ class NoteCard(FloatingCard, QWidget):
         header.addWidget(self.close_button)
 
         self.body = QPlainTextEdit(self)
+        document = QTextDocument(self.body)
+        document.setDocumentLayout(WrapWidthLayout(document, self.body))
+        self.body.setDocument(document)
         self.body.setFrameShape(QPlainTextEdit.NoFrame)
         self.body.setStyleSheet(style.plain_field_stylesheet())
         # Matches the chat card's/todo's scrollbar removal - still scrollable

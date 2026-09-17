@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import tempfile
@@ -156,6 +157,24 @@ class NoteCardTests(unittest.TestCase):
         self.card.hide()
         saved = cardStore.load("note", None)
         self.assertEqual(saved["text"], "last-minute note")
+
+    def test_a_line_that_fits_the_body_never_scrolls_sideways(self):
+        # QPlainTextDocumentLayout.blockWidth adds a hardcoded 8px (Qt's
+        # default 4px margin, both sides) to a line's width, and a resize
+        # reliably routes the layout through it - so a line within 8px of
+        # the body's edge must still not scroll.
+        self.card.show()
+        self.card.body.setPlainText("a" * 20)
+        QApplication.processEvents()
+        layout = self.card.body.document().firstBlock().layout()
+        slack = 4  # inside that 8px
+        line_width = math.ceil(layout.lineAt(0).naturalTextWidth())
+
+        self.card.resize(self.card.width() - (self.card.body.width() - line_width - slack), self.card.height())
+        QApplication.processEvents()
+
+        self.assertEqual(layout.lineCount(), 1)  # still fits on one line
+        self.assertEqual(self.card.body.horizontalScrollBar().maximum(), 0)
 
     def test_typing_in_the_body_never_moves_the_window(self):
         # The body is a real child widget, so a press inside it must never
