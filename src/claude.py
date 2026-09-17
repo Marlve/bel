@@ -139,8 +139,7 @@ class ClaudeWorker(QObject):
   """Runs askBel() on a background thread so callers on the Qt main thread
   (e.g. a pie menu action) don't block while the CLI call streams its
   response. Move an instance to a QThread and connect the thread's
-  `started` signal to `run`, mirroring HotkeyListener's cross-thread
-  pattern in hotkey.py - this class never touches Qt widgets directly, it
+  `started` signal to `run` - this class never touches Qt widgets directly, it
   re-emits each streamed piece via `chunk` (and `finished` once the
   response is done) and leaves the receiving slots to run on the main
   thread.

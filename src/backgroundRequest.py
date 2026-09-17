@@ -2,8 +2,7 @@ from PySide6.QtCore import QObject, QThread
 
 
 class BackgroundRequest(QObject):
-    """Runs a worker's `run()` on its own QThread, mirroring HotkeyListener's
-    cross-thread pattern in hotkey.py. The shared lifecycle behind
+    """Runs a worker's `run()` on its own QThread. The shared lifecycle behind
     ClaudeRequest (actions/claudeAction.py) and SearchRequest (vaultSearch.py),
     kept in one place so a fix to the teardown can't reach only one of them
     (issue 21). Each subclass wires its own worker signals and `cancel()`."""

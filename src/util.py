@@ -12,9 +12,9 @@ def reduced_motion():
 
 def force_foreground(hwnd):
     """Force window `hwnd` to the OS foreground so it actually receives
-    keyboard input. Windows blocks a background process (our global hotkey
-    listener runs on its own thread, unrelated to whatever app is focused)
-    from calling SetForegroundWindow directly - this is the standard
+    keyboard input. Windows blocks a background process (Bel, summoned by a
+    global hotkey while some other app is focused) from calling
+    SetForegroundWindow directly - this is the standard
     workaround: briefly attach our input thread to the current foreground
     window's, which Windows treats as permission to activate.
     """

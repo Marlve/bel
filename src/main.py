@@ -2,6 +2,7 @@
 
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 
 from pieMenu import PieMenu
 from hotkey import HotkeyListener
@@ -26,7 +27,9 @@ def main():
 
     pie_menu = PieMenu()
     hotkey = HotkeyListener(PIE_MENU_HOTKEY)
-    hotkey.triggered.connect(pie_menu.onKeyPress)
+    # Queued: WM_HOTKEY arrives inside Qt's native event filter, and the
+    # ring shouldn't open (grab the mouse, force foreground) mid-dispatch.
+    hotkey.triggered.connect(pie_menu.onKeyPress, Qt.QueuedConnection)
     hotkey.start()
 
     sys.exit(app.exec())
