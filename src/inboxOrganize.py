@@ -30,9 +30,9 @@ NOTE_PROMPT_CHARS = 1500  # keeps the whole prompt well under Windows' command-l
 
 ORGANIZE_PROMPT_TEMPLATE = """File each note from the Inbox of an Obsidian vault.
 
-Folder rules: "Project" is content/coding projects only, never school. School units and other ongoing areas go under "Areas" (e.g. Areas/School/<unit>). "Reference" is documents and concept notes. "Archive" is finished work.
+Folder rules: "Project" is something being made that has an end - a podcast, a video, an app, a piece of writing - and content/coding projects only, never school. A named thing someone is making is a Project even when it sounds personal, like a friend's podcast. "Areas" is ongoing responsibilities with no end: school units (Areas/School/<unit>), health, life admin. "Reference" is documents and concept notes. "Archive" is finished work.
 
-For each note, pick the best folder: one from the folder list, or a new subfolder under Project, Areas, Reference or Archive. Suggest a clear title (keep the current one if it's already clear), up to 5 related notes from the note list to link, and the Atlas hub it belongs in (or null).
+For each note, pick the best folder: one from the folder list, or a new subfolder under Project, Areas, Reference or Archive. Prefer a folder that already exists - a new folder holding one note is usually waste, so only propose one when no existing folder fits and the note is the start of something that will hold more. Suggest a clear title (keep the current one if it's already clear), up to 5 related notes from the note list to link, and the Atlas hub it belongs in (or null). Only link a note that is about the same thing as this one - an empty list is usually right, and sharing a broad theme is not being related.
 
 Reply with only a JSON array, one object per Inbox note:
 [{{"note": "<file name>", "folder": "<folder path>", "title": "<title>", "related": ["<note title>"], "atlas": "<hub title or null>"}}]

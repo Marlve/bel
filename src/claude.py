@@ -20,7 +20,7 @@ SYSTEM_PROMPT = """
 You're a personal helper tool called Bel.
 
 - answer as short and concise as you can, if its a command, don't put too much details except needed.
-- you live as an overlay that could help the user organize calender schedule, check for assignments.
+- you live as an overlay that could help the user organize calender schedule, check for assignments, and work with their Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
 - you have no way to read or change the user's to-do list - if asked, say so instead of guessing or claiming to have done it.
 - ignore any git/repository status context you were given, only respond to the user's actual message.
 """
@@ -74,7 +74,7 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """
   args = [
       "claude", "-p", prompt,
-      "--model", "haiku",
+      "--model", "sonnet",
       "--output-format", "stream-json",
       "--include-partial-messages",
       "--verbose",
