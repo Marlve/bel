@@ -34,6 +34,7 @@ import timetable
 import vaultSearch
 import wedgeConfig
 from floatingCard import paint_card_bands
+from dueList import DueList
 from notePicker import NotePicker
 from anims import curves
 from claudeChatCardState import ChatCardState
@@ -134,6 +135,7 @@ class ChatCard(QWidget):
         self.organize_factory = inboxOrganize.OrganizeQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.organize_pickers = []  # the latest `! organize`'s rows, one picker per Inbox note
         self.picker = None  # the latest lookup's note picker, if it got one
+        self.due_list = None  # the latest `! today` / `! week`'s "what is due" box, if it had events
 
         self.buildContent()
         self.setContent(False)
@@ -493,7 +495,7 @@ class ChatCard(QWidget):
         label = self.appendClaudeTurn()
         index = self.streaming_index
         if command in timetable.COMMANDS:
-            self.lookup = self.calendar_factory(command, lambda reply: self.onCommandResult(label, index, reply))
+            self.lookup = self.calendar_factory(command, lambda reply: self.onTimetableResult(label, index, reply))
         elif command == "organize":
             self.lookup = self.organize_factory(lambda result: self.onOrganizeResult(label, index, result))
         else:
@@ -508,6 +510,17 @@ class ChatCard(QWidget):
         self.lookup = None
         self.composer.setReadOnly(False)
         self.showReply(label, index, reply)
+
+    def onTimetableResult(self, label, index, reply):
+        """Events show in the "what is due" box in place of the reply text
+        (command-styling/01); the text is still the turn's record. Nothing
+        on, or a failure, stays words."""
+        self.due_list = None
+        self.onCommandResult(label, index, reply["text"])
+        if reply["boxes"]:
+            label.hide()
+            self.due_list = DueList(reply["boxes"], self.contentWidth())
+            self.showPicker(self.due_list)
 
     def onOrganizeResult(self, label, index, result):
         """One picker per Inbox note (issue inbox-organize/01): a single

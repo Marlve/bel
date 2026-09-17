@@ -56,26 +56,35 @@ def events_between(ics, start, end, tz=None):
     return sorted(events, key=lambda event: (event["day"], event["start"] is not None, event["start"] or time()))
 
 
-def event_line(event):
+def event_label(event):
     if event["start"] is None:
-        return f"all day  {event['title']}"
-    return f"{event['start']:%H:%M}–{event['end']:%H:%M}  {event['title']}"
+        return "all day"
+    return f"{event['start']:%H:%M}–{event['end']:%H:%M}"
+
+
+def due_boxes(command, events):
+    """The "what is due" boxes (.scratch/command-styling/issues/01): one
+    box of (title, time) rows for `! today`, or one per day under its
+    heading for `! week`. No events is no boxes."""
+    if command == "today":
+        return [(None, [(event["title"], event_label(event)) for event in events])] if events else []
+    boxes = []
+    for event in events:
+        heading = f"{event['day']:%a} {event['day'].day} {event['day']:%b}"
+        if not boxes or boxes[-1][0] != heading:
+            boxes.append((heading, []))
+        boxes[-1][1].append((event["title"], event_label(event)))
+    return boxes
 
 
 def format_reply(command, events):
-    """Bel's reply text: one line per event, grouped under a day heading for
-    `! week`."""
+    """Bel's reply as text: one line per event, grouped under a day heading
+    for `! week`. Kept as the turn's text behind the boxes."""
     if not events:
         return "nothing on today" if command == "today" else "nothing in the next 7 days"
-    if command == "today":
-        return "\n".join(event_line(event) for event in events)
-    days = []
-    for event in events:
-        if not days or days[-1][0] != event["day"]:
-            days.append((event["day"], []))
-        days[-1][1].append(event_line(event))
     return "\n\n".join(
-        f"**{day:%a} {day.day} {day:%b}**\n" + "\n".join(lines) for day, lines in days
+        (f"**{heading}**\n" if heading else "") + "\n".join(f"{label}  {title}" for title, label in rows)
+        for heading, rows in due_boxes(command, events)
     )
 
 
@@ -86,8 +95,8 @@ def fetch(url):
 
 def answer(command, today=None, url_path=None, fetch=fetch, tz=None):
     """The whole command, start to finish: read the link, fetch the feed,
-    list the range's events. Every failure is answered in words rather than
-    raised."""
+    list the range's events. Returns {"text", "boxes"}; every failure is
+    answered in words with no boxes rather than raised."""
     today = today or date.today()
     url_path = url_path or URL_PATH
     try:
@@ -95,23 +104,23 @@ def answer(command, today=None, url_path=None, fetch=fetch, tz=None):
     except OSError:
         url = ""
     if not url:
-        return f"no timetable link set — put the iCal link in {url_path}"
+        return {"text": f"no timetable link set — put the iCal link in {url_path}", "boxes": []}
     if url.startswith("webcal://"):
         # A subscription link is the same feed over https.
         url = "https://" + url[len("webcal://"):]
     try:
         ics = fetch(url)
     except (OSError, ValueError):
-        return "couldn't reach the timetable"
+        return {"text": "couldn't reach the timetable", "boxes": []}
     try:
         events = events_between(ics, *command_range(command, today), tz=tz)
     except Exception:
-        return "couldn't read the timetable"
-    return format_reply(command, events)
+        return {"text": "couldn't read the timetable", "boxes": []}
+    return {"text": format_reply(command, events), "boxes": due_boxes(command, events)}
 
 
 class TimetableWorker(QObject):
-    finished = Signal(str)
+    finished = Signal(object)
 
     def __init__(self, command):
         super().__init__()
@@ -124,15 +133,15 @@ class TimetableWorker(QObject):
 class TimetableRequest(BackgroundRequest):
     """One answer(), off the UI thread since the fetch is network I/O."""
 
-    finished = Signal(str)
+    finished = Signal(object)
 
     def __init__(self, command, parent=None):
         super().__init__(TimetableWorker(command), parent)
         self.worker.finished.connect(self.onWorkerFinished)
 
-    def onWorkerFinished(self, text):
+    def onWorkerFinished(self, reply):
         self.stopThread()
-        self.finished.emit(text)
+        self.finished.emit(reply)
 
     def cancel(self):
         # Nothing to interrupt mid-fetch - urlopen's own timeout bounds it.
@@ -141,7 +150,7 @@ class TimetableRequest(BackgroundRequest):
 
 class CalendarQuery:
     """Drives one `! today` / `! week` for ChatCard, the same start/cancel
-    shape as vaultSearch.ExplainQuery. `on_result` gets the reply text."""
+    shape as vaultSearch.ExplainQuery. `on_result` gets answer()'s reply."""
 
     def __init__(self, command, on_result, request_factory=TimetableRequest):
         self.command = command
@@ -158,10 +167,10 @@ class CalendarQuery:
         self.request.finished.connect(self.onFinished)
         self.request.start()
 
-    def onFinished(self, text):
+    def onFinished(self, reply):
         self.disconnectAboutToQuit()
         if not self.cancelled:
-            self.on_result(text)
+            self.on_result(reply)
 
     def cancel(self):
         self.cancelled = True

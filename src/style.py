@@ -206,6 +206,18 @@ PICKER_POP_MS = 220  # the picker fades in while rising into place
 PICKER_POP_RISE = SPACE_2  # how far below its resting place the picker starts
 PICKER_POP_EASING = "OutCubic"
 
+# --- The "what is due" box a `! today` / `! week` answer shows in
+# (.scratch/command-styling/issues/01). Read-only and brightness-only: no
+# dot, no sand, every row the same whatever its urgency. ---
+
+DUE_FILL = PALETTE["150"]
+DUE_BORDER = PALETTE["250"]
+DUE_RADIUS = 7
+DUE_DIVIDER = PALETTE["200"]
+DUE_HEADING_TEXT = BODY
+DUE_NAME_TEXT = BODY_DIM
+DUE_LABEL_TEXT = LABEL
+
 
 # --- Todo & note cards. Persistent, draggable squares toggled from the
 # ring - same footprint, type, and neutral surface as the chat card (CHAT_*
@@ -337,6 +349,7 @@ _SCALE_INT_NAMES = [
     "CHAT_COMPOSER_HEIGHT",
     "PICKER_RADIUS", "PICKER_LIST_MAX_HEIGHT", "PICKER_DOT_SIZE", "PICKER_ICON_SIZE", "PICKER_POP_RISE",
     "PICKER_FILTER_HEIGHT", "PICKER_FILTER_RADIUS",
+    "DUE_RADIUS",
     "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
     "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
     "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",

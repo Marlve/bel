@@ -110,6 +110,27 @@ class FormatReplyTests(unittest.TestCase):
         self.assertEqual(timetable.format_reply("week", []), "nothing in the next 7 days")
 
 
+class DueBoxesTests(unittest.TestCase):
+    LECTURE = FormatReplyTests.LECTURE
+    DUE = FormatReplyTests.DUE
+
+    def test_today_is_one_box_of_title_and_time_rows(self):
+        boxes = timetable.due_boxes("today", [self.LECTURE, {**self.DUE, "day": THURSDAY}])
+
+        self.assertEqual(boxes, [(None, [("FIT3143 Lecture", "10:00–12:00"), ("ETW Assignment due", "all day")])])
+
+    def test_week_is_one_box_per_day_under_its_heading(self):
+        boxes = timetable.due_boxes("week", [self.LECTURE, self.DUE])
+
+        self.assertEqual(
+            boxes,
+            [("Thu 17 Sep", [("FIT3143 Lecture", "10:00–12:00")]), ("Sat 19 Sep", [("ETW Assignment due", "all day")])],
+        )
+
+    def test_nothing_on_is_no_boxes(self):
+        self.assertEqual(timetable.due_boxes("week", []), [])
+
+
 class AnswerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -130,7 +151,17 @@ class AnswerTests(unittest.TestCase):
         reply = self.answer("today")
 
         self.assertEqual(self.fetched, ["https://example.com/timetable.ics"])
-        self.assertEqual(reply, "10:00–12:00  FIT3143 Lecture")
+        self.assertEqual(
+            reply,
+            {"text": "10:00–12:00  FIT3143 Lecture", "boxes": [(None, [("FIT3143 Lecture", "10:00–12:00")])]},
+        )
+
+    def test_nothing_on_is_answered_in_words_with_no_boxes(self):
+        self.url_path.write_text("https://example.com/timetable.ics", encoding="utf-8")
+
+        reply = timetable.answer("today", date(2026, 9, 24), url_path=self.url_path, fetch=self.fetch, tz=MELBOURNE)
+
+        self.assertEqual(reply, {"text": "nothing on today", "boxes": []})
 
     def test_a_webcal_link_is_fetched_over_https(self):
         self.url_path.write_text("webcal://example.com/timetable.ics", encoding="utf-8")
@@ -143,7 +174,8 @@ class AnswerTests(unittest.TestCase):
         reply = self.answer("today")
 
         self.assertEqual(self.fetched, [])
-        self.assertIn("no timetable link set", reply)
+        self.assertIn("no timetable link set", reply["text"])
+        self.assertEqual(reply["boxes"], [])
 
     def test_a_failed_fetch_says_the_timetable_could_not_be_reached(self):
         self.url_path.write_text("https://example.com/timetable.ics", encoding="utf-8")
@@ -151,16 +183,19 @@ class AnswerTests(unittest.TestCase):
         def fail(url):
             raise OSError("timed out")
 
-        self.assertEqual(self.answer("week", fetch=fail), "couldn't reach the timetable")
+        self.assertEqual(self.answer("week", fetch=fail), {"text": "couldn't reach the timetable", "boxes": []})
 
     def test_a_feed_that_is_not_ical_says_it_could_not_be_read(self):
         self.url_path.write_text("https://example.com/timetable.ics", encoding="utf-8")
 
-        self.assertEqual(self.answer("week", fetch=lambda url: b"<html>login</html>"), "couldn't read the timetable")
+        self.assertEqual(
+            self.answer("week", fetch=lambda url: b"<html>login</html>"),
+            {"text": "couldn't read the timetable", "boxes": []},
+        )
 
 
 class FakeRequest(QObject):
-    finished = Signal(str)
+    finished = Signal(object)
 
     def __init__(self, command):
         super().__init__()
@@ -189,18 +224,18 @@ class CalendarQueryTests(unittest.TestCase):
         query = timetable.CalendarQuery("week", self.results.append, request_factory=self.factory)
 
         query.start()
-        self.requests[0].finished.emit("nothing in the next 7 days")
+        self.requests[0].finished.emit({"text": "nothing in the next 7 days", "boxes": []})
 
         self.assertEqual(self.requests[0].command, "week")
         self.assertTrue(self.requests[0].started)
-        self.assertEqual(self.results, ["nothing in the next 7 days"])
+        self.assertEqual(self.results, [{"text": "nothing in the next 7 days", "boxes": []}])
 
     def test_a_cancelled_query_never_answers(self):
         query = timetable.CalendarQuery("today", self.results.append, request_factory=self.factory)
         query.start()
 
         query.cancel()
-        self.requests[0].finished.emit("late reply")
+        self.requests[0].finished.emit({"text": "late reply", "boxes": []})
 
         self.assertTrue(self.requests[0].cancelled)
         self.assertEqual(self.results, [])

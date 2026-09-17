@@ -687,12 +687,33 @@ class ChatCardTests(unittest.TestCase):
     def test_the_timetable_answer_shows_as_bels_reply(self):
         query = self.startCommand("! today")
 
-        query.on_result("10:00–12:00  FIT3143 Lecture")
+        query.on_result({"text": "10:00–12:00  FIT3143 Lecture", "boxes": [(None, [("FIT3143 Lecture", "10:00–12:00")])]})
 
         self.assertEqual(self.card.turns[-1]["text"], "10:00–12:00  FIT3143 Lecture")
         self.assertIsNone(self.card.animation.typing_label)
         self.assertFalse(self.card.composer.isReadOnly())
         self.assertIsNone(self.card.lookup)
+
+    def test_a_timetable_answer_with_events_shows_them_in_the_due_box(self):
+        query = self.startCommand("! week")
+
+        query.on_result({
+            "text": "**Thu 17 Sep**\n10:00–12:00  FIT3143 Lecture\n\n**Sat 19 Sep**\nall day  ETW Assignment due",
+            "boxes": [("Thu 17 Sep", [("FIT3143 Lecture", "10:00–12:00")]), ("Sat 19 Sep", [("ETW Assignment due", "all day")])],
+        })
+
+        due_list = self.card.due_list
+        self.assertEqual([heading.text() for heading in due_list.headings], ["Thu 17 Sep", "Sat 19 Sep"])
+        self.assertEqual([row.due_label.text() for row in due_list.rows], ["10:00–12:00", "all day"])
+        self.assertEqual(due_list.width(), self.card.contentWidth())
+
+    def test_nothing_on_or_a_failure_is_answered_in_words_without_a_box(self):
+        query = self.startCommand("! today")
+
+        query.on_result({"text": "couldn't reach the timetable", "boxes": []})
+
+        self.assertEqual(self.card.turns[-1]["text"], "couldn't reach the timetable")
+        self.assertIsNone(self.card.due_list)
 
     def test_chat_waits_while_a_command_is_running(self):
         self.startCommand("! week")
