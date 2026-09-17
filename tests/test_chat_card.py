@@ -385,6 +385,27 @@ class ChatCardTests(unittest.TestCase):
         expected = dockCorner.rect(dockCorner.TOP_RIGHT, other_area, style.CHAT_SIZE, style.CHAT_MARGIN)
         self.assertEqual(self.card.dock_rect, expected)
 
+    def test_a_drag_that_starts_on_a_picker_row_docks_the_card_and_picks_nothing(self):
+        # A row takes the release for its click - it must still reach the
+        # card, or the card is left wherever the drag dropped it.
+        lookup = self.startLookup()
+        lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
+        self.card.move(300, 300)
+        row = self.card.picker.rows[0]
+        picked = []
+        self.card.picker.picked.connect(picked.append)
+        press = QPointF(310, 310)
+        area = QApplication.primaryScreen().availableGeometry()
+        bottom_left = QPointF(area.x() + 20, area.y() + area.height() - 20)
+
+        QApplication.sendEvent(row, mouseEvent(QEvent.MouseButtonPress, press))
+        QApplication.sendEvent(row, mouseEvent(QEvent.MouseMove, bottom_left))
+        QApplication.sendEvent(row, mouseEvent(QEvent.MouseButtonRelease, bottom_left))
+
+        self.assertEqual(self.card.corner, dockCorner.BOTTOM_LEFT)
+        self.assertEqual(picked, [])
+        self.assertTrue(row.enabled)
+
     def test_pressing_while_minimized_does_not_start_a_drag(self):
         self.card.fly()
         self.card.minimize()

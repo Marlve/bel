@@ -99,6 +99,7 @@ class NoteRow(QFrame):
         self.setObjectName("noteRow")
         self.path = path
         self.enabled = True
+        self.press_pos = None
         self.divided = False
         self.name_color = style.PICKER_NOTE_TEXT
         self.setCursor(Qt.PointingHandCursor)
@@ -159,7 +160,18 @@ class NoteRow(QFrame):
     def leaveEvent(self, event):
         self.paintName(self.name_color)
 
+    def mousePressEvent(self, event):
+        self.press_pos = event.globalPosition()
+        event.ignore()  # the card still sees the press, so a drag can start here
+
     def mouseReleaseEvent(self, event):
+        # Passed on to the card too, or a drag that started on this row
+        # never docks. A press that travelled as far as a drag isn't a click.
+        event.ignore()
+        travelled = event.globalPosition() - self.press_pos if self.press_pos is not None else None
+        self.press_pos = None
+        if travelled is None or travelled.x() ** 2 + travelled.y() ** 2 >= style.CARD_DRAG_THRESHOLD_PX ** 2:
+            return
         if self.enabled and event.button() == Qt.LeftButton:
             self.clicked.emit(self.path)
 
