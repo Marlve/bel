@@ -41,6 +41,12 @@ A chat message prefixed `?` (`? Dijkstra`): Bel searches the vault for the
 rest of the message instead of sending it to Claude as normal chat
 (`vaultSearch.lookup_query`, `ExplainQuery`).
 
+**Command**:
+A chat message prefixed `!` (`! today`, `! week`): Bel runs that command
+instead of sending the message to Claude as normal chat, and like a lookup it
+never joins the Claude session (`claudeChatCard.command_name`). A bare `!` is
+normal chat.
+
 **Picked note**:
 The vault note Derich clicks in a lookup's note picker (`card.md`) - where
 the `[[Concept]]` link goes. Chosen per lookup, never remembered. On a miss,

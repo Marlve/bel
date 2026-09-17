@@ -29,6 +29,7 @@ import cardStore
 import chatMarkdown
 import dockCorner
 import style
+import timetable
 import vaultSearch
 import wedgeConfig
 from floatingCard import paint_card_bands
@@ -40,6 +41,16 @@ from claudeEdgeDockState import OPEN
 from util import reduced_motion
 
 STORE_KEY = "chat"
+
+COMMAND_PREFIX = "!"
+
+
+def command_name(text):
+    """The command of a `! today`-style chat message, or None if the message
+    is normal chat. A bare "!" is normal chat, same as a bare "?"."""
+    if not text.startswith(COMMAND_PREFIX):
+        return None
+    return text[len(COMMAND_PREFIX):].strip().casefold() or None
 
 
 class Composer(QPlainTextEdit):
@@ -99,8 +110,9 @@ class ChatCard(QWidget):
         self.streaming_index = None
         self.auto_scroll = True
         self.focus_composer_on_land = False
-        self.lookup = None  # the `?` lookup in flight, if any (card.md)
+        self.lookup = None  # the `?` lookup or `!` command in flight, if any (card.md)
         self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
+        self.calendar_factory = timetable.CalendarQuery  # swappable in tests, so no real fetch
         self.picker = None  # the latest lookup's note picker, if it got one
 
         self.buildContent()
@@ -329,6 +341,10 @@ class ChatCard(QWidget):
         if query is not None:
             self.startLookup(text, query)
             return
+        command = command_name(text)
+        if command is not None:
+            self.startCommand(text, command)
+            return
         if self.state.turn_count >= wedgeConfig.load_chat_context_limit():
             # The session has taken as much context as it's allowed to -
             # this message starts a brand new one rather than resuming.
@@ -450,6 +466,33 @@ class ChatCard(QWidget):
             picker.showFailed("couldn't save the word")
             return
         picker.showSaved(Path(result["vocab"]["path"]).stem)
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
+    # --- `!` commands ---
+
+    def startCommand(self, text, command):
+        """A `! today`-style message runs a command instead of chatting.
+        Like a `?` lookup, it never joins the Claude session."""
+        self.appendUserTurn(text)
+        label = self.appendClaudeTurn()
+        index = self.streaming_index
+        if command not in timetable.COMMANDS:
+            self.showReply(label, index, "unknown command — try ! today or ! week")
+            return
+        self.composer.setReadOnly(True)
+        self.animation.startTyping(label)
+        self.lookup = self.calendar_factory(command, lambda reply: self.onCommandResult(label, index, reply))
+        self.lookup.start()
+
+    def onCommandResult(self, label, index, reply):
+        self.animation.stopTyping()
+        self.lookup = None
+        self.composer.setReadOnly(False)
+        self.showReply(label, index, reply)
+
+    def showReply(self, label, index, text):
+        self.state.turns[index]["text"] = text
+        self.setTurnHtml(label, text, caret=False)
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def unwire(self):

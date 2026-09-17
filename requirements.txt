@@ -1,2 +1,4 @@
 PySide6
 keyboard
+icalendar
+recurring-ical-events

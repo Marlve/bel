@@ -651,6 +651,67 @@ class ChatCardTests(unittest.TestCase):
         self.assertTrue(lookup.cancelled)
         self.assertIsNone(self.card.lookup)
 
+    # --- `!` commands ---
+
+    def startCommand(self, text):
+        self.lookups = []
+        self.card.calendar_factory = self.fakeLookup
+        self.card.fly()
+        self.card.send(text)
+        return self.lookups[0] if self.lookups else None
+
+    def test_bang_today_asks_the_timetable_instead_of_chatting(self):
+        query = self.startCommand("! today")
+
+        self.assertEqual(query.query, "today")
+        self.assertTrue(query.started)
+        self.assertEqual(self.requests, [])
+        self.assertEqual([turn["role"] for turn in self.card.turns], ["user", "claude"])
+        self.assertTrue(self.card.composer.isReadOnly())
+        self.assertEqual(self.card.turn_count, 0)  # never sent to the Claude session
+
+    def test_bang_week_asks_for_the_week_whatever_the_spacing_and_case(self):
+        query = self.startCommand("!  Week ")
+
+        self.assertEqual(query.query, "week")
+
+    def test_the_timetable_answer_shows_as_bels_reply(self):
+        query = self.startCommand("! today")
+
+        query.on_result("10:00–12:00  FIT3143 Lecture")
+
+        self.assertEqual(self.card.turns[-1]["text"], "10:00–12:00  FIT3143 Lecture")
+        self.assertIsNone(self.card.animation.typing_label)
+        self.assertFalse(self.card.composer.isReadOnly())
+        self.assertIsNone(self.card.lookup)
+
+    def test_chat_waits_while_a_command_is_running(self):
+        self.startCommand("! week")
+
+        self.card.send("hello")
+
+        self.assertEqual(self.requests, [])
+
+    def test_an_unknown_command_says_so_without_asking_anything(self):
+        query = self.startCommand("! tomorrow")
+
+        self.assertIsNone(query)
+        self.assertEqual(self.requests, [])
+        self.assertIn("unknown command", self.card.turns[-1]["text"])
+        self.assertFalse(self.card.composer.isReadOnly())
+
+    def test_a_bare_bang_is_normal_chat(self):
+        self.startCommand("!")
+
+        self.assertEqual(len(self.requests), 1)
+
+    def test_dismissing_cancels_an_in_flight_command(self):
+        query = self.startCommand("! today")
+
+        self.card.dismiss()
+
+        self.assertTrue(query.cancelled)
+
 
 class ChatSlotTests(unittest.TestCase):
     """The dedupe rule: reopening the same wedge's card reveals it instead
