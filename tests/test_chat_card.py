@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, Qt, QVariantAnimation, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
@@ -930,6 +930,57 @@ class ChatSlotTests(unittest.TestCase):
         card.activateWindow()
         QApplication.processEvents()
         self.assertTrue(card.composer.hasFocus())
+
+    def test_picking_the_wedge_after_its_screen_is_gone_reopens_on_the_primary_screen(self):
+        # A monitor unplugged or dropped over sleep deletes its QScreen, and
+        # every call on it raises - chat-card/02's "couldn't open it back".
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.minimize()
+        gone = Mock()
+        gone.availableGeometry.side_effect = RuntimeError("Internal C++ object (QScreen) already deleted.")
+        card.animation.screen = gone
+
+        self.slot.reveal("wedge-1")
+
+        primary = QApplication.primaryScreen()
+        self.assertTrue(card.isOpen())
+        self.assertIs(card.animation.screen, primary)
+        self.assertEqual(card.geometry(), self.slot.dockRect(primary).toRect())
+
+    def test_with_motion_a_pick_after_its_screen_is_gone_slides_open_on_the_primary_screen(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.minimize()
+        card.edge_driver.motion = True  # force a real tween instead of an instant snap
+        gone = Mock()
+        gone.availableGeometry.side_effect = RuntimeError("Internal C++ object (QScreen) already deleted.")
+        card.animation.screen = gone
+
+        self.slot.reveal("wedge-1")
+
+        self.assertTrue(card.isOpen())
+        self.assertEqual(card.edge_driver.tween.endValue(), self.slot.dockRect(QApplication.primaryScreen()))
+
+    def test_picking_the_wedge_after_the_work_area_moved_reopens_inside_it(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.minimize()
+        moved = Mock()
+        moved.availableGeometry.return_value = QRect(-1920, 0, 1920, 1040)
+        card.animation.screen = moved
+
+        with patch("claudeChatCardAnimation.QApplication.screens", return_value=[moved]):
+            self.slot.reveal("wedge-1")
+
+        self.assertTrue(card.isOpen())
+        self.assertEqual(card.geometry(), self.slot.dockRect(moved).toRect())
+
+    def test_picking_the_wedge_while_open_but_off_screen_brings_it_back_instead_of_minimizing(self):
+        card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)
+        card.move(-5000, -5000)
+
+        self.slot.reveal("wedge-1")
+
+        self.assertTrue(card.isOpen())
+        self.assertEqual(card.geometry(), self.slot.dockRect(QApplication.primaryScreen()).toRect())
 
     def test_revealing_an_unknown_wedge_leaves_the_open_card_alone(self):
         card = self.slot.open(self.born, "hi", "wedge-1", self.fakeAction)

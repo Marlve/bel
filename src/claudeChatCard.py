@@ -742,6 +742,12 @@ class ChatCard(QWidget):
                 self.activateWindow()  # see focusComposerIfPending()'s comment on WA_ShowWithoutActivating
                 self.composer.setFocus()
 
+    def redock(self):
+        self.animation.redock()
+
+    def isOnScreen(self):
+        return QApplication.screenAt(self.geometry().center()) is not None
+
     def isTabbed(self):
         return self.animation.isTabbed()
 
@@ -871,11 +877,17 @@ class ChatSlot:
         """Reselecting a wedge whose session is still alive: bring it back
         into view (and focus the composer) if it's tucked away in HIDDEN/TAB,
         or minimize it if it's already OPEN - a second pick of the same
-        wedge tucks it away again rather than ending the session."""
+        wedge tucks it away again rather than ending the session.
+
+        Every pick re-docks the card first, so the wedge is always a way
+        back to a visible chat, and an OPEN card nobody can see (off every
+        screen) is brought back rather than minimized (chat-card/02)."""
         card = self.cardFor(wedge_id)
         if card is None:
             return False
-        if card.isOpen():
+        visible = card.isOpen() and card.isOnScreen()
+        card.redock()
+        if visible:
             card.minimize()
         else:
             card.reveal(focus=True)

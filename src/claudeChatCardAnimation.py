@@ -317,6 +317,16 @@ class ChatCardAnimation:
                 # motion off before this) - land it explicitly.
                 self.parent.setGeometry(self.state.dock_rect.toRect())
 
+    def redock(self):
+        """Re-docks into the current corner of a screen that still exists.
+        A monitor unplugged or dropped over sleep deletes its QScreen, and a
+        work area change leaves dock_rect and the EdgeTrigger strip where
+        they were - either way the card could end up somewhere it can't be
+        seen or reopened (chat-card/02)."""
+        if self.screen not in QApplication.screens():
+            self.screen = QApplication.primaryScreen()
+        self.dockToCorner(self.state.corner)
+
     def stopDynamics(self):
         """Cancel the edge-dock timer and tween - shared by ChatCard.dismiss()
         and ChatSlot.retire(), the two teardown paths, so a stray poll or a
