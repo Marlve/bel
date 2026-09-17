@@ -1,0 +1,1 @@
+When a user types ? [hangeul] then this means a user wants to ask a korean word, if it's a long sentence, the user most likely wants to know how the grammar works, and the word inside of it. What you can do is split all the words in that sentence into the same word process, but refer back to a set of concept grammar that was created or not.
