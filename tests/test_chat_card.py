@@ -511,28 +511,28 @@ class ChatCardTests(unittest.TestCase):
         lookup.on_result(result)
 
         with patch("claudeChatCard.vaultSearch.confirm_pick", return_value=Path("C:/vault/1 Project/Plan.md")) as confirm:
-            self.card.picker.picked.emit(NOTES[0]["path"])
+            self.card.picker.rows[0].clicked.emit(NOTES[0]["path"])
 
         confirm.assert_called_once_with("Dijkstra", result, NOTES[0]["path"])
-        self.assertIn("connected to <b>Plan</b>", self.card.picker.outcome_label.text())
+        self.assertEqual(self.card.picker.rows[0].detail_label.text(), "connected")
 
     def test_a_pick_that_cannot_be_saved_says_so(self):
         lookup = self.startLookup()
         lookup.on_result({**CONCEPT_MISS, "notes": NOTES})
 
         with patch("claudeChatCard.vaultSearch.confirm_pick", side_effect=FileExistsError):
-            self.card.picker.picked.emit(NOTES[0]["path"])
+            self.card.picker.rows[0].clicked.emit(NOTES[0]["path"])
 
-        self.assertEqual(self.card.picker.outcome_label.text(), "couldn't save the note")
+        self.assertEqual(self.card.picker.rows[0].detail_label.text(), "couldn't save the note")
 
     def test_a_pick_whose_note_is_gone_says_the_link_was_skipped(self):
         lookup = self.startLookup()
         lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
 
         with patch("claudeChatCard.vaultSearch.confirm_pick", return_value=None):
-            self.card.picker.picked.emit(NOTES[0]["path"])
+            self.card.picker.rows[0].clicked.emit(NOTES[0]["path"])
 
-        self.assertEqual(self.card.picker.outcome_label.text(), "note not found — link skipped")
+        self.assertEqual(self.card.picker.rows[0].detail_label.text(), "note not found — link skipped")
 
     def test_a_vocab_hit_shows_the_row_without_a_picker(self):
         lookup = self.startLookup("? 안녕")
@@ -557,19 +557,19 @@ class ChatCardTests(unittest.TestCase):
         lookup.on_result({**VOCAB_MISS, "draft": "thanks\n"})
 
         with patch("claudeChatCard.vaultSearch.append_vocab_row") as append:
-            self.card.picker.picked.emit(VOCAB_NOTE["path"])
+            self.card.picker.rows[0].clicked.emit(VOCAB_NOTE["path"])
 
         append.assert_called_once_with("감사", "thanks")
-        self.assertIn("saved to <b>Vocab</b>", self.card.picker.outcome_label.text())
+        self.assertEqual(self.card.picker.rows[0].detail_label.text(), "saved")
 
     def test_a_vocab_save_that_fails_says_so(self):
         lookup = self.startLookup("? 감사")
         lookup.on_result(VOCAB_MISS)
 
         with patch("claudeChatCard.vaultSearch.append_vocab_row", side_effect=OSError):
-            self.card.picker.picked.emit(VOCAB_NOTE["path"])
+            self.card.picker.rows[0].clicked.emit(VOCAB_NOTE["path"])
 
-        self.assertEqual(self.card.picker.outcome_label.text(), "couldn't save the word")
+        self.assertEqual(self.card.picker.rows[0].detail_label.text(), "couldn't save the word")
 
     def test_a_korean_sentence_is_translated_but_never_offered_for_saving(self):
         lookup = self.startLookup("? 감사 합니다")
@@ -765,7 +765,7 @@ class ChatCardTests(unittest.TestCase):
         query.on_result({"proposals": [], "folders": FOLDERS, "failed": False})
 
         self.assertEqual(self.card.turns[-1]["text"], "Inbox is empty")
-        self.assertEqual(self.card.organize_pickers, [])
+        self.assertIsNone(self.card.organize_list)
         self.assertFalse(self.card.composer.isReadOnly())
         self.assertIsNone(self.card.lookup)
 
@@ -776,21 +776,15 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertEqual(self.card.turns[-1]["text"], "no Inbox folder in the vault")
 
-    def test_each_inbox_note_gets_its_own_row_to_click(self):
+    def test_every_inbox_note_gets_a_row_in_one_box_under_a_count_line(self):
         query = self.startOrganize()
 
         query.on_result({"proposals": [PLACED, UNPLACED], "folders": FOLDERS, "failed": False})
 
-        placed, unplaced = self.card.organize_pickers
-        self.assertEqual([row.name_label.full_text for row in placed.rows], ["ETW Report"])
-        self.assertEqual([row.folder_label.full_text for row in placed.rows], [str(Path("2 Areas/School/ETW2001"))])
-        self.assertIsNone(placed.filter_field)
-        self.assertIsNotNone(unplaced.filter_field)
-        self.assertEqual([row.path for row in unplaced.rows], FOLDERS)
-        text = self.card.turns[-1]["text"]
-        self.assertIn("2 notes in Inbox", text)
-        self.assertIn("**Assignment ETW** → new folder, renamed ETW Report, links Week 3, listed in School", text)
-        self.assertIn("**Loose idea** → pick a folder", text)
+        box = self.card.organize_list
+        self.assertEqual([entry.proposal for entry in box.entries], [PLACED, UNPLACED])
+        self.assertEqual(box.width(), self.card.contentWidth())
+        self.assertEqual(self.card.turns[-1]["text"], "2 notes in Inbox — click a row to file it")
 
     def test_a_failed_answer_says_every_note_needs_a_folder(self):
         query = self.startOrganize()
@@ -802,46 +796,47 @@ class ChatCardTests(unittest.TestCase):
     def test_clicking_a_proposal_files_the_note_there(self):
         query = self.startOrganize()
         query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [picker] = self.card.organize_pickers
+        [entry] = self.card.organize_list.entries
 
         moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
         with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
-            picker.rows[0].clicked.emit(picker.rows[0].path)
+            entry.row.clicked.emit(entry.row.path)
 
         organize.assert_called_once_with(PLACED, "2 Areas/School/ETW2001")
-        self.assertEqual(picker.outcome_label.text(), "moved to <b>ETW2001</b>")
+        self.assertEqual(entry.row.detail_label.text(), "moved")
+        self.assertEqual(entry.row.name_color, style.PICKER_DIM_TEXT)
 
     def test_picking_a_folder_files_an_unplaced_note_there(self):
         query = self.startOrganize()
         query.on_result({"proposals": [UNPLACED], "folders": FOLDERS, "failed": False})
-        [picker] = self.card.organize_pickers
+        [entry] = self.card.organize_list.entries
 
         moved = Path("C:/vault/1 Project/Loose idea.md")
         with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
-            picker.rows[0].clicked.emit("1 Project")
+            entry.folder_list.rows[0].clicked.emit("1 Project")
 
         organize.assert_called_once_with(UNPLACED, "1 Project")
 
     def test_a_move_that_fails_says_so(self):
         query = self.startOrganize()
         query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [picker] = self.card.organize_pickers
+        [entry] = self.card.organize_list.entries
 
         with patch("claudeChatCard.inboxOrganize.organize", side_effect=OSError):
-            picker.rows[0].clicked.emit(picker.rows[0].path)
+            entry.row.clicked.emit(entry.row.path)
 
-        self.assertEqual(picker.outcome_label.text(), "couldn't move the note")
+        self.assertEqual(entry.row.detail_label.text(), "couldn't move the note")
 
     def test_a_move_whose_links_failed_says_so(self):
         query = self.startOrganize()
         query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [picker] = self.card.organize_pickers
+        [entry] = self.card.organize_list.entries
 
         moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
         with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": False}):
-            picker.rows[0].clicked.emit(picker.rows[0].path)
+            entry.row.clicked.emit(entry.row.path)
 
-        self.assertEqual(picker.outcome_label.text(), "moved to <b>ETW2001</b>, but couldn't add its links")
+        self.assertEqual(entry.row.detail_label.text(), "moved, but couldn't add its links")
 
 
 class ChatSlotTests(unittest.TestCase):

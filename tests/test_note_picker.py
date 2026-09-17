@@ -61,14 +61,40 @@ class NotePickerTests(unittest.TestCase):
 
         self.assertEqual(self.picked, [str(Path("1 Project") / "Plan.md")])
 
-    def test_a_confirmation_row_appends_after_a_successful_pick(self):
-        self.assertIsNone(self.picker.outcome_label)
+    def test_rows_have_no_second_line_before_a_pick(self):
+        self.assertTrue(all(row.detail_label.isHidden() for row in self.picker.rows))
 
-        self.picker.showConnected("Plan")
+    def test_a_successful_pick_says_connected_on_the_picked_rows_second_line(self):
+        click(self.picker.rows[1])
 
-        self.assertIn("connected to", self.picker.outcome_label.text())
-        self.assertIn("<b>Plan</b>", self.picker.outcome_label.text())
-        self.assertEqual(self.picker.outcome_dot.color, style.PICKER_DOT_RECENT)
+        self.picker.showConnected()
+
+        self.assertFalse(self.picker.rows[1].detail_label.isHidden())
+        self.assertEqual(self.picker.rows[1].detail_label.text(), "connected")
+        self.assertTrue(self.picker.rows[0].detail_label.isHidden())
+
+    def test_the_list_grows_to_fit_the_picked_rows_second_line(self):
+        self.picker.show()
+        QApplication.processEvents()
+        before = self.picker.scroll.height()
+        click(self.picker.rows[1])
+
+        self.picker.showConnected()
+        QApplication.processEvents()
+
+        self.assertGreater(self.picker.scroll.height(), before)
+        self.assertGreaterEqual(self.picker.scroll.height(), self.picker.list.rows_widget.sizeHint().height())
+
+    def test_after_a_pick_the_other_rows_dim_and_the_picked_one_does_not(self):
+        click(self.picker.rows[1])
+
+        self.assertEqual(self.picker.rows[0].name_color, style.PICKER_DIM_TEXT)
+        self.assertEqual(self.picker.rows[0].dot.color, style.PICKER_DIM_SECONDARY)
+        self.assertEqual(self.picker.rows[1].name_color, style.PICKER_NOTE_TEXT)
+        self.assertEqual(self.picker.rows[1].dot.color, style.PICKER_DOT_OLDER)
+
+    def test_rows_are_split_by_a_divider_except_the_last(self):
+        self.assertEqual([row.divided for row in self.picker.rows], [True, False])
 
     def test_the_header_defaults_to_the_note_question_and_can_be_replaced(self):
         self.assertEqual(self.picker.header_label.text(), "ambiguous — confirm the note")
@@ -90,25 +116,27 @@ class NotePickerTests(unittest.TestCase):
         self.assertLessEqual(picker.header_label.geometry().right(), picker.width())
         self.assertEqual(picker.header_label.full_text, header)
 
-    def test_a_saved_row_appends_after_a_vocab_pick(self):
-        self.picker.showSaved("Vocab")
+    def test_a_vocab_pick_says_saved_on_the_picked_row(self):
+        click(self.picker.rows[0])
 
-        self.assertIn("saved to <b>Vocab</b>", self.picker.outcome_label.text())
-        self.assertEqual(self.picker.outcome_dot.color, style.PICKER_DOT_RECENT)
+        self.picker.showSaved()
 
-    def test_a_failed_pick_says_so_with_a_grey_dot(self):
+        self.assertEqual(self.picker.rows[0].detail_label.text(), "saved")
+
+    def test_a_failed_pick_says_so_on_the_picked_row(self):
+        click(self.picker.rows[0])
+
         self.picker.showFailed("couldn't save the note")
 
-        self.assertEqual(self.picker.outcome_label.text(), "couldn't save the note")
-        self.assertEqual(self.picker.outcome_dot.color, style.PICKER_DOT_OLDER)
+        self.assertEqual(self.picker.rows[0].detail_label.text(), "couldn't save the note")
+        self.assertEqual(self.picker.rows[0].name_color, style.PICKER_NOTE_TEXT)
 
     def test_note_names_are_not_interpreted_as_markup(self):
         picker = NotePicker([{"path": "<b>x</b>.md", "recent": False}], 360)
         self.addCleanup(picker.deleteLater)
-        picker.showConnected("<b>x</b>")
 
         self.assertEqual(picker.rows[0].name_label.textFormat(), Qt.PlainText)
-        self.assertIn("&lt;b&gt;x&lt;/b&gt;", picker.outcome_label.text())
+        self.assertEqual(picker.rows[0].detail_label.textFormat(), Qt.PlainText)
 
     def test_a_long_name_and_folder_path_shorten_instead_of_overflowing(self):
         long_path = str(Path("2 Areas") / "School" / "COMP2123 Data Structures" / "Week 7" / "Lecture notes on graph traversal algorithms.md")
@@ -121,6 +149,24 @@ class NotePickerTests(unittest.TestCase):
         self.assertLessEqual(row.width(), picker.scroll.viewport().width())
         self.assertTrue(row.folder_label.text().startswith("…"))
         self.assertTrue(row.folder_label.text().endswith("Week 7"))
+
+    def test_a_result_on_the_last_row_of_a_capped_list_scrolls_into_view(self):
+        many = [{"path": f"Note {i}.md", "recent": False} for i in range(30)]
+        picker = NotePicker(many, 360)
+        self.addCleanup(picker.deleteLater)
+        picker.show()
+        QApplication.processEvents()
+        bar = picker.scroll.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        click(picker.rows[-1])
+
+        picker.showConnected()
+        QApplication.processEvents()
+
+        self.assertEqual(bar.value(), bar.maximum())
+        detail = picker.rows[-1].detail_label
+        bottom = detail.mapTo(picker.scroll.viewport(), detail.rect().bottomLeft()).y()
+        self.assertLessEqual(bottom, picker.scroll.viewport().height())
 
     def test_list_height_is_capped(self):
         many = [{"path": f"Note {i}.md", "recent": False} for i in range(30)]
@@ -206,6 +252,11 @@ class NotePickerFilterTests(unittest.TestCase):
 
         self.assertEqual(self.names(), ["Plan"])
         self.assertTrue(self.picker.empty_label.isHidden())
+
+    def test_the_last_filtered_row_has_no_divider(self):
+        self.picker.filter_field.setText("fit31")
+
+        self.assertEqual([row.divided for row in self.picker.rows], [True, False])
 
     def test_no_match_says_so(self):
         self.picker.filter_field.setText("nothing like this")

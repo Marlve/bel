@@ -195,6 +195,11 @@ PICKER_LIST_MAX_HEIGHT = 172
 PICKER_HEADER_TEXT = BODY
 PICKER_NOTE_TEXT = BODY_DIM  # brightens to BODY on hover - brightness-only hierarchy
 PICKER_FOLDER_TEXT = MUTED
+PICKER_DETAIL_TEXT = MUTED  # a row's smaller second line: organize's rename/links details, or a pick's result
+PICKER_DETAIL_SIZE = 11.0  # px
+PICKER_DIVIDER = PALETTE["200"]  # between rows, same as the "what is due" box's
+PICKER_DIM_TEXT = MUTED  # a row that's been filed, or wasn't the one picked
+PICKER_DIM_SECONDARY = HINT  # that row's folder and dot
 PICKER_DOT_RECENT = "#C8B08A"  # sand - card.md names the color but not a hex
 PICKER_DOT_OLDER = PALETTE["450"]
 PICKER_DOT_SIZE = 6
@@ -366,7 +371,7 @@ _SCALE_INT_NAMES = [
 
 # Already floats in their reference form - scaled but kept as floats, not
 # rounded to int.
-_SCALE_FLOAT_NAMES = ["CHAT_BODY_SIZE", "CHAT_HEADER_SIZE", "CARD_RESIZE_GRIP_STROKE"]
+_SCALE_FLOAT_NAMES = ["CHAT_BODY_SIZE", "CHAT_HEADER_SIZE", "PICKER_DETAIL_SIZE", "CARD_RESIZE_GRIP_STROKE"]
 
 # Tuples of pixel lengths - each element scaled and rounded individually.
 _SCALE_INT_TUPLE_NAMES = ["CHAT_BUBBLE_RADIUS"]

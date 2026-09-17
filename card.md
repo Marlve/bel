@@ -12,8 +12,8 @@ Bordered inset (`#191A1C` fill, `#232427` border, 7px radius), matching the othe
 
 - Header row: search-style icon + label "ambiguous — confirm the note" (`#E8E8EA`).
 - Filter field under the header: the composer's raised fill, placeholder "filter notes…". It only takes focus when clicked, so the composer keeps focus when the block pops in.
-- Scrollable list (max ~172px), one row per candidate note, most recently edited first: sand dot for recently-edited, grey dot otherwise, note name, folder path right-aligned in Geist Mono. While the filter is empty it shows the 20 most recently edited notes. Typing narrows it to every indexed note whose name or folder path contains the text (case-insensitive), still newest first. No match shows a muted "no matching notes" line.
-- On pick: a confirmation row appends below the list — "connected to **[note name]**" with a sand dot — inside the same block, no navigation, no modal.
+- Scrollable list (max ~172px), one row per candidate note, most recently edited first: sand dot for recently-edited, grey dot otherwise, note name, folder path right-aligned in Geist Mono. Rows are split by `1px solid #1D1E21` dividers, last row has none — the same rows as the `! organize` box. While the filter is empty it shows the 20 most recently edited notes. Typing narrows it to every indexed note whose name or folder path contains the text (case-insensitive), still newest first. No match shows a muted "no matching notes" line.
+- On pick: the other rows dim, and the picked row gets a smaller, dim second line saying how it went — "connected", or why it didn't — inside the same block, no navigation, no modal.
 
 ## Rules
 
@@ -28,4 +28,4 @@ Bordered inset (`#191A1C` fill, `#232427` border, 7px radius), matching the othe
 - A confirmed write never overwrites an existing note.
 - If the picked note was moved or deleted before the pick, the link is skipped.
 - Same visual language as the rest of the card: no accent beyond the sand dot, brightness-only hierarchy, no header icon change.
-- A new Korean word (single word, not in Vocab.md) gets the same block with the header "new word — save to vocab" and one row, Vocab, with no filter field. Clicking it appends `| word | translation |` to Vocab.md and shows "saved to **Vocab**". Sentences are translated but never saved.
+- A new Korean word (single word, not in Vocab.md) gets the same block with the header "new word — save to vocab" and one row, Vocab, with no filter field. Clicking it appends `| word | translation |` to Vocab.md and its second line reads "saved". Sentences are translated but never saved.
