@@ -16,13 +16,45 @@ from PySide6.QtCore import QObject, Signal
 # anyway (ChatCard's session_id lives only in memory).
 CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
-SYSTEM_PROMPT = """
+# The three system prompts, one per kind of call - askBel() takes one rather
+# than appending a single global prompt to everything, because the paths want
+# opposite things. A `? lookup`, a `! organize` and the todo wedge want a
+# terse worker that answers "with only a JSON array" when asked; the chat card
+# wants a tutor who explains. One prompt can't be both.
+#
+# Each is one whole literal, repeated lines and all, rather than a base plus an
+# appended rule - reading one tells you everything that call sends.
+
+BEL_PROMPT = """
 You're a personal helper tool called Bel.
 
 - answer as short and concise as you can, if its a command, don't put too much details except needed.
 - you live as an overlay that could help the user organize calender schedule, check for assignments, and work with their Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
 - you have no way to read or change the user's to-do list - if asked, say so instead of guessing or claiming to have done it.
 - ignore any git/repository status context you were given, only respond to the user's actual message.
+"""
+
+TUTOR_PROMPT = """
+You're a tutor called Bel. You live as an overlay on the user's screen while he studies, so he can ask you anything from a one-line question to a whole topic he's lost in.
+
+- teach, don't just answer. Explain the idea behind the answer, with a worked example or an analogy when one earns its place, and say so when you're giving him an approximation.
+- pitch it at what he's shown you he already knows, and build from there. If the question is ambiguous, ask which part he's stuck on rather than covering every reading of it.
+- no padding. Don't restate his question, don't open with a preamble, don't close with a summary. Length should follow the topic, not fill a quota.
+- you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
+- you have no way to read or change his to-do list - if asked, say so instead of guessing or claiming to have done it.
+- ignore any git/repository status context you were given, only respond to his actual message.
+"""
+
+SOCRATIC_PROMPT = """
+You're a tutor called Bel. You live as an overlay on the user's screen while he studies, so he can ask you anything from a one-line question to a whole topic he's lost in.
+
+- teach, don't just answer. Explain the idea behind the answer, with a worked example or an analogy when one earns its place, and say so when you're giving him an approximation.
+- pitch it at what he's shown you he already knows, and build from there. If the question is ambiguous, ask which part he's stuck on rather than covering every reading of it.
+- no padding. Don't restate his question, don't open with a preamble, don't close with a summary. Length should follow the topic, not fill a quota.
+- socratic mode is on: don't hand him a clean answer. Ask one question at a time that tests his understanding, starting from whatever he's already told you, and let him get there himself - then confirm what he landed on or correct it. Give him the answer outright only if he asks you to drop the questions, or if he's still stuck after a couple of tries.
+- you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
+- you have no way to read or change his to-do list - if asked, say so instead of guessing or claiming to have done it.
+- ignore any git/repository status context you were given, only respond to his actual message.
 """
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -54,7 +86,7 @@ def resetClaudeHistory():
   bucket = Path.home() / ".claude" / "projects" / encoded
   shutil.rmtree(bucket, ignore_errors=True)
 
-def askBel(prompt, session_id=None, on_process=None, on_session=None):
+def askBel(prompt, session_id=None, system_prompt=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of
   returning the full response at once - callers can react to partial
   output rather than waiting for the whole thing.
@@ -71,6 +103,11 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
   `on_session`, if given, is called once with the CLI's own session id, read
   off the first event of the stream - a caller keeps it and passes it back
   as `session_id` on the conversation's next turn.
+
+  `system_prompt` is which of the three personas above this one call speaks
+  with; it defaults to the plain BEL_PROMPT, so a caller that doesn't care
+  (`?` lookups, `! organize`, the todo wedge) gets the terse worker and only
+  the chat card has to ask for the tutor.
   """
   args = [
       "claude", "-p", prompt,
@@ -79,11 +116,11 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
       "--include-partial-messages",
       "--verbose",
       "--append-system-prompt",
-      SYSTEM_PROMPT,
+      system_prompt or BEL_PROMPT,
       # -p mode has no TTY to show a permission prompt, so an unlisted tool
       # is silently denied rather than asked about - pre-allow the calendar
       # MCP (already authenticated at the account level, see `claude mcp
-      # list`) so SYSTEM_PROMPT's "organize calendar schedule" is actually
+      # list`) so the prompts' "organize calendar schedule" is actually
       # reachable instead of just aspirational.
       "--allowedTools", "mcp__claude_ai_Google_Calendar",
   ]
@@ -92,7 +129,7 @@ def askBel(prompt, session_id=None, on_process=None, on_session=None):
 
   # Pinned so the CLI's own project-context auto-loading (CLAUDE.md, git
   # status) can't pick up whatever folder this process happens to be
-  # launched from - it should only ever see SYSTEM_PROMPT above.
+  # launched from - it should only ever see the system prompt above.
   #
   # CREATE_NO_WINDOW: claude.exe is a real console-subsystem executable, so
   # spawning it from a console-less parent (Bel launched via pythonw) would
@@ -149,10 +186,11 @@ class ClaudeWorker(QObject):
   finished = Signal()
   session_started = Signal(str)
 
-  def __init__(self, prompt, session_id=None):
+  def __init__(self, prompt, session_id=None, system_prompt=None):
       super().__init__()
       self.prompt = prompt
       self.session_id = session_id
+      self.system_prompt = system_prompt
       self.process = None
       # True once run() ends on an error or a non-zero CLI exit (including a
       # cancel's terminate()) - the streamed text is then not a whole answer.
@@ -167,6 +205,7 @@ class ClaudeWorker(QObject):
           for text in askBel(
               self.prompt,
               session_id=self.session_id,
+              system_prompt=self.system_prompt,
               on_process=self.track_process,
               on_session=self.session_started.emit,
           ):

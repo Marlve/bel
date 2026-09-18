@@ -4,7 +4,7 @@
 # noteCard.py): built lazily on first pick, then just shown/hidden.
 
 from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor, QIntValidator
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
@@ -15,9 +15,6 @@ from draggable import WindowDrag
 
 def margin():
     return style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
-
-
-CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX = 1, 50
 
 
 class SettingsRow(QWidget):
@@ -130,29 +127,11 @@ class SettingsCard(QWidget):
         self.rows = []
         self.rebuildRows(wedgeConfig.load_other_wedges())
 
-        self.context_limit_label = QLabel("Claude context limit", self)
-        self.context_limit_label.setStyleSheet(
-            f"color: {style.CHAT_BODY_TEXT}; background: transparent;"
-            f"font-family: {style.FONT_FAMILY}; font-size: {style.CHAT_BODY_SIZE}px;"
-        )
-
-        self.context_limit_field = QLineEdit(str(wedgeConfig.load_chat_context_limit()), self)
-        self.context_limit_field.setValidator(QIntValidator(CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, self))
-        self.context_limit_field.setFixedWidth(style.SETTINGS_CONTEXT_FIELD_WIDTH)
-        self.context_limit_field.setStyleSheet(style.settings_field_stylesheet())
-        self.context_limit_field.textChanged.connect(self.scheduleSave)
-        self.context_limit_field.installEventFilter(self)  # Escape closes the card, not just the field
-
-        context_row = QHBoxLayout()
-        context_row.addWidget(self.context_limit_label, 1)
-        context_row.addWidget(self.context_limit_field)
-
         root = QVBoxLayout(self)
         root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
         root.setSpacing(10)
         root.addLayout(header)
         root.addLayout(self.rows_layout)
-        root.addLayout(context_row)
         root.addStretch(1)
 
     def rebuildRows(self, entries):
@@ -199,13 +178,8 @@ class SettingsCard(QWidget):
         self.save_timer.stop()
         entries = self.currentEntries()
         wedgeConfig.save_other_wedges(entries)
-        wedgeConfig.save_chat_context_limit(self.contextLimit())
         if self.on_change is not None:
             self.on_change(entries)
-
-    def contextLimit(self):
-        text = self.context_limit_field.text().strip()
-        return int(text) if text.isdigit() and int(text) >= CONTEXT_LIMIT_MIN else wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT
 
     def hideEvent(self, event):
         self.save_timer.stop()

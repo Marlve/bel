@@ -15,7 +15,6 @@ from PySide6.QtCore import Qt, QEvent, QObject, QAbstractAnimation, QPoint, Sign
 import cardStore
 import pieMenu as pieMenuModule
 import style
-import wedgeConfig
 from pieMenu import PieMenu
 from pieMenuState import HIDDEN, OPEN, PROMPTING
 
@@ -298,32 +297,6 @@ class PieMenuFlowTests(unittest.TestCase):
         self.menu.setHovered(PROMPT_WEDGE)
         self.menu.activateHoveredWedge()
         self.assertEqual(self.menu.phase, PROMPTING)  # the old card is gone, so it asks again
-
-    def test_the_session_resets_once_the_context_cap_is_reached(self):
-        cap = wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT
-        card = self.ask("q1")
-        card.request.session_started.emit("session-a")
-        card.request.finished.emit()
-
-        for n in range(2, cap + 1):
-            card.send(f"q{n}")
-            card.request.session_started.emit("session-a")
-            card.request.finished.emit()
-        self.assertEqual(card.turn_count, cap)
-        self.assertEqual(card.session_id, "session-a")
-
-        card.send("one more")  # the (cap + 1)th message - too much context, starts over
-        self.assertEqual(card.turn_count, 1)
-        self.assertIsNone(card.session_id)
-
-    def test_a_lower_context_cap_resets_sooner(self):
-        wedgeConfig.save_chat_context_limit(1)
-        card = self.ask("q1")
-        card.request.session_started.emit("session-a")
-        card.request.finished.emit()
-
-        card.send("q2")
-        self.assertIsNone(card.session_id)
 
     # ChatSlot itself is exercised directly below, bypassing the ring - only
     # one wedge can ever hold Claude at a time, but this drives the slot with

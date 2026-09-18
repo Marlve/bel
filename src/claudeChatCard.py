@@ -25,12 +25,12 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import cardStore
 import chatMarkdown
+import claude
 import dockCorner
 import inboxOrganize
 import style
 import timetable
 import vaultSearch
-import wedgeConfig
 from floatingCard import paint_card_bands
 from dueList import DueList
 from notePicker import NotePicker
@@ -155,8 +155,8 @@ class ChatCard(QWidget):
         return self.state.session_id
 
     @property
-    def turn_count(self):
-        return self.state.turn_count
+    def socratic(self):
+        return self.state.socratic
 
     @property
     def request(self):
@@ -349,19 +349,16 @@ class ChatCard(QWidget):
         if command is not None:
             self.startCommand(text, command)
             return
-        if self.state.turn_count >= wedgeConfig.load_chat_context_limit():
-            # The session has taken as much context as it's allowed to -
-            # this message starts a brand new one rather than resuming.
-            self.state.session_id = None
-            self.state.turn_count = 0
-        self.state.turn_count += 1
         self.appendUserTurn(text)
         self.streaming_label = self.appendClaudeTurn()
         self.state.streaming_text = ""
         self.composer.setReadOnly(True)
         self.animation.startTyping(self.streaming_label)
 
-        self.state.request = self.state.action(text, session_id=self.state.session_id)
+        system_prompt = claude.SOCRATIC_PROMPT if self.state.socratic else claude.TUTOR_PROMPT
+        self.state.request = self.state.action(
+            text, session_id=self.state.session_id, system_prompt=system_prompt
+        )
         self.state.request.chunk.connect(self.onChunk)
         self.state.request.session_started.connect(self.onSessionStarted)
         self.state.request.finished.connect(self.onStreamFinished)
@@ -396,8 +393,8 @@ class ChatCard(QWidget):
 
     def startLookup(self, text, query):
         """A `? query` message searches the vault instead of chatting
-        (card.md). It never joins the Claude session, so turn_count and
-        session_id are left alone."""
+        (card.md). It never joins the Claude session, so session_id is left
+        alone."""
         self.appendUserTurn(text)
         label = self.appendClaudeTurn()
         index = self.streaming_index
@@ -472,16 +469,23 @@ class ChatCard(QWidget):
 
     def startCommand(self, text, command):
         """A `! today`-style message runs a command instead of chatting.
-        Like a `?` lookup, it never joins the Claude session."""
+        Like a `?` lookup, none of them joins the Claude session - though
+        `! socratic` changes which prompt the next chat turn speaks with."""
         self.appendUserTurn(text)
         label = self.appendClaudeTurn()
         index = self.streaming_index
+        if command == "socratic":
+            # The only command that runs nothing: it flips the persona the
+            # next chat turn speaks with and reads the new state back.
+            self.state.socratic = not self.state.socratic
+            self.showReply(label, index, f"socratic mode {'on' if self.state.socratic else 'off'}")
+            return
         if command in timetable.COMMANDS:
             self.lookup = self.calendar_factory(command, lambda reply: self.onTimetableResult(label, index, reply))
         elif command == "organize":
             self.lookup = self.organize_factory(lambda result: self.onOrganizeResult(label, index, result))
         else:
-            self.showReply(label, index, "unknown command — try ! today, ! week or ! organize")
+            self.showReply(label, index, "unknown command — try ! today, ! week, ! organize or ! socratic")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)

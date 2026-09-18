@@ -16,6 +16,7 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
 import cardStore
+import claude
 import dockCorner
 import style
 from claudeChatCard import ChatCard, ChatSlot
@@ -109,8 +110,10 @@ class ChatCardTests(unittest.TestCase):
         cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
-    def fakeAction(self, prompt, session_id=None):
+    def fakeAction(self, prompt, session_id=None, system_prompt=None):
         request = FakeRequest()
+        request.session_id = session_id  # what the card asked to resume, if anything
+        request.system_prompt = system_prompt
         self.requests.append(request)
         return request
 
@@ -466,6 +469,38 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(self.card.animation.typing_clock.state(), QVariantAnimation.Stopped)
         self.assertNotEqual(self.card.streaming_label.text(), "")
 
+    def test_chat_speaks_with_the_tutor_prompt(self):
+        # The `?` and `!` paths never reach here, so they keep the plain one.
+        self.card.fly()
+        self.card.send("hello")
+        self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
+
+    def test_socratic_mode_swaps_the_whole_prompt_for_the_next_turn(self):
+        self.card.fly()
+        self.card.send("! socratic")
+        self.card.send("hello")
+        self.assertEqual(self.requests[0].system_prompt, claude.SOCRATIC_PROMPT)
+
+    def test_toggling_socratic_off_goes_back_to_teaching(self):
+        self.card.fly()
+        self.card.send("! socratic")
+        self.card.send("! socratic")
+        self.card.send("hello")
+        self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
+
+    def test_a_long_conversation_keeps_its_session(self):
+        # There is no context cap any more: the session used to be thrown
+        # away on the 5th message, which silently forgot the conversation
+        # mid-teach. Every turn now resumes the same one.
+        self.card.fly()
+        for turn in range(6):
+            self.card.send(f"message {turn}")
+            self.requests[-1].session_started.emit("session-1")
+            self.requests[-1].finished.emit()
+        self.assertEqual(len(self.requests), 6)
+        self.assertEqual(self.card.session_id, "session-1")
+        self.assertTrue(all(request.session_id == "session-1" for request in self.requests[1:]))
+
     # --- `?` lookups (card.md) ---
 
     def fakeLookup(self, query, on_result):
@@ -489,7 +524,6 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual([turn["role"] for turn in self.card.turns], ["user", "claude"])
         self.assertTrue(self.card.composer.isReadOnly())
         self.assertIsNotNone(self.card.animation.typing_label)
-        self.assertEqual(self.card.turn_count, 0)  # never sent to the Claude session
 
     def test_chat_waits_while_a_lookup_is_running(self):
         self.startLookup()
@@ -698,7 +732,6 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(self.requests, [])
         self.assertEqual([turn["role"] for turn in self.card.turns], ["user", "claude"])
         self.assertTrue(self.card.composer.isReadOnly())
-        self.assertEqual(self.card.turn_count, 0)  # never sent to the Claude session
 
     def test_bang_week_asks_for_the_week_whatever_the_spacing_and_case(self):
         query = self.startCommand("!  Week ")
@@ -743,12 +776,31 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertEqual(self.requests, [])
 
+    def test_bang_socratic_toggles_the_mode_and_says_so(self):
+        # Unlike the other commands it runs no request at all - the reply is
+        # just the new state read back.
+        query = self.startCommand("! socratic")
+
+        self.assertIsNone(query)
+        self.assertEqual(self.requests, [])
+        self.assertTrue(self.card.socratic)
+        self.assertIn("socratic mode on", self.card.turns[-1]["text"])
+        self.assertFalse(self.card.composer.isReadOnly())
+
+    def test_bang_socratic_again_turns_it_back_off(self):
+        self.startCommand("! socratic")
+        self.card.send("! socratic")
+
+        self.assertFalse(self.card.socratic)
+        self.assertIn("socratic mode off", self.card.turns[-1]["text"])
+
     def test_an_unknown_command_says_so_without_asking_anything(self):
         query = self.startCommand("! tomorrow")
 
         self.assertIsNone(query)
         self.assertEqual(self.requests, [])
         self.assertIn("unknown command", self.card.turns[-1]["text"])
+        self.assertIn("! socratic", self.card.turns[-1]["text"])
         self.assertFalse(self.card.composer.isReadOnly())
 
     def test_a_bare_bang_is_normal_chat(self):
@@ -778,7 +830,6 @@ class ChatCardTests(unittest.TestCase):
         self.assertTrue(query.started)
         self.assertEqual(self.requests, [])
         self.assertTrue(self.card.composer.isReadOnly())
-        self.assertEqual(self.card.turn_count, 0)
 
     def test_an_empty_inbox_says_so(self):
         query = self.startOrganize()
@@ -889,7 +940,7 @@ class ChatSlotTests(unittest.TestCase):
         cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
-    def fakeAction(self, prompt, session_id=None):
+    def fakeAction(self, prompt, session_id=None, system_prompt=None):
         request = FakeRequest()
         self.requests.append(request)
         return request

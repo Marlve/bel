@@ -31,8 +31,8 @@ class ClaudeRequest(BackgroundRequest):
     finished = Signal()
     session_started = Signal(str)
 
-    def __init__(self, prompt, session_id=None, parent=None):
-        super().__init__(ClaudeWorker(prompt, session_id), parent)
+    def __init__(self, prompt, session_id=None, parent=None, system_prompt=None):
+        super().__init__(ClaudeWorker(prompt, session_id, system_prompt), parent)
         self.worker.chunk.connect(self.chunk)
         self.worker.session_started.connect(self.session_started)
         self.worker.finished.connect(self.onWorkerFinished)
@@ -139,8 +139,8 @@ class ClaudeAction(QObject):
         if app is not None:
             app.aboutToQuit.connect(self.cancel)
 
-    def __call__(self, prompt=None, session_id=None):
-        request = ClaudeRequest(prompt or self.prompt, session_id, self)
+    def __call__(self, prompt=None, session_id=None, system_prompt=None):
+        request = ClaudeRequest(prompt or self.prompt, session_id, self, system_prompt=system_prompt)
         self.requests.append(request)
         request.chunk.connect(self.onChunk)
         request.finished.connect(lambda: self.forget(request))

@@ -15,7 +15,6 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
 import cardStore
-import wedgeConfig
 from settingsCard import SettingsCard
 
 
@@ -89,19 +88,6 @@ class SettingsCardTests(unittest.TestCase):
         self.card.rows[0].label_field.setText("Tasks")  # only schedules a debounced save
         self.card.hide()
         self.assertEqual(cardStore.load("wedges", None)[0]["label"], "Tasks")
-
-    def test_context_limit_starts_at_the_default(self):
-        self.assertEqual(self.card.context_limit_field.text(), str(wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT))
-
-    def test_editing_the_context_limit_saves_it(self):
-        self.card.context_limit_field.setText("2")
-        self.card.save()
-        self.assertEqual(wedgeConfig.load_chat_context_limit(), 2)
-
-    def test_an_emptied_context_limit_falls_back_to_the_default_rather_than_zero(self):
-        self.card.context_limit_field.setText("")
-        self.card.save()
-        self.assertEqual(wedgeConfig.load_chat_context_limit(), wedgeConfig.DEFAULT_CHAT_CONTEXT_LIMIT)
 
 
 if __name__ == "__main__":

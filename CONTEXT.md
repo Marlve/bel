@@ -42,10 +42,19 @@ rest of the message instead of sending it to Claude as normal chat
 (`vaultSearch.lookup_query`, `ExplainQuery`).
 
 **Command**:
-A chat message prefixed `!` (`! today`, `! week`, `! organize`): Bel runs that command
-instead of sending the message to Claude as normal chat, and like a lookup it
-never joins the Claude session (`claudeChatCard.command_name`). A bare `!` is
-normal chat.
+A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`): Bel runs
+that command instead of sending the message to Claude as normal chat, and like
+a lookup it never joins the Claude session (`claudeChatCard.command_name`). A
+bare `!` is normal chat. `! socratic` is the odd one out - it runs no request
+at all, only flipping which prompt the next chat turn speaks with.
+
+**Socratic mode**:
+Off by default; `! socratic` toggles it, and the reply reads the new state
+back. On, chat sends `claude.SOCRATIC_PROMPT` instead of `TUTOR_PROMPT` - the
+same teaching persona plus a rule to question his understanding rather than
+hand over a clean answer. In memory only, like `session_id`, so it starts off
+every launch. Toggling mid-conversation needs no restart:
+`--append-system-prompt` goes on every call, `--resume` included.
 
 **Picked note**:
 The vault note Derich clicks in a lookup's note picker (`card.md`) - where
