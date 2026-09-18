@@ -61,8 +61,21 @@ on `--resume` it is ignored and the session keeps the prompt it was born with
 ignored). A system-prompt swap would therefore flip the toggle, print
 "socratic mode on", and change nothing about the answer. The message is new
 every turn, so the rule reaches a conversation already under way. The same
-constraint means `TUTOR_PROMPT` is fixed for a session's whole life - fine,
+constraint means `BEL_PROMPT` is fixed for a session's whole life - fine,
 since the persona never changes within one.
+
+There is no way to turn socratic mode off by asking (Derich, 2026-09-18): the
+rule tells Bel not to give in to "just tell me", because the mode drops
+otherwise at exactly the moment it is worth having. `! socratic` is the only
+way out.
+
+**Bel's prompt**:
+`claude.BEL_PROMPT`, one literal, appended to every `claude` call - chat, `?`,
+`! organize` and the todo wedge alike. Bel is a tutor throughout. Its last rule
+is what makes one prompt enough: a message that names its own output format
+("Reply with only a JSON array", "Reply with only that one word") outranks the
+teaching voice. Verified against the real CLI - `! organize` returned clean
+JSON and triage a bare "Project" under the tutor persona.
 
 **Picked note**:
 The vault note Derich clicks in a lookup's note picker (`card.md`) - where

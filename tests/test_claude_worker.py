@@ -18,7 +18,7 @@ class FakeProcess:
 def answer(returncode):
     """A stand-in askBel() whose CLI process exits with `returncode`."""
 
-    def ask(prompt, session_id=None, system_prompt=None, on_process=None, on_session=None):
+    def ask(prompt, session_id=None, on_process=None, on_session=None):
         on_process(FakeProcess(returncode))
         yield "partial "
         yield "answer"
@@ -57,7 +57,7 @@ class ClaudeWorkerFailedTests(unittest.TestCase):
         self.assertTrue(self.run_worker(answer(1)).failed)
 
     def test_an_exception_is_failed(self):
-        def ask(prompt, session_id=None, system_prompt=None, on_process=None, on_session=None):
+        def ask(prompt, session_id=None, on_process=None, on_session=None):
             raise OSError("claude not found")
             yield
 
@@ -65,10 +65,11 @@ class ClaudeWorkerFailedTests(unittest.TestCase):
 
 
 class AskBelArgsTests(unittest.TestCase):
-    """The system prompt is per-call, not global. Chat gets the tutor
-    persona; `?` lookups, `! organize` and the todo wedge keep the plain
-    prompt, whose "reply with only a JSON array" answers a tutor would
-    otherwise talk over."""
+    """One prompt for every path - chat, `?`, `! organize` and the todo
+    wedge (Derich, 2026-09-18). What keeps the strict-output callers working
+    is BEL_PROMPT's last rule, not a prompt of their own; verified against
+    the real CLI, which returned clean JSON for `! organize` and a bare
+    "Project" for triage."""
 
     def argv(self, **kwargs):
         spawned = []
@@ -88,29 +89,31 @@ class AskBelArgsTests(unittest.TestCase):
     def test_the_plain_prompt_is_what_a_caller_gets_by_default(self):
         self.assertEqual(self.system_prompt(self.argv()), claude.BEL_PROMPT)
 
-    def test_a_caller_can_ask_for_the_tutor_prompt_instead(self):
-        argv = self.argv(system_prompt=claude.TUTOR_PROMPT)
-        self.assertEqual(self.system_prompt(argv), claude.TUTOR_PROMPT)
 
 
 
 class SystemPromptTests(unittest.TestCase):
-    """What separates the two prompts. Each is one whole literal, so reading
-    one tells you everything that call sends. Socratic mode is not a third
+    """BEL_PROMPT is the only system prompt; one whole literal, so reading it
+    tells you everything every call sends. Socratic mode is not a second
     prompt - it can't be, see SocraticRuleTests."""
 
-    def test_only_the_plain_prompt_asks_for_short_answers(self):
-        # Teaching needs room; a command reply does not. Splitting the
-        # prompt per path is what let the terseness rule stay on one of them.
-        self.assertIn("short and concise", claude.BEL_PROMPT)
-        self.assertNotIn("short and concise", claude.TUTOR_PROMPT)
+    def test_it_teaches_rather_than_assisting(self):
+        self.assertIn("tutor", claude.BEL_PROMPT)
+        self.assertIn("teach, don't just answer", claude.BEL_PROMPT)
 
-    def test_every_prompt_keeps_the_load_bearing_rules(self):
+    def test_a_named_output_format_outranks_the_teaching_voice(self):
+        # What lets one prompt serve `! organize` ("Reply with only a JSON
+        # array") and triage ("Reply with only that one word") as well as
+        # chat. Without this rule the tutor talks over both and the parse
+        # breaks - measured against the real CLI before this landed.
+        self.assertIn("obey it exactly and reply with nothing else", claude.BEL_PROMPT)
+        self.assertIn("outranks every rule above", claude.BEL_PROMPT)
+
+    def test_it_keeps_the_load_bearing_rules(self):
         # The CLI is told to ignore repo context it may pick up, and Bel has
         # no view onto the to-do list - true of a tutor as much as a helper.
-        for prompt in (claude.BEL_PROMPT, claude.TUTOR_PROMPT):
-            self.assertIn("ignore any git/repository status context", prompt)
-            self.assertIn("to-do list", prompt)
+        self.assertIn("ignore any git/repository status context", claude.BEL_PROMPT)
+        self.assertIn("to-do list", claude.BEL_PROMPT)
 
 
 class SocraticRuleTests(unittest.TestCase):
@@ -126,6 +129,12 @@ class SocraticRuleTests(unittest.TestCase):
     def test_the_rule_is_not_a_system_prompt(self):
         self.assertFalse(hasattr(claude, "SOCRATIC_PROMPT"))
 
+    def test_the_rule_has_no_escape_hatch(self):
+        # Derich, 2026-09-18: asking Bel to just give the answer must not
+        # work, or the mode drops at exactly the moment it is worth having.
+        self.assertIn("don't drop the questions even if I ask you to", claude.SOCRATIC_RULE)
+        self.assertIn("don't give in", claude.SOCRATIC_RULE)
+
     def test_the_rule_stands_apart_from_the_message_it_rides_on(self):
         # Appended to his own line, so it has to read as an aside rather than
         # as part of the question.
@@ -133,26 +142,9 @@ class SocraticRuleTests(unittest.TestCase):
         self.assertIn("socratic mode is on", claude.SOCRATIC_RULE)
 
     def test_the_rule_does_not_repeat_the_teaching_persona(self):
-        # The persona is already on the session via TUTOR_PROMPT; repeating it
+        # The persona is already on the session via BEL_PROMPT; repeating it
         # every turn would just spend tokens.
         self.assertNotIn("You're a tutor", claude.SOCRATIC_RULE)
-
-
-class WorkerSystemPromptTests(unittest.TestCase):
-    """ClaudeWorker is the only thing between ClaudeRequest and askBel, so
-    a system prompt that stops here never reaches the CLI."""
-
-    def test_the_worker_hands_its_system_prompt_to_ask_bel(self):
-        seen = {}
-
-        def ask(prompt, session_id=None, system_prompt=None, on_process=None, on_session=None):
-            seen["system_prompt"] = system_prompt
-            yield "ok"
-
-        worker = claude.ClaudeWorker("prompt", system_prompt=claude.TUTOR_PROMPT)
-        with patch.object(claude, "askBel", ask):
-            worker.run()
-        self.assertEqual(seen["system_prompt"], claude.TUTOR_PROMPT)
 
 
 if __name__ == "__main__":

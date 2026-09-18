@@ -110,11 +110,10 @@ class ChatCardTests(unittest.TestCase):
         cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
-    def fakeAction(self, prompt, session_id=None, system_prompt=None):
+    def fakeAction(self, prompt, session_id=None):
         request = FakeRequest()
         request.prompt = prompt  # what actually went to the CLI, rule and all
         request.session_id = session_id  # what the card asked to resume, if anything
-        request.system_prompt = system_prompt
         self.requests.append(request)
         return request
 
@@ -470,12 +469,10 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(self.card.animation.typing_clock.state(), QVariantAnimation.Stopped)
         self.assertNotEqual(self.card.streaming_label.text(), "")
 
-    def test_chat_speaks_with_the_tutor_prompt(self):
-        # The `?` and `!` paths never reach here, so they keep the plain one.
+    def test_chat_sends_the_bare_line_when_socratic_is_off(self):
         self.card.fly()
         self.card.send("hello")
-        self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
-        self.assertEqual(self.requests[0].prompt, "hello")  # no rule when socratic is off
+        self.assertEqual(self.requests[0].prompt, "hello")
 
     def test_socratic_mode_rides_on_the_message_not_the_system_prompt(self):
         # The CLI only honours --append-system-prompt when it CREATES a
@@ -484,7 +481,6 @@ class ChatCardTests(unittest.TestCase):
         self.card.fly()
         self.card.send("! socratic")
         self.card.send("hello")
-        self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
         self.assertIn(claude.SOCRATIC_RULE, self.requests[0].prompt)
         self.assertTrue(self.requests[0].prompt.startswith("hello"))
 
@@ -965,7 +961,7 @@ class ChatSlotTests(unittest.TestCase):
         cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
-    def fakeAction(self, prompt, session_id=None, system_prompt=None):
+    def fakeAction(self, prompt, session_id=None):
         request = FakeRequest()
         self.requests.append(request)
         return request

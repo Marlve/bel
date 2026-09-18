@@ -359,9 +359,7 @@ class ChatCard(QWidget):
         # reaches a conversation already under way (see claude.SOCRATIC_RULE).
         # The transcript above still shows the bare line he typed.
         message = text + claude.SOCRATIC_RULE if self.state.socratic else text
-        self.state.request = self.state.action(
-            message, session_id=self.state.session_id, system_prompt=claude.TUTOR_PROMPT
-        )
+        self.state.request = self.state.action(message, session_id=self.state.session_id)
         self.state.request.chunk.connect(self.onChunk)
         self.state.request.session_started.connect(self.onSessionStarted)
         self.state.request.finished.connect(self.onStreamFinished)

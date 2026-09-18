@@ -16,25 +16,17 @@ from PySide6.QtCore import QObject, Signal
 # anyway (ChatCard's session_id lives only in memory).
 CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
-# The two system prompts, one per kind of call - askBel() takes one rather
-# than appending a single global prompt to everything, because the paths want
-# opposite things. A `? lookup`, a `! organize` and the todo wedge want a
-# terse worker that answers "with only a JSON array" when asked; the chat card
-# wants a tutor who explains. One prompt can't be both.
+# Bel's one system prompt, appended to every `claude` call - chat, a `?`
+# lookup, `! organize` and the todo wedge alike. He is a tutor throughout:
+# what he is for is answering things while studying.
 #
-# Each is one whole literal rather than a base plus an appended rule - reading
-# one tells you everything that call sends.
-
+# The last rule is what lets one prompt serve all of them. `! organize` ends
+# its own prompt with "Reply with only a JSON array", and a teaching voice
+# talking over that would break the parse - so a message that names its output
+# format wins over everything above it.
+#
+# One whole literal, never a base plus an appended rule.
 BEL_PROMPT = """
-You're a personal helper tool called Bel.
-
-- answer as short and concise as you can, if its a command, don't put too much details except needed.
-- you live as an overlay that could help the user organize calender schedule, check for assignments, and work with their Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
-- you have no way to read or change the user's to-do list - if asked, say so instead of guessing or claiming to have done it.
-- ignore any git/repository status context you were given, only respond to the user's actual message.
-"""
-
-TUTOR_PROMPT = """
 You're a tutor called Bel. You live as an overlay on the user's screen while he studies, so he can ask you anything from a one-line question to a whole topic he's lost in.
 
 - teach, don't just answer. Explain the idea behind the answer, with a worked example or an analogy when one earns its place, and say so when you're giving him an approximation.
@@ -43,6 +35,7 @@ You're a tutor called Bel. You live as an overlay on the user's screen while he 
 - you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
 - you have no way to read or change his to-do list - if asked, say so instead of guessing or claiming to have done it.
 - ignore any git/repository status context you were given, only respond to his actual message.
+- if a message asks for a particular output format - only a JSON array, only a word, only a list - obey it exactly and reply with nothing else. No teaching, no preamble, no commentary. That instruction outranks every rule above.
 """
 
 # Socratic mode rides on the MESSAGE, not the system prompt. Measured
@@ -52,9 +45,13 @@ You're a tutor called Bel. You live as an overlay on the user's screen while he 
 # on" and change nothing about the next answer. A user message is new every
 # turn, so appending this works on turn 1 and turn 20 alike, and toggling off
 # just stops appending it. Written in his voice because it rides on his line.
+#
+# It has no escape hatch on purpose (Derich, 2026-09-18): asking Bel to just
+# give the answer must not work, or the mode drops the moment it gets hard,
+# which is the moment it is worth having. `! socratic` is the only way out.
 SOCRATIC_RULE = """
 
-[socratic mode is on: don't hand me a clean answer. Ask me one question at a time that tests my understanding, starting from what I've already told you, and let me get there myself - then confirm what I landed on or correct it. Give me the answer outright only if I ask you to drop the questions, or if I'm still stuck after a couple of tries.]"""
+[socratic mode is on: don't hand me a clean answer, and don't drop the questions even if I ask you to. Ask me one question at a time that tests my understanding, starting from what I've already told you, and keep going until I get there myself - then confirm what I landed on or correct it. If I say just tell me, or I'm stuck, don't give in: narrow the question down to something smaller I can answer instead.]"""
 
 if hasattr(sys.stdout, "reconfigure"):
   # sys.stdout can be None (no console, e.g. launched via pythonw) or lack
@@ -85,7 +82,7 @@ def resetClaudeHistory():
   bucket = Path.home() / ".claude" / "projects" / encoded
   shutil.rmtree(bucket, ignore_errors=True)
 
-def askBel(prompt, session_id=None, system_prompt=None, on_process=None, on_session=None):
+def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of
   returning the full response at once - callers can react to partial
   output rather than waiting for the whole thing.
@@ -102,11 +99,6 @@ def askBel(prompt, session_id=None, system_prompt=None, on_process=None, on_sess
   `on_session`, if given, is called once with the CLI's own session id, read
   off the first event of the stream - a caller keeps it and passes it back
   as `session_id` on the conversation's next turn.
-
-  `system_prompt` is which of the three personas above this one call speaks
-  with; it defaults to the plain BEL_PROMPT, so a caller that doesn't care
-  (`?` lookups, `! organize`, the todo wedge) gets the terse worker and only
-  the chat card has to ask for the tutor.
   """
   args = [
       "claude", "-p", prompt,
@@ -115,7 +107,7 @@ def askBel(prompt, session_id=None, system_prompt=None, on_process=None, on_sess
       "--include-partial-messages",
       "--verbose",
       "--append-system-prompt",
-      system_prompt or BEL_PROMPT,
+      BEL_PROMPT,
       # -p mode has no TTY to show a permission prompt, so an unlisted tool
       # is silently denied rather than asked about - pre-allow the calendar
       # MCP (already authenticated at the account level, see `claude mcp
@@ -185,11 +177,10 @@ class ClaudeWorker(QObject):
   finished = Signal()
   session_started = Signal(str)
 
-  def __init__(self, prompt, session_id=None, system_prompt=None):
+  def __init__(self, prompt, session_id=None):
       super().__init__()
       self.prompt = prompt
       self.session_id = session_id
-      self.system_prompt = system_prompt
       self.process = None
       # True once run() ends on an error or a non-zero CLI exit (including a
       # cancel's terminate()) - the streamed text is then not a whole answer.
@@ -204,7 +195,6 @@ class ClaudeWorker(QObject):
           for text in askBel(
               self.prompt,
               session_id=self.session_id,
-              system_prompt=self.system_prompt,
               on_process=self.track_process,
               on_session=self.session_started.emit,
           ):
