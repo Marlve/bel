@@ -355,9 +355,12 @@ class ChatCard(QWidget):
         self.composer.setReadOnly(True)
         self.animation.startTyping(self.streaming_label)
 
-        system_prompt = claude.SOCRATIC_PROMPT if self.state.socratic else claude.TUTOR_PROMPT
+        # The rule goes on the message, not the system prompt, so a toggle
+        # reaches a conversation already under way (see claude.SOCRATIC_RULE).
+        # The transcript above still shows the bare line he typed.
+        message = text + claude.SOCRATIC_RULE if self.state.socratic else text
         self.state.request = self.state.action(
-            text, session_id=self.state.session_id, system_prompt=system_prompt
+            message, session_id=self.state.session_id, system_prompt=claude.TUTOR_PROMPT
         )
         self.state.request.chunk.connect(self.onChunk)
         self.state.request.session_started.connect(self.onSessionStarted)

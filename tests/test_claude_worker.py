@@ -92,15 +92,12 @@ class AskBelArgsTests(unittest.TestCase):
         argv = self.argv(system_prompt=claude.TUTOR_PROMPT)
         self.assertEqual(self.system_prompt(argv), claude.TUTOR_PROMPT)
 
-    def test_the_socratic_prompt_is_a_third_choice(self):
-        argv = self.argv(system_prompt=claude.SOCRATIC_PROMPT)
-        self.assertEqual(self.system_prompt(argv), claude.SOCRATIC_PROMPT)
 
 
 class SystemPromptTests(unittest.TestCase):
-    """What separates the three prompts. Each is one whole literal rather
-    than a base plus an appended rule, so reading one tells you everything
-    that call sends."""
+    """What separates the two prompts. Each is one whole literal, so reading
+    one tells you everything that call sends. Socratic mode is not a third
+    prompt - it can't be, see SocraticRuleTests."""
 
     def test_only_the_plain_prompt_asks_for_short_answers(self):
         # Teaching needs room; a command reply does not. Splitting the
@@ -111,27 +108,34 @@ class SystemPromptTests(unittest.TestCase):
     def test_every_prompt_keeps_the_load_bearing_rules(self):
         # The CLI is told to ignore repo context it may pick up, and Bel has
         # no view onto the to-do list - true of a tutor as much as a helper.
-        for prompt in (claude.BEL_PROMPT, claude.TUTOR_PROMPT, claude.SOCRATIC_PROMPT):
+        for prompt in (claude.BEL_PROMPT, claude.TUTOR_PROMPT):
             self.assertIn("ignore any git/repository status context", prompt)
             self.assertIn("to-do list", prompt)
 
-    def test_the_two_chat_prompts_share_every_teaching_line(self):
-        # The persona is written out in full in both rather than appended to a
-        # shared base, so this is the only thing stopping one copy drifting
-        # from the other when a teaching line gets edited.
-        opener, socratic_opener = claude.TUTOR_PROMPT.strip().splitlines()[0], claude.SOCRATIC_PROMPT.strip().splitlines()[0]
-        self.assertEqual(opener, socratic_opener)
-        bullets = [line for line in claude.TUTOR_PROMPT.splitlines() if line.startswith("- ")]
-        self.assertEqual(len(bullets), 6)
-        for bullet in bullets:
-            self.assertIn(bullet, claude.SOCRATIC_PROMPT)
 
-    def test_the_socratic_prompt_keeps_the_teaching_voice(self):
-        # Built as the whole tutor persona plus a rule, not a persona of its
-        # own, so turning Socratic mode off can't lose the teaching voice.
-        self.assertIn("tutor", claude.SOCRATIC_PROMPT)
-        self.assertNotIn("socratic mode is on", claude.TUTOR_PROMPT)
-        self.assertIn("socratic mode is on", claude.SOCRATIC_PROMPT)
+class SocraticRuleTests(unittest.TestCase):
+    """Why socratic mode is a message addendum and not a third system prompt.
+
+    Measured against the real CLI on 2026-09-18: a fresh session obeys its
+    --append-system-prompt, a --resume'd one ignores it and keeps the prompt
+    the session was created with. So a system-prompt swap would flip the
+    toggle, report "socratic mode on", and change nothing about the answer -
+    exactly the mid-conversation case the mode exists for.
+    """
+
+    def test_the_rule_is_not_a_system_prompt(self):
+        self.assertFalse(hasattr(claude, "SOCRATIC_PROMPT"))
+
+    def test_the_rule_stands_apart_from_the_message_it_rides_on(self):
+        # Appended to his own line, so it has to read as an aside rather than
+        # as part of the question.
+        self.assertTrue(claude.SOCRATIC_RULE.startswith(chr(10)))
+        self.assertIn("socratic mode is on", claude.SOCRATIC_RULE)
+
+    def test_the_rule_does_not_repeat_the_teaching_persona(self):
+        # The persona is already on the session via TUTOR_PROMPT; repeating it
+        # every turn would just spend tokens.
+        self.assertNotIn("You're a tutor", claude.SOCRATIC_RULE)
 
 
 class WorkerSystemPromptTests(unittest.TestCase):

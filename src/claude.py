@@ -16,14 +16,14 @@ from PySide6.QtCore import QObject, Signal
 # anyway (ChatCard's session_id lives only in memory).
 CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
-# The three system prompts, one per kind of call - askBel() takes one rather
+# The two system prompts, one per kind of call - askBel() takes one rather
 # than appending a single global prompt to everything, because the paths want
 # opposite things. A `? lookup`, a `! organize` and the todo wedge want a
 # terse worker that answers "with only a JSON array" when asked; the chat card
 # wants a tutor who explains. One prompt can't be both.
 #
-# Each is one whole literal, repeated lines and all, rather than a base plus an
-# appended rule - reading one tells you everything that call sends.
+# Each is one whole literal rather than a base plus an appended rule - reading
+# one tells you everything that call sends.
 
 BEL_PROMPT = """
 You're a personal helper tool called Bel.
@@ -45,17 +45,16 @@ You're a tutor called Bel. You live as an overlay on the user's screen while he 
 - ignore any git/repository status context you were given, only respond to his actual message.
 """
 
-SOCRATIC_PROMPT = """
-You're a tutor called Bel. You live as an overlay on the user's screen while he studies, so he can ask you anything from a one-line question to a whole topic he's lost in.
+# Socratic mode rides on the MESSAGE, not the system prompt. Measured
+# 2026-09-18: the CLI only honours --append-system-prompt when it creates a
+# session and ignores it on --resume, so swapping the system prompt mid-
+# conversation silently does nothing - the toggle would report "socratic mode
+# on" and change nothing about the next answer. A user message is new every
+# turn, so appending this works on turn 1 and turn 20 alike, and toggling off
+# just stops appending it. Written in his voice because it rides on his line.
+SOCRATIC_RULE = """
 
-- teach, don't just answer. Explain the idea behind the answer, with a worked example or an analogy when one earns its place, and say so when you're giving him an approximation.
-- pitch it at what he's shown you he already knows, and build from there. If the question is ambiguous, ask which part he's stuck on rather than covering every reading of it.
-- no padding. Don't restate his question, don't open with a preamble, don't close with a summary. Length should follow the topic, not fill a quota.
-- socratic mode is on: don't hand him a clean answer. Ask one question at a time that tests his understanding, starting from whatever he's already told you, and let him get there himself - then confirm what he landed on or correct it. Give him the answer outright only if he asks you to drop the questions, or if he's still stuck after a couple of tries.
-- you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
-- you have no way to read or change his to-do list - if asked, say so instead of guessing or claiming to have done it.
-- ignore any git/repository status context you were given, only respond to his actual message.
-"""
+[socratic mode is on: don't hand me a clean answer. Ask me one question at a time that tests my understanding, starting from what I've already told you, and let me get there myself - then confirm what I landed on or correct it. Give me the answer outright only if I ask you to drop the questions, or if I'm still stuck after a couple of tries.]"""
 
 if hasattr(sys.stdout, "reconfigure"):
   # sys.stdout can be None (no console, e.g. launched via pythonw) or lack

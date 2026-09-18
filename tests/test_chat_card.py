@@ -112,6 +112,7 @@ class ChatCardTests(unittest.TestCase):
 
     def fakeAction(self, prompt, session_id=None, system_prompt=None):
         request = FakeRequest()
+        request.prompt = prompt  # what actually went to the CLI, rule and all
         request.session_id = session_id  # what the card asked to resume, if anything
         request.system_prompt = system_prompt
         self.requests.append(request)
@@ -474,19 +475,43 @@ class ChatCardTests(unittest.TestCase):
         self.card.fly()
         self.card.send("hello")
         self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
+        self.assertEqual(self.requests[0].prompt, "hello")  # no rule when socratic is off
 
-    def test_socratic_mode_swaps_the_whole_prompt_for_the_next_turn(self):
+    def test_socratic_mode_rides_on_the_message_not_the_system_prompt(self):
+        # The CLI only honours --append-system-prompt when it CREATES a
+        # session and ignores it on --resume (measured 2026-09-18), so a
+        # system-prompt swap would silently do nothing mid-conversation.
         self.card.fly()
-        self.card.send("! socratic")
-        self.card.send("hello")
-        self.assertEqual(self.requests[0].system_prompt, claude.SOCRATIC_PROMPT)
-
-    def test_toggling_socratic_off_goes_back_to_teaching(self):
-        self.card.fly()
-        self.card.send("! socratic")
         self.card.send("! socratic")
         self.card.send("hello")
         self.assertEqual(self.requests[0].system_prompt, claude.TUTOR_PROMPT)
+        self.assertIn(claude.SOCRATIC_RULE, self.requests[0].prompt)
+        self.assertTrue(self.requests[0].prompt.startswith("hello"))
+
+    def test_the_transcript_shows_what_he_typed_not_the_rule(self):
+        self.card.fly()
+        self.card.send("! socratic")
+        self.card.send("hello")
+        self.assertEqual(self.card.turns[-2]["text"], "hello")
+
+    def test_socratic_reaches_a_conversation_already_under_way(self):
+        # The regression this whole approach exists for: toggling on at turn
+        # three has to affect turn four, on the SAME resumed session.
+        self.card.fly()
+        self.card.send("first")
+        self.requests[-1].session_started.emit("session-1")
+        self.requests[-1].finished.emit()
+        self.card.send("! socratic")
+        self.card.send("second")
+        self.assertEqual(self.requests[-1].session_id, "session-1")  # same conversation
+        self.assertIn(claude.SOCRATIC_RULE, self.requests[-1].prompt)
+
+    def test_toggling_socratic_off_stops_appending_the_rule(self):
+        self.card.fly()
+        self.card.send("! socratic")
+        self.card.send("! socratic")
+        self.card.send("hello")
+        self.assertEqual(self.requests[0].prompt, "hello")
 
     def test_a_long_conversation_keeps_its_session(self):
         # There is no context cap any more: the session used to be thrown

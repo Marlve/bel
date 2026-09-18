@@ -46,15 +46,23 @@ A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`): B
 that command instead of sending the message to Claude as normal chat, and like
 a lookup it never joins the Claude session (`claudeChatCard.command_name`). A
 bare `!` is normal chat. `! socratic` is the odd one out - it runs no request
-at all, only flipping which prompt the next chat turn speaks with.
+at all, only flipping how the next chat turn is asked.
 
 **Socratic mode**:
 Off by default; `! socratic` toggles it, and the reply reads the new state
-back. On, chat sends `claude.SOCRATIC_PROMPT` instead of `TUTOR_PROMPT` - the
-same teaching persona plus a rule to question his understanding rather than
-hand over a clean answer. In memory only, like `session_id`, so it starts off
-every launch. Toggling mid-conversation needs no restart:
-`--append-system-prompt` goes on every call, `--resume` included.
+back. On, `claude.SOCRATIC_RULE` is appended to the message sent to the CLI -
+the transcript still shows the bare line he typed. In memory only, like
+`session_id`, so it starts off every launch.
+
+It rides on the message rather than the system prompt because
+`--append-system-prompt` is only honoured when the CLI **creates** a session;
+on `--resume` it is ignored and the session keeps the prompt it was born with
+(measured 2026-09-18 - a fresh session obeyed an instruction a resumed one
+ignored). A system-prompt swap would therefore flip the toggle, print
+"socratic mode on", and change nothing about the answer. The message is new
+every turn, so the rule reaches a conversation already under way. The same
+constraint means `TUTOR_PROMPT` is fixed for a session's whole life - fine,
+since the persona never changes within one.
 
 **Picked note**:
 The vault note Derich clicks in a lookup's note picker (`card.md`) - where
