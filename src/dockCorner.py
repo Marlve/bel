@@ -9,7 +9,6 @@
 from PySide6.QtCore import QRectF
 
 TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT = "top_left", "top_right", "bottom_left", "bottom_right"
-CORNERS = (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT)
 
 
 def is_left(corner):

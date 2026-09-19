@@ -57,16 +57,6 @@ def compass_wedge(count, angle):
     return int(shifted // wedge_width)
 
 
-def cycle_wedge(current, count, step):
-    """Index of the wedge step (+1 = right/next, -1 = left/previous) away
-    from current, wrapping around. current=None starts from just before the
-    first wedge (step=+1) or just after the last (step=-1).
-    """
-    if current is None:
-        current = -1 if step > 0 else 0
-    return (current + step) % count
-
-
 @dataclass
 class Wedge:
     id: str
