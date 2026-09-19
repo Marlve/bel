@@ -648,9 +648,19 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(self.card.picker.rows[0].detail_label.text(), "couldn't save the word")
 
     def test_a_korean_sentence_is_translated_but_never_offered_for_saving(self):
+        # A sentence comes back as kind "sentence" with its breakdown; the
+        # card shows the translation and offers no picker until the breakdown
+        # has a surface of its own.
         lookup = self.startLookup("? 감사 합니다")
 
-        lookup.on_result({**VOCAB_MISS, "draft": "thank you"})
+        lookup.on_result({
+            "hit": False,
+            "kind": "sentence",
+            "draft": "thank you",
+            "breakdown": {"translation": "thank you", "words": [], "grammar": []},
+            "notes": NOTES,
+            "all_notes": ALL_NOTES,
+        })
 
         self.assertIn("thank you", self.card.turns[-1]["text"])
         self.assertIsNone(self.card.picker)

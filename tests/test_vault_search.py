@@ -681,6 +681,139 @@ class ListInboxEntriesTests(unittest.TestCase):
             vaultSearch.list_inbox_entries(vault_path=self.vault)
 
 
+SENTENCE = "저는 매일 학교에 갑니다"
+
+BREAKDOWN_REPLY = """{
+  "translation": "I go to school every day",
+  "words": [
+    {"surface": "저는", "lemma": "저", "meaning": "I, me"},
+    {"surface": "매일", "lemma": "매일", "meaning": "every day"},
+    {"surface": "학교에", "lemma": "학교", "meaning": "school"},
+    {"surface": "갑니다", "lemma": "가다", "meaning": "to go"}
+  ],
+  "grammar": [
+    {"point": "-은/는", "meaning": "marks the topic of the sentence"},
+    {"point": "-에", "meaning": "marks a destination or location"},
+    {"point": "-ㅂ니다", "meaning": "the formal polite sentence ending"}
+  ]
+}"""
+
+
+class ParseBreakdownTests(unittest.TestCase):
+    def test_parses_a_reply_into_translation_words_and_grammar(self):
+        breakdown = vaultSearch.parse_breakdown(BREAKDOWN_REPLY)
+
+        self.assertEqual(breakdown["translation"], "I go to school every day")
+        self.assertEqual([word["surface"] for word in breakdown["words"]], ["저는", "매일", "학교에", "갑니다"])
+        self.assertEqual([word["lemma"] for word in breakdown["words"]], ["저", "매일", "학교", "가다"])
+        self.assertEqual([point["point"] for point in breakdown["grammar"]], ["-은/는", "-에", "-ㅂ니다"])
+
+    def test_reads_the_json_out_of_a_reply_that_says_more_than_the_object(self):
+        # BEL_PROMPT's tutor persona can still add a line around the object.
+        text = f"Here you go:\n\n{BREAKDOWN_REPLY}\n\nHope that helps."
+
+        self.assertEqual(vaultSearch.parse_breakdown(text)["translation"], "I go to school every day")
+
+    def test_an_answer_that_is_not_a_breakdown_is_no_breakdown_at_all(self):
+        # The degrade the card relies on: a plain translation stays a plain
+        # translation instead of raising.
+        for text in ("I go to school every day", "", "{ not json", "[]", '{"translation": 3}', '{"translation": "  "}'):
+            with self.subTest(text=text):
+                self.assertIsNone(vaultSearch.parse_breakdown(text))
+
+    def test_an_entry_missing_a_field_is_dropped_not_fatal(self):
+        text = """{"translation": "I go", "words": [
+            {"surface": "저는", "lemma": "저", "meaning": "I, me"},
+            {"surface": "갑니다", "meaning": "to go"},
+            "갑니다"
+        ], "grammar": "none"}"""
+
+        breakdown = vaultSearch.parse_breakdown(text)
+
+        self.assertEqual([word["lemma"] for word in breakdown["words"]], ["저"])
+        self.assertEqual(breakdown["grammar"], [])
+
+
+class ResolveBreakdownTests(unittest.TestCase):
+    def setUp(self):
+        self.vault_dir = tempfile.TemporaryDirectory()
+        self.db_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.vault_dir.cleanup)
+        self.addCleanup(self.db_dir.cleanup)
+        self.vault = Path(self.vault_dir.name)
+        self.db_path = Path(self.db_dir.name) / "vault-index.sqlite3"
+        self.korean = self.vault / "2 Areas" / "Korean"
+        self.korean.mkdir(parents=True)
+
+    def writeTable(self, name, header, rows):
+        lines = [f"| {header[0]} | {header[1]} |\n", "| --- | --- |\n"]
+        lines += [f"| {first} | {second} |\n" for first, second in rows]
+        (self.korean / name).write_text("".join(lines), encoding="utf-8")
+
+    def resolve(self, text=BREAKDOWN_REPLY):
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+        return vaultSearch.resolve_breakdown(vaultSearch.parse_breakdown(text), db_path=self.db_path)
+
+    def test_every_word_already_in_vocab_md_resolves_by_lemma_not_surface_form(self):
+        # The trap this feature exists to avoid: three of these four surface
+        # forms ("저는", "학교에", "갑니다") can never match their own row,
+        # because search_notes matches a whole cell.
+        self.writeTable("Vocab.md", ("word", "meaning"), [("저", "I, me"), ("매일", "every day"), ("학교", "school"), ("가다", "to go")])
+
+        resolved = self.resolve()
+
+        self.assertEqual([word["row"] for word in resolved["words"]], [
+            ["저", "I, me"], ["매일", "every day"], ["학교", "school"], ["가다", "to go"],
+        ])
+
+    def test_a_lemma_with_no_row_is_reported_as_unfiled(self):
+        self.writeTable("Vocab.md", ("word", "meaning"), [("저", "I, me")])
+
+        resolved = self.resolve()
+
+        self.assertEqual([word["row"] is None for word in resolved["words"]], [False, True, True, True])
+
+    def test_grammar_points_resolve_against_grammar_md(self):
+        self.writeTable("Grammar.md", ("point", "meaning"), [("-은/는", "topic particle"), ("-ㅂ니다", "formal polite ending")])
+
+        resolved = self.resolve()
+
+        self.assertEqual([point["row"] for point in resolved["grammar"]], [
+            ["-은/는", "topic particle"], None, ["-ㅂ니다", "formal polite ending"],
+        ])
+
+    def test_a_vault_with_neither_table_resolves_everything_as_unfiled(self):
+        resolved = self.resolve()
+
+        self.assertTrue(all(word["row"] is None for word in resolved["words"]))
+        self.assertTrue(all(point["row"] is None for point in resolved["grammar"]))
+        self.assertEqual(resolved["translation"], "I go to school every day")
+
+    def test_a_word_is_not_answered_out_of_the_grammar_table_nor_the_reverse(self):
+        # The two tables stay apart: "가다" filed as a grammar point is not a
+        # vocab row, and vice versa.
+        self.writeTable("Vocab.md", ("word", "meaning"), [("-은/는", "topic particle")])
+        self.writeTable("Grammar.md", ("point", "meaning"), [("가다", "to go")])
+
+        resolved = self.resolve()
+
+        self.assertTrue(all(word["row"] is None for word in resolved["words"]))
+        self.assertTrue(all(point["row"] is None for point in resolved["grammar"]))
+
+    def test_a_locked_index_resolves_everything_as_unfiled_rather_than_raising(self):
+        # Same guarantee SearchWorker.run gives the lookup itself - the
+        # breakdown still shows, with nothing claimed to be filed.
+        self.writeTable("Vocab.md", ("word", "meaning"), [("저", "I, me")])
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+        for error in (sqlite3.OperationalError("database is locked"), OSError("no space left on device")):
+            with self.subTest(error=error), patch("vaultSearch.vaultIndex.connect", side_effect=error):
+                resolved = vaultSearch.resolve_breakdown(vaultSearch.parse_breakdown(BREAKDOWN_REPLY), db_path=self.db_path)
+
+                self.assertTrue(all(word["row"] is None for word in resolved["words"]))
+                self.assertEqual(resolved["translation"], "I go to school every day")
+
+
 class FakeSignal:
     """Stands in for a Qt Signal without needing a real QObject/QThread -
     connect() records the slot, emit() calls it straight away. Keeps
@@ -956,6 +1089,93 @@ class ExplainQueryTests(unittest.TestCase):
         explain.request.finished.emit()
 
         self.assertEqual((self.results[0]["kind"], self.results[0]["draft"]), ("vocab", ""))
+
+    def test_a_korean_sentence_asks_for_a_breakdown_not_a_bare_translation(self):
+        explain = self.start(SENTENCE)
+
+        self.assertIn(SENTENCE, explain.request.prompt)
+        self.assertIn('"lemma"', explain.request.prompt)
+        self.assertNotIn("only the translation", explain.request.prompt)
+
+    def test_a_korean_sentence_reports_the_parsed_breakdown_and_its_translation(self):
+        explain = self.start(SENTENCE)
+
+        explain.request.chunk.emit(BREAKDOWN_REPLY)
+        explain.request.finished.emit()
+
+        result = self.results[0]
+        self.assertEqual((result["hit"], result["kind"]), (False, "sentence"))
+        self.assertEqual(result["draft"], "I go to school every day")
+        self.assertEqual([word["lemma"] for word in result["breakdown"]["words"]], ["저", "매일", "학교", "가다"])
+        self.assertEqual([point["point"] for point in result["breakdown"]["grammar"]], ["-은/는", "-에", "-ㅂ니다"])
+
+    def test_a_korean_sentence_does_not_touch_the_index_from_the_ui_thread(self):
+        # answered() runs on the Qt main thread, where a concurrent lookup's
+        # refresh() holds BEGIN IMMEDIATE for a whole vault walk - a read here
+        # would sit on SQLite's busy timeout with the card frozen. Resolving
+        # belongs to whoever builds the picker, off-thread.
+        explain = self.start(SENTENCE)
+
+        with patch("vaultSearch.vaultIndex.connect", side_effect=AssertionError("read the index from answered()")):
+            explain.request.chunk.emit(BREAKDOWN_REPLY)
+            explain.request.finished.emit()
+
+        self.assertEqual(self.results[0]["draft"], "I go to school every day")
+
+    def test_a_sentence_answer_that_botched_the_json_is_reported_as_no_draft(self):
+        # A cut-off object, or a stray "}" after it, must never reach the chat
+        # as a raw JSON blob - only an answer that ignored the format outright
+        # is worth showing as a plain translation.
+        for text in (BREAKDOWN_REPLY[:80], f"{BREAKDOWN_REPLY}\n\nHope that helps :}}", "{'translation': 'I go'}"):
+            with self.subTest(text=text):
+                self.results.clear()
+                explain = self.start(SENTENCE)
+
+                explain.request.chunk.emit(text)
+                explain.request.finished.emit()
+
+                self.assertEqual((self.results[0]["draft"], self.results[0]["breakdown"]), ("", None))
+
+    def test_a_sentence_answer_with_an_empty_translation_is_no_breakdown(self):
+        # A valid-but-empty translation would otherwise blank the draft and
+        # leave the card saying "couldn't draft an explanation."
+        explain = self.start(SENTENCE)
+
+        explain.request.chunk.emit('{"translation": "  ", "words": [], "grammar": []}')
+        explain.request.finished.emit()
+
+        self.assertEqual((self.results[0]["draft"], self.results[0]["breakdown"]), ("", None))
+
+    def test_a_sentence_answer_that_is_not_a_breakdown_stays_a_plain_translation(self):
+        explain = self.start(SENTENCE)
+
+        explain.request.chunk.emit("I go to school every day")
+        explain.request.finished.emit()
+
+        self.assertEqual(self.results[0]["draft"], "I go to school every day")
+        self.assertIsNone(self.results[0]["breakdown"])
+
+    def test_a_failed_sentence_answer_is_reported_as_no_draft_and_no_breakdown(self):
+        explain = self.start(SENTENCE)
+
+        explain.request.chunk.emit("[error: claude exited]")
+        explain.request.failed = True
+        explain.request.finished.emit()
+
+        self.assertEqual((self.results[0]["draft"], self.results[0]["breakdown"]), ("", None))
+
+    def test_a_sentence_already_filed_as_a_vocab_row_is_answered_from_it(self):
+        # search_notes can whole-cell match a sentence written into a Vocab
+        # row; that's a hit like any other, answered from the vault with no
+        # request and no breakdown.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text(f"| word | meaning |\n| --- | --- |\n| {SENTENCE} | I go to school |\n", encoding="utf-8")
+
+        explain = self.start(SENTENCE)
+
+        self.assertIsNone(explain.request)
+        self.assertEqual(self.results[0]["kind"], "vocab")
 
     def test_cancel_before_a_request_starts_is_a_no_op(self):
         explain = vaultSearch.ExplainQuery(

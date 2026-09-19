@@ -425,12 +425,12 @@ class ChatCard(QWidget):
             result["hit"] or (result["draft"] and vaultSearch.is_valid_note_title(query))
         )
         # A new Korean word is offered for saving with Vocab.md as the one
-        # row; a sentence never is (issue 23).
+        # row (issue 23). A sentence arrives as kind "sentence", so the kind
+        # is the whole gate - is_single_word decides it inside ExplainQuery.
         saveable_word = (
             result["kind"] == "vocab"
             and not result["hit"]
             and result["draft"].strip()
-            and vaultSearch.is_single_word(query)
             and result["vocab"] is not None
         )
         if pickable and result["notes"]:

@@ -14,9 +14,16 @@
 # a concept miss, that click is also the confirmation for writing the draft
 # (confirm_pick). A Korean miss shows Claude's translation, and for a single
 # word the picker offers Vocab.md as its one row - clicking it appends the
-# word (issue 23). A sentence is never saved. insert_concept_link is a no-op
-# rather than an error when the picked note can't be found - it's a
-# convenience on top of the primary
+# word (issue 23). A sentence takes the other Korean flow instead
+# (korean.md): it comes back parsed into its words and grammar points
+# (parse_breakdown), which resolve_breakdown matches against
+# Korean/Vocab.md and Korean/Grammar.md. Nothing is saved yet, and nothing
+# resolves yet either - both wait on the surface that would offer the misses
+# for filing, which is Derich's to design
+# (.scratch/korean-sentence/issues/01, question 2).
+#
+# insert_concept_link is a no-op rather than an error when the picked note
+# can't be found - it's a convenience on top of the primary
 # explain/write flow, never something that should block it. Only
 # concept-note hits/writes get a link - a `[[word]]` link to a Korean vocab
 # table row wouldn't resolve to anything in Obsidian, so append_vocab_row
@@ -26,8 +33,10 @@
 # `! organize` (inboxOrganize.py) replaced it, proposing moves for the whole
 # Inbox at once and doing its own rename on confirmation.
 
+import json
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 
@@ -40,6 +49,19 @@ from backgroundRequest import BackgroundRequest
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
 
 KOREAN_PROMPT_TEMPLATE = 'Translate the Korean "{query}" into English. Reply with only the translation, no explanation.'
+
+# A sentence is a grammar question, not a translation (korean.md), so it asks
+# for the whole breakdown in one call - per-word calls would cost ~4.8s each
+# to first token. The reply names its own output format, which BEL_PROMPT's
+# last rule lets outrank the tutor persona, the same way `! organize` gets
+# clean JSON back. The lemma is the point of the word entries: search_notes
+# matches a whole cell, so only a dictionary form can ever hit its Vocab row.
+KOREAN_SENTENCE_PROMPT_TEMPLATE = """Break down the Korean sentence "{query}".
+
+Give the sentence's English translation. Then one entry per word as it appears: the surface form exactly as written, its dictionary form (what a vocab list files it under - particles dropped, verbs and adjectives in their -다 form), and its English meaning. Then the grammar the sentence uses: only particles, endings and set patterns, never a word's own meaning. Name each one with the Korean form by itself and nothing else - "-은/는", "-에", "-ㅂ니다" - and put the English name at the front of its explanation.
+
+Reply with only a JSON object:
+{{"translation": "<English>", "words": [{{"surface": "<as written>", "lemma": "<dictionary form>", "meaning": "<English>"}}], "grammar": [{{"point": "<Korean form only>", "meaning": "<English name, then one line>"}}]}}"""
 
 
 def folder_matches(path_str, *parts):
@@ -128,7 +150,9 @@ def is_vocab_query(query):
 
 
 def is_single_word(query):
-    """Only a single Korean word is offered for saving, never a sentence."""
+    """Which of the two Korean flows a `?` lookup takes: a single word is
+    translated and offered for saving, a sentence is broken down into its
+    words and grammar points (korean.md)."""
     return bool(query) and not any(char.isspace() for char in query)
 
 
@@ -174,18 +198,107 @@ def search_notes(query, db_path=None):
         for rowid, path in rows:
             if folder_matches(path, "Areas", "Korean", "Vocab.md"):
                 content = conn.execute("SELECT content FROM notes WHERE rowid = ?", (rowid,)).fetchone()[0]
-                # Whole-cell match on real entries, not a substring of the
-                # file - "an" must not hit a row translated as "and,
-                # additionally" (issue 12).
-                wanted = query.strip().casefold()
-                for cells in table_rows(content):
-                    if wanted and any(cell.casefold() == wanted for cell in cells):
-                        row = [cell for cell in cells if cell]
-                        return {"kind": "vocab", "path": path, "content": content, "row": row}
+                row = matching_table_row(content, query)
+                if row:
+                    return {"kind": "vocab", "path": path, "content": content, "row": row}
 
         return None
     finally:
         conn.close()
+
+
+def matching_table_row(content, query):
+    """The filled cells of the first table row in `content` holding `query`
+    as a whole cell, or None. Whole-cell match on real entries, not a
+    substring of the file - "an" must not hit a row translated as "and,
+    additionally" (issue 12)."""
+    wanted = query.strip().casefold()
+    if not content or not wanted:
+        return None
+    for cells in table_rows(content):
+        if any(cell.casefold() == wanted for cell in cells):
+            return [cell for cell in cells if cell]
+    return None
+
+
+def parse_breakdown(text):
+    """The sentence breakdown in Claude's answer, or None if the answer isn't
+    one, rather than raising. An entry missing a field is dropped instead of
+    failing the whole breakdown, same tolerance as
+    inboxOrganize.parse_proposals - but an answer with no translation is no
+    breakdown at all, since the translation is what the card shows.
+
+    None covers two different answers, which ExplainQuery.answered tells
+    apart: one that ignored the named format and just translated (fine, shown
+    as-is) and one that tried the format and botched it (not shown)."""
+    start, end = text.find("{"), text.rfind("}")
+    try:
+        answer = json.loads(text[start:end + 1]) if start != -1 else None
+    except ValueError:
+        return None
+    if not isinstance(answer, dict) or not isinstance(answer.get("translation"), str) or not answer["translation"].strip():
+        return None
+    return {
+        "translation": answer["translation"].strip(),
+        "words": entries_with(answer.get("words"), "surface", "lemma", "meaning"),
+        "grammar": entries_with(answer.get("grammar"), "point", "meaning"),
+    }
+
+
+def entries_with(items, *fields):
+    """The items of `items` that are objects carrying a non-empty string in
+    every one of `fields`, trimmed and with nothing else kept."""
+    kept = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and all(isinstance(item.get(field), str) and item[field].strip() for field in fields):
+            kept.append({field: item[field].strip() for field in fields})
+    return kept
+
+
+def resolve_breakdown(breakdown, db_path=None):
+    """Each word and grammar point marked with the vault row that already
+    holds it, under "row", or None where nothing does - korean.md's "refer
+    back to a set of concept grammar that was created or not". Words resolve
+    against `Korean/Vocab.md` and grammar points against `Korean/Grammar.md`,
+    kept apart so a word is never answered out of the grammar table.
+
+    A word is looked up by its lemma, never its surface form: the match is
+    whole-cell, so "갑니다" could never find its own row "가다".
+
+    Reads the index, so call it off the UI thread - a lookup's refresh()
+    holds BEGIN IMMEDIATE for the length of a vault walk."""
+    try:
+        conn = vaultIndex.connect(db_path)
+        try:
+            # One read transaction, so a refresh() committing between the two
+            # reads can't reuse a matched rowid for a different note.
+            conn.execute("BEGIN")
+            vocab = table_note_content(conn, "Areas", "Korean", "Vocab.md")
+            grammar = table_note_content(conn, "Areas", "Korean", "Grammar.md")
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError):
+        # Same guarantee SearchWorker.run gives the lookup itself: a locked db
+        # (sqlite3.Error) or an unwritable index folder (OSError, from
+        # connect's mkdir) reports everything as unfiled, so the breakdown
+        # still shows and nothing is wrongly claimed to be saved already.
+        vocab = grammar = None
+    return {
+        "translation": breakdown["translation"],
+        "words": [{**word, "row": matching_table_row(vocab, word["lemma"])} for word in breakdown["words"]],
+        "grammar": [{**point, "row": matching_table_row(grammar, point["point"])} for point in breakdown["grammar"]],
+    }
+
+
+def table_note_content(conn, *parts):
+    """The indexed content of the note at `parts`, or None if the vault has
+    no such note. Fetched by rowid, not path, for the reason search_notes
+    gives."""
+    rows = conn.execute("SELECT rowid, path FROM notes").fetchall()
+    for rowid, path in rows:
+        if folder_matches(path, *parts):
+            return conn.execute("SELECT content FROM notes WHERE rowid = ?", (rowid,)).fetchone()[0]
+    return None
 
 
 def is_off_limits(relative):
@@ -536,7 +649,12 @@ class ExplainQuery(ClaudeQuery):
             all_notes = [note for note in self.all_notes if note["path"] != hit["path"]]
             self.on_result({"hit": True, **hit, "notes": notes, "all_notes": all_notes})
             return
-        if is_vocab_query(self.query):
+        if is_vocab_query(self.query) and not is_single_word(self.query):
+            # A sentence is a grammar question, so it asks for the whole
+            # breakdown rather than a bare translation (korean.md).
+            self.kind = "sentence"
+            prompt = KOREAN_SENTENCE_PROMPT_TEMPLATE.format(query=self.query)
+        elif is_vocab_query(self.query):
             # Reported as kind "vocab", so the translation is only ever
             # offered for saving into Vocab.md, never as
             # "3 Reference/<word>.md" (issues 22, 23).
@@ -554,6 +672,23 @@ class ExplainQuery(ClaudeQuery):
         result = {"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes, "all_notes": self.all_notes}
         if self.kind == "vocab":
             result["vocab"] = self.vocab
+        elif self.kind == "sentence":
+            # Parsed but not resolved: resolve_breakdown reads the index, and
+            # this runs on the UI thread, where a concurrent lookup's
+            # refresh() holds BEGIN IMMEDIATE across the whole vault walk -
+            # the read would sit on SQLite's busy timeout with the card
+            # frozen. Whoever builds the picker resolves it off-thread, the
+            # way SearchRequest already does for lookup().
+            result["breakdown"] = parse_breakdown(draft)
+            if result["breakdown"] is not None:
+                result["draft"] = result["breakdown"]["translation"]
+            elif "{" in draft:
+                # An answer that tried the named format and botched it - cut
+                # off mid-object, a stray "}" trailing it - must not reach the
+                # chat as a raw JSON blob. Reported as no draft, same as a
+                # failed one. An answer with no "{" ignored the format and
+                # simply translated, which is still worth showing.
+                result["draft"] = ""
         self.on_result(result)
 
     def cancel(self):
