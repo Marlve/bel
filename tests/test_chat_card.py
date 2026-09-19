@@ -60,7 +60,8 @@ class FakeLookup:
 NOTES = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
 ALL_NOTES = NOTES + [{"path": str(Path("2 Areas") / "School" / "FIT3143 Week 3.md"), "recent": False}]
 CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm.", "all_notes": ALL_NOTES}
-CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation.", "all_notes": ALL_NOTES}
+CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation.", "all_notes": ALL_NOTES, "content_matches": []}
+MAYBES = [{"path": str(Path("3 Reference") / "Dijkstra.md"), "recent": False}]
 VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
 VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "all_notes": ALL_NOTES, "vocab": VOCAB_NOTE}
 FOLDERS = ["1 Project", "2 Areas", "2 Areas/School"]
@@ -571,6 +572,67 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertIn("A drafted explanation.", self.card.turns[-1]["text"])
         self.assertEqual(len(self.card.picker.rows), 1)
+
+    def test_a_miss_that_may_already_be_written_says_so_above_the_picker(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES, "content_matches": MAYBES})
+
+        self.assertEqual([row.name_label.full_text for row in self.card.maybe_block.rows], ["Dijkstra"])
+        self.assertIn("maybe", self.card.maybe_block.header_label.full_text)
+        # The draft and its picker still stand: the block warns, it never refuses.
+        self.assertIn("A drafted explanation.", self.card.turns[-1]["text"])
+        self.assertEqual(len(self.card.picker.rows), 1)
+
+    def test_the_maybe_block_is_not_clickable(self):
+        # A click here would mean "look at this" while a click in the picker
+        # directly below means "write the note here" - the misclick this
+        # whole block exists to prevent.
+        lookup = self.startLookup()
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES, "content_matches": MAYBES})
+        picked = []
+        self.card.maybe_block.picked.connect(picked.append)
+        row = self.card.maybe_block.rows[0]
+
+        QApplication.sendEvent(row, mouseEvent(QEvent.MouseButtonPress, QPointF(0, 0)))
+        QApplication.sendEvent(row, mouseEvent(QEvent.MouseButtonRelease, QPointF(0, 0)))
+
+        self.assertEqual(picked, [])
+        self.assertFalse(self.card.maybe_block.rows[0].enabled)
+        self.assertIsNone(self.card.maybe_block.filter_field)
+
+    def test_a_maybe_block_stands_alone_when_the_query_cannot_be_filed(self):
+        # "?" is not a legal filename, so there's no note to offer and no
+        # picker - which makes the notes already written the only thing left
+        # to say (card.md).
+        lookup = self.startLookup("? what is a graph?")
+
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES, "content_matches": MAYBES})
+
+        self.assertIsNone(self.card.picker)
+        self.assertEqual([row.name_label.full_text for row in self.card.maybe_block.rows], ["Dijkstra"])
+
+    def test_no_maybe_block_when_nothing_already_covers_the_query(self):
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_MISS, "notes": NOTES})
+
+        self.assertIsNone(self.card.maybe_block)
+
+    def test_a_hit_shows_no_maybe_block(self):
+        # An exact title is a certainty, not a maybe.
+        lookup = self.startLookup()
+
+        lookup.on_result({**CONCEPT_HIT, "notes": NOTES})
+
+        self.assertIsNone(self.card.maybe_block)
+
+    def test_a_korean_miss_shows_no_maybe_block(self):
+        lookup = self.startLookup()
+
+        lookup.on_result(VOCAB_MISS)
+
+        self.assertIsNone(self.card.maybe_block)
 
     def test_the_note_picker_filters_across_every_indexed_note(self):
         # Issue 24 - the one-row vocab picker gets no field (checked below).

@@ -285,6 +285,12 @@ class NoteList(QWidget):
             self.filter_field.setReadOnly(True)
         self.picked.emit(picked.path)
 
+    def lockRows(self):
+        """Makes every row display-only - no pointer cursor, no hover, no
+        click. What a "maybe" block wants: notes to notice, not to act on."""
+        for row in self.rows:
+            row.lock()
+
     def showResult(self, text):
         self.picked_row.showDetail(text)
         self.fitHeight()  # the second line makes the picked row taller
@@ -329,6 +335,9 @@ class NotePicker(QFrame):
     @property
     def rows(self):
         return self.list.rows
+
+    def lockRows(self):
+        self.list.lockRows()
 
     def showConnected(self):
         self.list.showResult("connected")

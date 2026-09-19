@@ -41,6 +41,14 @@ A chat message prefixed `?` (`? Dijkstra`): Bel searches the vault for the
 rest of the message instead of sending it to Claude as normal chat
 (`vaultSearch.lookup_query`, `ExplainQuery`).
 
+**Content match**:
+A note whose *text* holds every word of a lookup, found through the vault
+index's FTS5 table (`vaultSearch.search_content`). Distinct from a hit, which
+matches a note's title exactly and is a certainty answered from the note: a
+content match is a **maybe**, shown as its own display-only block so a
+reworded question ("? Dijkstra's algorithm") doesn't file a second note about
+something already written. It never suppresses the draft.
+
 **Command**:
 A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`): Bel runs
 that command instead of sending the message to Claude as normal chat, and like

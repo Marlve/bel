@@ -117,6 +117,7 @@ class ChatCard(QWidget):
         self.organize_factory = inboxOrganize.OrganizeQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.organize_list = None  # the latest `! organize`'s box, one row per Inbox note
         self.picker = None  # the latest lookup's note picker, if it got one
+        self.maybe_block = None  # the latest lookup's "you've written about this" block, if it got one
         self.due_list = None  # the latest `! today` / `! week`'s "what is due" box, if it had events
 
         self.buildContent()
@@ -408,6 +409,7 @@ class ChatCard(QWidget):
         self.animation.stopTyping()
         self.lookup = None
         self.picker = None
+        self.maybe_block = None
         self.composer.setReadOnly(False)
 
         if result["kind"] == "vocab" and result["hit"]:
@@ -433,6 +435,19 @@ class ChatCard(QWidget):
             and result["draft"].strip()
             and result["vocab"] is not None
         )
+        # A content match is a maybe, not an answer: whatever the draft and
+        # the picker would have done, they still do, and this block only says
+        # "you may have written this already" above them. Display-only,
+        # because a click here would mean something else entirely from a
+        # click in the picker directly below (card.md).
+        maybe_written = not result["hit"] and result["kind"] == "concept" and result["content_matches"]
+        if maybe_written:
+            self.maybe_block = NotePicker(
+                result["content_matches"], self.contentWidth(), header="maybe — you've written about this"
+            )
+            self.maybe_block.lockRows()
+            self.showPicker(self.maybe_block)
+
         if pickable and result["notes"]:
             self.picker = NotePicker(result["notes"], self.contentWidth(), all_notes=result["all_notes"])
             picker = self.picker

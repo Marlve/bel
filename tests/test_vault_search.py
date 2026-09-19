@@ -221,14 +221,14 @@ class SearchContentTests(unittest.TestCase):
     def refresh(self):
         vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
 
+    def paths(self, query):
+        return [note["path"] for note in vaultSearch.search_content(query, db_path=self.db_path)]
+
     def test_finds_a_note_by_words_that_are_not_in_its_title(self):
         self.note("Dijkstra.md", "Finds the shortest path with a priority queue.")
         self.refresh()
 
-        self.assertEqual(
-            vaultSearch.search_content("shortest path", db_path=self.db_path),
-            [str(Path("3 Reference") / "Dijkstra.md")],
-        )
+        self.assertEqual(self.paths("shortest path"), [str(Path("3 Reference") / "Dijkstra.md")])
 
     def test_the_query_that_drafts_a_duplicate_today_finds_the_note(self):
         # "? Dijkstra's algorithm" misses on filename equality and files a
@@ -236,10 +236,20 @@ class SearchContentTests(unittest.TestCase):
         self.note("Dijkstra.md", "Dijkstra's algorithm finds the shortest path.")
         self.refresh()
 
-        self.assertEqual(
-            vaultSearch.search_content("Dijkstra's algorithm", db_path=self.db_path),
-            [str(Path("3 Reference") / "Dijkstra.md")],
-        )
+        self.assertEqual(self.paths("Dijkstra's algorithm"), [str(Path("3 Reference") / "Dijkstra.md")])
+
+    def test_a_candidate_carries_the_recency_dot(self):
+        # Same shape as all_notes/vocab_note, so the picker's note_row can
+        # draw a candidate without the card reshaping it.
+        self.note("Dijkstra.md", "Finds the shortest path.")
+        self.refresh()
+        now = Path(self.reference / "Dijkstra.md").stat().st_mtime
+
+        fresh = vaultSearch.search_content("shortest path", db_path=self.db_path, now=now)
+        stale = vaultSearch.search_content("shortest path", db_path=self.db_path, now=now + vaultSearch.RECENT_SECONDS + 1)
+
+        self.assertEqual([note["recent"] for note in fresh], [True])
+        self.assertEqual([note["recent"] for note in stale], [False])
 
     def test_a_question_typed_as_a_human_types_it_never_raises(self):
         self.note("Dijkstra.md", "Dijkstra's algorithm. NOT a tree. Uses C++.")
@@ -253,7 +263,7 @@ class SearchContentTests(unittest.TestCase):
         self.note("Dijkstra.md", "Finds the shortest path.")
         self.refresh()
 
-        self.assertEqual(vaultSearch.search_content("??? !!!", db_path=self.db_path), [])
+        self.assertEqual(self.paths("??? !!!"), [])
 
     def test_a_private_note_left_in_the_index_is_never_returned(self):
         # refresh() can't index Private, so this writes the row straight into
@@ -271,10 +281,7 @@ class SearchContentTests(unittest.TestCase):
         finally:
             conn.close()
 
-        self.assertEqual(
-            vaultSearch.search_content("shortest path", db_path=self.db_path),
-            [str(Path("3 Reference") / "Dijkstra.md")],
-        )
+        self.assertEqual(self.paths("shortest path"), [str(Path("3 Reference") / "Dijkstra.md")])
 
     def test_the_best_match_comes_first(self):
         # The names carry the test: refresh() indexes in directory order, so
@@ -285,9 +292,7 @@ class SearchContentTests(unittest.TestCase):
         self.note("Zeta.md", "graph graph graph graph graph")
         self.refresh()
 
-        found = vaultSearch.search_content("graph", db_path=self.db_path)
-
-        self.assertEqual(found, [
+        self.assertEqual(self.paths("graph"), [
             str(Path("3 Reference") / "Zeta.md"),
             str(Path("3 Reference") / "Alpha.md"),
         ])
@@ -297,15 +302,13 @@ class SearchContentTests(unittest.TestCase):
             self.note(f"Note {index}.md", "Finds the shortest path.")
         self.refresh()
 
-        found = vaultSearch.search_content("shortest path", db_path=self.db_path)
-
-        self.assertEqual(len(found), vaultSearch.CONTENT_MATCH_LIMIT)
+        self.assertEqual(len(self.paths("shortest path")), vaultSearch.CONTENT_MATCH_LIMIT)
 
     def test_no_hits_is_an_empty_list(self):
         self.note("Dijkstra.md", "Finds the shortest path.")
         self.refresh()
 
-        self.assertEqual(vaultSearch.search_content("photosynthesis", db_path=self.db_path), [])
+        self.assertEqual(self.paths("photosynthesis"), [])
 
 
 class WriteConfirmedTests(unittest.TestCase):
@@ -1042,6 +1045,43 @@ class LookupTests(unittest.TestCase):
 
         self.assertEqual(outcome["found"]["path"], str(Path("3 Reference") / "Dijkstra.md"))
 
+    def test_a_miss_carries_the_notes_that_may_already_cover_it(self):
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Dijkstra's algorithm finds the shortest path.")
+
+        outcome = vaultSearch.lookup("Dijkstra's algorithm", vault_path=self.vault, db_path=self.db_path)
+
+        self.assertIsNone(outcome["found"])
+        self.assertEqual(
+            [note["path"] for note in outcome["content_matches"]],
+            [str(Path("3 Reference") / "Dijkstra.md")],
+        )
+
+    def test_a_korean_miss_looks_for_no_content_matches(self):
+        # The Korean flows have their own block, so nothing would show them -
+        # the query is skipped rather than run and thrown away.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Grammar.md").write_text("안녕 is the casual greeting.", encoding="utf-8")
+
+        outcome = vaultSearch.lookup("안녕", vault_path=self.vault, db_path=self.db_path)
+
+        self.assertIsNone(outcome["found"])
+        self.assertEqual(outcome["content_matches"], [])
+
+    def test_a_hit_looks_for_no_candidates(self):
+        # An exact title is a certainty, so there is no maybe to offer - and
+        # no reason to pay for a second query.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Dijkstra's algorithm finds the shortest path.")
+
+        outcome = vaultSearch.lookup("Dijkstra", vault_path=self.vault, db_path=self.db_path)
+
+        self.assertIsNotNone(outcome["found"])
+        self.assertEqual(outcome["content_matches"], [])
+
     def test_also_lists_every_indexed_note_for_the_picker_filter(self):
         # Issue 24: the filter searches the whole index, not just the recent
         # notes, and filters in memory rather than querying per keystroke.
@@ -1073,7 +1113,7 @@ class SearchWorkerTests(unittest.TestCase):
         with patch.object(vaultSearch, "lookup", side_effect=sqlite3.OperationalError("database is locked")):
             worker.run()
 
-        self.assertEqual(outcomes, [{"found": None, "notes": [], "all_notes": [], "vocab": None}])
+        self.assertEqual(outcomes, [{"found": None, "content_matches": [], "notes": [], "all_notes": [], "vocab": None}])
 
 
 class ExplainQueryTests(unittest.TestCase):
@@ -1159,7 +1199,34 @@ class ExplainQueryTests(unittest.TestCase):
             "draft": "A drafted explanation.",
             "notes": plan,
             "all_notes": plan,
+            "content_matches": [],
         }])
+
+    def test_a_concept_miss_reports_the_notes_that_may_already_cover_it(self):
+        # The whole point: "? Dijkstra's algorithm" misses on the title but
+        # the note is right there, so the card can say so before drafting a
+        # second one.
+        reference = self.vault / "3 Reference"
+        reference.mkdir()
+        (reference / "Dijkstra.md").write_text("Dijkstra's algorithm finds the shortest path.")
+        explain = self.start("Dijkstra's algorithm")
+
+        explain.request.chunk.emit("A drafted explanation.")
+        explain.request.finished.emit()
+
+        self.assertEqual(
+            [note["path"] for note in self.results[0]["content_matches"]],
+            [str(Path("3 Reference") / "Dijkstra.md")],
+        )
+
+    def test_only_a_concept_lookup_carries_content_matches(self):
+        # The Korean flows have their own block; two lists of notes over one
+        # translation is noise, not help.
+        explain = self.start("감사")
+
+        explain.request.finished.emit()
+
+        self.assertNotIn("content_matches", self.results[0])
 
     def test_a_failed_draft_is_reported_as_no_draft(self):
         # An error or a timed-out, cut-off answer must never be offered for

@@ -163,8 +163,13 @@ def lookup(query, vault_path=None, db_path=None):
     empty, and every note for the filter to search."""
     vaultIndex.refresh(vault_path=vault_path, db_path=db_path)
     notes = all_notes(db_path=db_path)
+    found = search_notes(query, db_path=db_path)
     return {
-        "found": search_notes(query, db_path=db_path),
+        "found": found,
+        # Only where a maybe could be shown, so nothing else pays for the
+        # query: a hit is a certainty, and a Korean lookup has its own block
+        # (ExplainQuery decides that the same way, on is_vocab_query).
+        "content_matches": [] if found or is_vocab_query(query) else search_content(query, db_path=db_path),
         "notes": notes[:RECENT_NOTES_LIMIT],
         "all_notes": notes,
         "vocab": vocab_note(db_path=db_path),
@@ -226,11 +231,13 @@ def search_query_terms(query):
     return " AND ".join('"' + word + '"' for word in re.findall(r"\w+", query))
 
 
-def search_content(query, db_path=None):
+def search_content(query, db_path=None, now=None):
     """The indexed notes whose text holds every word of `query`, best match
     first and capped at CONTENT_MATCH_LIMIT. Where search_notes answers "this
-    note *is* the answer", these are maybes: notes Derich may already have
-    written on the subject, under a title he didn't think to type.
+    note is the answer", these are maybes: notes Derich may already have
+    written on the subject, under a title he didn't think to type. Returned
+    in the picker's note shape, like all_notes and vocab_note, so the card
+    can draw one without reshaping it.
 
     Scoped to the content column because the FTS table indexes `path` too - an
     unscoped MATCH answers "Korean" with every note under `2 Areas/Korean/`,
@@ -246,15 +253,20 @@ def search_content(query, db_path=None):
     terms = search_query_terms(query)
     if not terms:
         return []
+    now = time.time() if now is None else now
     conn = vaultIndex.connect(db_path)
     try:
         rows = conn.execute(
-            "SELECT path FROM notes WHERE notes MATCH ? ORDER BY rank",
+            "SELECT path, mtime FROM notes WHERE notes MATCH ? ORDER BY rank",
             (f"content : ({terms})",),
         ).fetchall()
     finally:
         conn.close()
-    return [path for (path,) in rows if not is_off_limits(Path(path))][:CONTENT_MATCH_LIMIT]
+    return [
+        {"path": path, "recent": now - mtime <= RECENT_SECONDS}
+        for path, mtime in rows
+        if not is_off_limits(Path(path))
+    ][:CONTENT_MATCH_LIMIT]
 
 
 def matching_table_row(content, query):
@@ -607,7 +619,7 @@ class SearchWorker(QObject):
         try:
             outcome = lookup(self.query, vault_path=self.vault_path, db_path=self.db_path)
         except Exception:
-            outcome = {"found": None, "notes": [], "all_notes": [], "vocab": None}
+            outcome = {"found": None, "content_matches": [], "notes": [], "all_notes": [], "vocab": None}
         self.finished.emit(outcome)
 
 
@@ -668,6 +680,7 @@ class ExplainQuery(ClaudeQuery):
         self.notes = []
         self.all_notes = []
         self.vocab = None
+        self.content_matches = []
         self.kind = None
         self.search_request = None
 
@@ -691,6 +704,7 @@ class ExplainQuery(ClaudeQuery):
         self.notes = outcome["notes"]
         self.all_notes = outcome["all_notes"]
         self.vocab = outcome["vocab"]
+        self.content_matches = outcome["content_matches"]
         hit = outcome["found"]
         if hit is not None:
             self.disconnectAboutToQuit()
@@ -720,7 +734,13 @@ class ExplainQuery(ClaudeQuery):
         # never be offered for saving.
         draft = "" if failed else text
         result = {"hit": False, "kind": self.kind, "draft": draft, "notes": self.notes, "all_notes": self.all_notes}
-        if self.kind == "vocab":
+        if self.kind == "concept":
+            # The notes that may already cover this, so the card can say so
+            # before the draft is one click from becoming a second note. Only
+            # on a concept: the Korean flows have their own block, and two
+            # lists of notes over one translation is noise.
+            result["content_matches"] = self.content_matches
+        elif self.kind == "vocab":
             result["vocab"] = self.vocab
         elif self.kind == "sentence":
             # Parsed but not resolved: resolve_breakdown reads the index, and

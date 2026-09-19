@@ -175,6 +175,24 @@ class NotePickerTests(unittest.TestCase):
 
         self.assertEqual(picker.scroll.height(), style.PICKER_LIST_MAX_HEIGHT)
 
+    def test_locked_rows_are_display_only(self):
+        # The "maybe" block lists notes to notice, not to act on - a click
+        # there must never do what a click in the picker right below it does.
+        self.picker.lockRows()
+
+        click(self.picker.rows[0])
+
+        self.assertEqual(self.picked, [])
+        self.assertEqual(self.picker.rows[0].cursor().shape(), Qt.ArrowCursor)
+
+    def test_locked_rows_do_not_light_up_under_the_pointer(self):
+        self.picker.lockRows()
+        row = self.picker.rows[0]
+
+        row.enterEvent(None)
+
+        self.assertNotIn(style.PICKER_HEADER_TEXT, row.name_label.styleSheet())
+
 
 class NotePickerFilterTests(unittest.TestCase):
     """Issue 24: a type-to-filter field between the header and the list."""
