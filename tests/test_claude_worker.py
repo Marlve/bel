@@ -69,7 +69,7 @@ class AskBelArgsTests(unittest.TestCase):
     wedge (Derich, 2026-09-18). What keeps the strict-output callers working
     is BEL_PROMPT's last rule, not a prompt of their own; verified against
     the real CLI, which returned clean JSON for `! organize` and a bare
-    "Project" for triage."""
+    "Project" for the inbox triage flow (since deleted - a99d144)."""
 
     def argv(self, **kwargs):
         spawned = []
@@ -103,9 +103,10 @@ class SystemPromptTests(unittest.TestCase):
 
     def test_a_named_output_format_outranks_the_teaching_voice(self):
         # What lets one prompt serve `! organize` ("Reply with only a JSON
-        # array") and triage ("Reply with only that one word") as well as
-        # chat. Without this rule the tutor talks over both and the parse
-        # breaks - measured against the real CLI before this landed.
+        # array") and a Korean `?` lookup ("Reply with only the translation,
+        # no explanation") as well as chat. Without this rule the tutor talks
+        # over both and the parse breaks - measured against the real CLI
+        # before this landed.
         self.assertIn("obey it exactly and reply with nothing else", claude.BEL_PROMPT)
         self.assertIn("outranks every rule above", claude.BEL_PROMPT)
 
