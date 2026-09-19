@@ -19,8 +19,7 @@
 # (parse_breakdown), which resolve_breakdown matches against
 # Korean/Vocab.md and Korean/Grammar.md. Nothing is saved yet, and nothing
 # resolves yet either - both wait on the surface that would offer the misses
-# for filing, which is Derich's to design
-# (.scratch/korean-sentence/issues/01, question 2).
+# for filing, which is Derich's to design.
 #
 # insert_concept_link is a no-op rather than an error when the picked note
 # can't be found - it's a convenience on top of the primary
@@ -205,6 +204,57 @@ def search_notes(query, db_path=None):
         return None
     finally:
         conn.close()
+
+
+# How many "you may already have written this" candidates are worth offering.
+CONTENT_MATCH_LIMIT = 5
+
+
+def search_query_terms(query):
+    """`query`'s words as an FTS5 term expression: every run of word
+    characters as its own quoted phrase, ANDed together. The caller still
+    scopes it to a column - see search_content.
+
+    Raw user text must never reach MATCH. FTS5's query language is not plain
+    text, so an apostrophe, a "+", a "?" or a bare NOT is a syntax error - and
+    "Dijkstra's algorithm" is exactly the question this exists to answer.
+    Quoting each word separately rather than the whole query keeps it a search
+    for notes holding all those words, not for that one literal phrase.
+
+    Empty when the query holds no word characters at all. That is no search,
+    never an empty MATCH."""
+    return " AND ".join('"' + word + '"' for word in re.findall(r"\w+", query))
+
+
+def search_content(query, db_path=None):
+    """The indexed notes whose text holds every word of `query`, best match
+    first and capped at CONTENT_MATCH_LIMIT. Where search_notes answers "this
+    note *is* the answer", these are maybes: notes Derich may already have
+    written on the subject, under a title he didn't think to type.
+
+    Scoped to the content column because the FTS table indexes `path` too - an
+    unscoped MATCH answers "Korean" with every note under `2 Areas/Korean/`,
+    on the strength of the folder name alone. Reference is not excluded the
+    way the note picker excludes it: a duplicate would be filed there, so it
+    is the folder that matters most here.
+
+    Private is filtered here rather than left to the index's own exclusion. A
+    row for a folder renamed after it was indexed outranks the real notes, so
+    it would both leak and take a candidate's place - hence filtered before
+    the cap, and so the cap can't be a SQL LIMIT. Only paths are fetched, and
+    this is one personal vault, so the unbounded row count is no cost."""
+    terms = search_query_terms(query)
+    if not terms:
+        return []
+    conn = vaultIndex.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT path FROM notes WHERE notes MATCH ? ORDER BY rank",
+            (f"content : ({terms})",),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [path for (path,) in rows if not is_off_limits(Path(path))][:CONTENT_MATCH_LIMIT]
 
 
 def matching_table_row(content, query):

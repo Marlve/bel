@@ -179,6 +179,135 @@ class SearchNotesTests(unittest.TestCase):
         self.assertEqual(result["kind"], "concept")
 
 
+class SearchQueryTermsTests(unittest.TestCase):
+    def test_each_word_becomes_its_own_quoted_phrase(self):
+        self.assertEqual(vaultSearch.search_query_terms("shortest path"), '"shortest" AND "path"')
+
+    def test_an_apostrophe_splits_instead_of_reaching_fts(self):
+        # Raw "Dijkstra's" is an FTS5 syntax error - the whole point of the
+        # recipe is that no user punctuation survives into the expression.
+        self.assertEqual(vaultSearch.search_query_terms("Dijkstra's"), '"Dijkstra" AND "s"')
+
+    def test_fts_operators_typed_by_a_human_are_just_words(self):
+        self.assertEqual(vaultSearch.search_query_terms("NOT a tree"), '"NOT" AND "a" AND "tree"')
+        self.assertEqual(vaultSearch.search_query_terms("graph OR queue"), '"graph" AND "OR" AND "queue"')
+
+    def test_punctuation_is_dropped_rather_than_escaped(self):
+        # "+" and "?" are both FTS5 syntax errors raw. Note "c++" survives
+        # only as "c" - the recipe searches words, and "++" isn't one.
+        self.assertEqual(vaultSearch.search_query_terms("what is c++?"), '"what" AND "is" AND "c"')
+
+    def test_hangul_is_a_term(self):
+        self.assertEqual(vaultSearch.search_query_terms("안녕 하세요"), '"안녕" AND "하세요"')
+
+    def test_a_query_of_pure_punctuation_has_no_terms(self):
+        self.assertEqual(vaultSearch.search_query_terms("??? !!!"), "")
+
+
+class SearchContentTests(unittest.TestCase):
+    def setUp(self):
+        self.vault_dir = tempfile.TemporaryDirectory()
+        self.db_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.vault_dir.cleanup)
+        self.addCleanup(self.db_dir.cleanup)
+        self.vault = Path(self.vault_dir.name)
+        self.db_path = Path(self.db_dir.name) / "vault-index.sqlite3"
+        self.reference = self.vault / "3 Reference"
+        self.reference.mkdir()
+
+    def note(self, name, content):
+        (self.reference / name).write_text(content, encoding="utf-8")
+
+    def refresh(self):
+        vaultIndex.refresh(vault_path=self.vault, db_path=self.db_path)
+
+    def test_finds_a_note_by_words_that_are_not_in_its_title(self):
+        self.note("Dijkstra.md", "Finds the shortest path with a priority queue.")
+        self.refresh()
+
+        self.assertEqual(
+            vaultSearch.search_content("shortest path", db_path=self.db_path),
+            [str(Path("3 Reference") / "Dijkstra.md")],
+        )
+
+    def test_the_query_that_drafts_a_duplicate_today_finds_the_note(self):
+        # "? Dijkstra's algorithm" misses on filename equality and files a
+        # second note about Dijkstra - the reason this ticket exists.
+        self.note("Dijkstra.md", "Dijkstra's algorithm finds the shortest path.")
+        self.refresh()
+
+        self.assertEqual(
+            vaultSearch.search_content("Dijkstra's algorithm", db_path=self.db_path),
+            [str(Path("3 Reference") / "Dijkstra.md")],
+        )
+
+    def test_a_question_typed_as_a_human_types_it_never_raises(self):
+        self.note("Dijkstra.md", "Dijkstra's algorithm. NOT a tree. Uses C++.")
+        self.refresh()
+
+        for query in ("Dijkstra's", "NOT a tree", "c++", "what is a graph?", "graph OR queue", "*"):
+            with self.subTest(query=query):
+                vaultSearch.search_content(query, db_path=self.db_path)
+
+    def test_a_query_of_pure_punctuation_is_no_search(self):
+        self.note("Dijkstra.md", "Finds the shortest path.")
+        self.refresh()
+
+        self.assertEqual(vaultSearch.search_content("??? !!!", db_path=self.db_path), [])
+
+    def test_a_private_note_left_in_the_index_is_never_returned(self):
+        # refresh() can't index Private, so this writes the row straight into
+        # the index - a stale db from before a folder was renamed. The row
+        # outranks the real note, so filtering has to happen before the cap.
+        self.note("Dijkstra.md", "Finds the shortest path eventually, after a while.")
+        self.refresh()
+        conn = vaultIndex.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO notes (path, content, mtime) VALUES (?, ?, ?)",
+                (str(Path("6 Private") / "Secret.md"), "shortest path", 1.0),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.assertEqual(
+            vaultSearch.search_content("shortest path", db_path=self.db_path),
+            [str(Path("3 Reference") / "Dijkstra.md")],
+        )
+
+    def test_the_best_match_comes_first(self):
+        # The names carry the test: refresh() indexes in directory order, so
+        # the dense note has to sort *after* the weak one for the assertion
+        # to fail when the ranking is dropped. Named "Alpha"/"Zeta" so a
+        # tidy-up can't rename them back into insertion order.
+        self.note("Alpha.md", "graph " + "filler " * 200)
+        self.note("Zeta.md", "graph graph graph graph graph")
+        self.refresh()
+
+        found = vaultSearch.search_content("graph", db_path=self.db_path)
+
+        self.assertEqual(found, [
+            str(Path("3 Reference") / "Zeta.md"),
+            str(Path("3 Reference") / "Alpha.md"),
+        ])
+
+    def test_candidates_are_capped(self):
+        for index in range(vaultSearch.CONTENT_MATCH_LIMIT + 3):
+            self.note(f"Note {index}.md", "Finds the shortest path.")
+        self.refresh()
+
+        found = vaultSearch.search_content("shortest path", db_path=self.db_path)
+
+        self.assertEqual(len(found), vaultSearch.CONTENT_MATCH_LIMIT)
+
+    def test_no_hits_is_an_empty_list(self):
+        self.note("Dijkstra.md", "Finds the shortest path.")
+        self.refresh()
+
+        self.assertEqual(vaultSearch.search_content("photosynthesis", db_path=self.db_path), [])
+
+
 class WriteConfirmedTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()
