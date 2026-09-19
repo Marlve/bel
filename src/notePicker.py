@@ -27,9 +27,9 @@ def label_stylesheet(color, size=None):
     return f"color: {color}; font-family: {style.FONT_FAMILY}; font-size: {size}px; background: transparent;"
 
 
-def text_label(text, color, text_format=Qt.PlainText, size=None):
+def text_label(text, color, size=None):
     label = QLabel(text)
-    label.setTextFormat(text_format)
+    label.setTextFormat(Qt.PlainText)
     label.setStyleSheet(label_stylesheet(color, size))
     return label
 
@@ -299,7 +299,7 @@ class NotePicker(QFrame):
 
     picked = Signal(str)
 
-    def __init__(self, notes, width, header="ambiguous — confirm the note", all_notes=None, placeholder="filter notes…", parent=None):
+    def __init__(self, notes, width, header="ambiguous — confirm the note", all_notes=None, parent=None):
         super().__init__(parent)
         self.setObjectName("notePicker")
         self.setStyleSheet(
@@ -314,7 +314,7 @@ class NotePicker(QFrame):
         header_row.addWidget(SearchIcon())
         header_row.addWidget(self.header_label, 1)
 
-        self.list = NoteList(notes, all_notes, placeholder)
+        self.list = NoteList(notes, all_notes)
         self.list.picked.connect(self.picked)
         self.filter_field = self.list.filter_field
         self.scroll = self.list.scroll
