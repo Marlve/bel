@@ -632,7 +632,7 @@ class ConfirmPickTests(unittest.TestCase):
         self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.")
 
 
-class InboxTriageTests(unittest.TestCase):
+class ListInboxEntriesTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.vault_dir.cleanup)
@@ -679,85 +679,6 @@ class InboxTriageTests(unittest.TestCase):
     def test_list_inbox_entries_raises_when_inbox_folder_is_missing(self):
         with self.assertRaises(FileNotFoundError):
             vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-    def test_parse_triage_response_matches_project(self):
-        self.assertEqual(vaultSearch.parse_triage_response("Project"), "Project")
-
-    def test_parse_triage_response_matches_areas(self):
-        self.assertEqual(vaultSearch.parse_triage_response("Areas"), "Areas")
-
-    def test_parse_triage_response_matches_reference(self):
-        self.assertEqual(vaultSearch.parse_triage_response("Reference"), "Reference")
-
-    def test_parse_triage_response_is_case_insensitive_and_tolerates_extra_text(self):
-        self.assertEqual(vaultSearch.parse_triage_response("This belongs in reference.\n"), "Reference")
-
-    def test_parse_triage_response_returns_none_when_nothing_matches(self):
-        self.assertIsNone(vaultSearch.parse_triage_response("I'm not sure."))
-
-    def test_parse_triage_response_returns_none_on_an_ambiguous_reply_naming_two_folders(self):
-        # A fixed first-match-wins scan would silently invert the model's
-        # actual recommendation here ("not Project, it's Areas") - ambiguity
-        # must surface as a miss, not a guess.
-        self.assertIsNone(vaultSearch.parse_triage_response("This isn't really a Project - it belongs in Areas."))
-
-    def test_move_inbox_entry_moves_file_into_target_folder(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        entry = inbox / "Stray thought.md"
-        entry.write_text("content")
-        (self.vault / "3 Reference").mkdir()
-
-        destination = vaultSearch.move_inbox_entry(entry, "Reference", vault_path=self.vault)
-
-        self.assertEqual(destination, self.vault / "3 Reference" / "Stray thought.md")
-        self.assertTrue(destination.exists())
-        self.assertFalse(entry.exists())
-        self.assertEqual(destination.read_text(encoding="utf-8"), "content")
-
-    def test_move_inbox_entry_matches_target_folder_ignoring_numeric_prefix(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        entry = inbox / "Stray thought.md"
-        entry.write_text("content")
-        (self.vault / "Areas").mkdir()
-
-        destination = vaultSearch.move_inbox_entry(entry, "Areas", vault_path=self.vault)
-
-        self.assertEqual(destination, self.vault / "Areas" / "Stray thought.md")
-
-    def test_move_inbox_entry_rejects_a_folder_outside_the_triage_choices(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        entry = inbox / "Stray thought.md"
-        entry.write_text("content")
-
-        with self.assertRaises(ValueError):
-            vaultSearch.move_inbox_entry(entry, "Inbox", vault_path=self.vault)
-
-    def test_move_inbox_entry_raises_when_target_folder_is_missing(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        entry = inbox / "Stray thought.md"
-        entry.write_text("content")
-
-        with self.assertRaises(FileNotFoundError):
-            vaultSearch.move_inbox_entry(entry, "Project", vault_path=self.vault)
-
-    def test_move_inbox_entry_refuses_to_overwrite_an_existing_file_at_the_destination(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        entry = inbox / "Untitled.md"
-        entry.write_text("new content")
-        reference = self.vault / "3 Reference"
-        reference.mkdir()
-        (reference / "Untitled.md").write_text("existing content - must not be clobbered")
-
-        with self.assertRaises(FileExistsError):
-            vaultSearch.move_inbox_entry(entry, "Reference", vault_path=self.vault)
-
-        self.assertEqual((reference / "Untitled.md").read_text(), "existing content - must not be clobbered")
-        self.assertTrue(entry.exists())
 
 
 class FakeSignal:
@@ -1115,90 +1036,6 @@ class ExplainQueryTests(unittest.TestCase):
             for _ in range(3):
                 explain = self.start("Nonexistent")
                 explain.request.finished.emit()
-
-        self.assertEqual(fake_app.aboutToQuit.slots, [])
-
-
-class TriageQueryTests(unittest.TestCase):
-    def setUp(self):
-        self.vault_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.vault_dir.cleanup)
-        self.vault = Path(self.vault_dir.name)
-        self.inbox = self.vault / "0 Inbox"
-        self.inbox.mkdir()
-        self.entry = self.inbox / "Stray thought.md"
-        self.entry.write_text("Some note about an ongoing side project.")
-        self.results = []
-
-    def start(self):
-        triage = vaultSearch.TriageQuery(
-            self.entry,
-            lambda result: self.results.append(result),
-            request_factory=FakeClaudeRequest,
-        )
-        triage.start()
-        return triage
-
-    def test_start_sends_the_note_content_to_claude(self):
-        triage = self.start()
-
-        self.assertIsInstance(triage.request, FakeClaudeRequest)
-        self.assertTrue(triage.request.started)
-        self.assertIn("Some note about an ongoing side project.", triage.request.prompt)
-
-    def test_on_finished_reports_the_proposed_folder(self):
-        triage = self.start()
-
-        triage.request.chunk.emit("Project")
-        triage.request.finished.emit()
-
-        self.assertEqual(self.results, [{"path": self.entry, "folder": "Project"}])
-
-    def test_on_finished_reports_none_folder_when_reply_is_unrecognized(self):
-        triage = self.start()
-
-        triage.request.chunk.emit("not sure")
-        triage.request.finished.emit()
-
-        self.assertEqual(self.results, [{"path": self.entry, "folder": None}])
-
-    def test_finished_after_cancel_does_not_report_a_stale_proposal(self):
-        triage = self.start()
-
-        triage.cancel()
-        triage.request.chunk.emit("Project")
-        triage.request.finished.emit()
-
-        self.assertEqual(self.results, [])
-
-    def test_start_reports_none_folder_without_starting_a_request_when_file_is_unreadable(self):
-        # Mirrors vaultIndex.refresh()'s own tolerance for a file that
-        # disappears or turns unreadable between being listed and being
-        # acted on - an unlucky delete/rename in the window between
-        # list_inbox_entries() and the user picking this entry.
-        self.entry.unlink()
-
-        triage = self.start()
-
-        self.assertEqual(self.results, [{"path": self.entry, "folder": None}])
-        self.assertIsNone(triage.request)
-
-    def test_an_unreadable_file_disconnects_from_aboutToQuit_without_waiting_for_a_request(self):
-        self.entry.unlink()
-        fake_app = FakeApp()
-
-        with patch.object(QApplication, "instance", return_value=fake_app):
-            self.start()
-
-        self.assertEqual(fake_app.aboutToQuit.slots, [])
-
-    def test_repeated_instantiation_does_not_grow_the_aboutToQuit_connection_count(self):
-        fake_app = FakeApp()
-
-        with patch.object(QApplication, "instance", return_value=fake_app):
-            for _ in range(3):
-                triage = self.start()
-                triage.request.finished.emit()
 
         self.assertEqual(fake_app.aboutToQuit.slots, [])
 

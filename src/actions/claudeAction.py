@@ -69,9 +69,9 @@ class ClaudeRequest(BackgroundRequest):
 class ClaudeQuery:
     """A plain callback-based class that asks one ClaudeRequest and hands
     the whole answer to `answered(text, failed)`, which subclasses define.
-    ExplainQuery and TriageQuery (vaultSearch.py) build on it. The cancel and
-    aboutToQuit handling lives here once, so a fix to it can't reach only
-    some of them (issue 14)."""
+    ExplainQuery (vaultSearch.py) builds on it. The cancel and aboutToQuit
+    handling lives here once, so a fix to it can't reach only some of them
+    (issue 14)."""
 
     def __init__(self, request_factory=ClaudeRequest):
         self.request_factory = request_factory  # swappable in tests, so a query never spawns a real `claude` subprocess

@@ -22,14 +22,9 @@
 # table row wouldn't resolve to anything in Obsidian, so append_vocab_row
 # doesn't call it.
 #
-# TriageQuery (issue 04) follows the same confirm-before-write split: it
-# only proposes a destination folder for an Inbox entry (list_inbox_entries
-# + parse_triage_response), never moves anything itself. move_inbox_entry is
-# the separate, explicit call for after Derich confirms the proposal - like
-# issue 03's write functions, it performs the move with no confirmation of
-# its own (and, like write_concept_note, refuses to clobber an existing
-# file). Wiring a UI surface to drive this per-entry is
-# also still deferred, same as the `[[Concept]]` link above.
+# list_inbox_entries is what's left of issue 04's per-entry triage flow:
+# `! organize` (inboxOrganize.py) replaced it, proposing moves for the whole
+# Inbox at once and doing its own rename on confirmation.
 
 import os
 import re
@@ -45,17 +40,6 @@ from backgroundRequest import BackgroundRequest
 EXPLAIN_PROMPT_TEMPLATE = 'Explain "{query}" concisely, for a personal reference note.'
 
 KOREAN_PROMPT_TEMPLATE = 'Translate the Korean "{query}" into English. Reply with only the translation, no explanation.'
-
-# The three inbox-triage destinations (issue 04) - deliberately excludes
-# "Inbox" itself and the other top-level folders (Atlas, Private, Templates),
-# which issue 04's spec never lists as a triage target.
-TRIAGE_FOLDERS = ("Project", "Areas", "Reference")
-
-TRIAGE_PROMPT_TEMPLATE = (
-    'Which folder does this inbox note belong in: "Project", "Areas", or '
-    '"Reference"? Reply with only that one word.\n\n'
-    "Title: {title}\n\n{content}"
-)
 
 
 def folder_matches(path_str, *parts):
@@ -365,8 +349,7 @@ def write_concept_note(query, content, vault_path=None):
     reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
     path = reference / f"{query}.md"
     # "x" (exclusive create) raises FileExistsError rather than clobbering a
-    # real note that search_notes() missed on a stale index - same refusal
-    # as move_inbox_entry.
+    # real note that search_notes() missed on a stale index.
     with path.open("x", encoding="utf-8") as f:
         f.write(content)
     return path
@@ -429,46 +412,12 @@ def vocab_row_insert_index(lines):
 
 
 def list_inbox_entries(vault_path=None):
-    """Lists the vault's Inbox notes for the triage flow (issue 04) to
-    propose a destination for, one at a time. Non-recursive - Inbox is a
-    flat dropzone of individual notes, not subfoldered like the other
-    top-level folders."""
+    """Lists the vault's Inbox notes for `! organize` to propose a
+    destination for. Non-recursive - Inbox is a flat dropzone of individual
+    notes, not subfoldered like the other top-level folders."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
     inbox = vaultIndex.resolve_top_folder(vault_path, "Inbox")
     return sorted(entry for entry in inbox.iterdir() if entry.suffix.casefold() == ".md")
-
-
-def parse_triage_response(text):
-    """Best-effort match of Bel's triage reply to one of TRIAGE_FOLDERS -
-    tolerant of extra wrapping text/punctuation, since the model doesn't
-    always follow "reply with only that word" exactly. Returns None both
-    when nothing recognizable matched and when more than one folder name
-    appears (e.g. "not Project, it's Areas") - picking a fixed one in that
-    case risks silently inverting the model's actual recommendation, so an
-    ambiguous reply must surface as a miss rather than a guess."""
-    matches = {
-        folder for folder in TRIAGE_FOLDERS
-        if re.search(rf"\b{re.escape(folder)}\b", text, re.IGNORECASE)
-    }
-    if len(matches) == 1:
-        return matches.pop()
-    return None
-
-
-def move_inbox_entry(path, folder, vault_path=None):
-    """Moves a confirmed inbox entry to its proposed top-level folder
-    (issue 04's move-on-confirmation). Call only after Derich has confirmed
-    the proposal - performs the move unconditionally, no confirmation of its
-    own. Mirrors write_concept_note's fail-loud-if-target-folder-missing
-    behavior."""
-    if folder not in TRIAGE_FOLDERS:
-        raise ValueError(f"folder must be one of {TRIAGE_FOLDERS}, not {folder!r}")
-    vault_path = vault_path or vaultIndex.VAULT_PATH
-    target = vaultIndex.resolve_top_folder(vault_path, folder)
-    path = Path(path)
-    destination = target / path.name
-    path.rename(destination)
-    return destination
 
 
 class SearchWorker(QObject):
@@ -611,33 +560,3 @@ class ExplainQuery(ClaudeQuery):
         super().cancel()
         if self.search_request is not None:
             self.search_request.cancel()
-
-
-class TriageQuery(ClaudeQuery):
-    """Drives the inbox-triage flow (issue 04) for one Inbox entry, using
-    issue 02's chosen architecture: Bel's own code calls this directly and
-    the miss/hit-style branching from ExplainQuery doesn't apply here - every
-    entry gets a proposal, shown to Derich to confirm before move_inbox_entry
-    ever runs. A ClaudeQuery like ExplainQuery (one ClaudeRequest per query,
-    a background QThread so the CLI subprocess doesn't block the UI)."""
-
-    def __init__(self, path, on_result, request_factory=ClaudeRequest):
-        super().__init__(request_factory)
-        self.path = Path(path)
-        self.on_result = on_result
-
-    def start(self):
-        # Mirrors vaultIndex.refresh()'s own tolerance for a file that
-        # disappears or turns unreadable out from under it - the window
-        # between list_inbox_entries() listing this entry and the user
-        # picking it isn't instantaneous.
-        try:
-            content = self.path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            self.disconnectAboutToQuit()
-            self.on_result({"path": self.path, "folder": None})
-            return
-        self.ask(TRIAGE_PROMPT_TEMPLATE.format(title=self.path.stem, content=content))
-
-    def answered(self, text, failed):
-        self.on_result({"path": self.path, "folder": parse_triage_response(text)})
