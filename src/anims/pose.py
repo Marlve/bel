@@ -41,10 +41,6 @@ def open_pose(elapsed):
     return lerp(style.OPEN_SCALE_FROM, 1, scale_t), alpha_t
 
 
-def scrim_progress(elapsed):
-    return progress(elapsed, style.SCRIM_MS)
-
-
 def hover_pose(t):
     """(push px along the bisector, outer radius px, label scale) for a
     wedge whose hover float is `t`."""

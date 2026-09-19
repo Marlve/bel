@@ -11,7 +11,6 @@ from anims.pose import (
     bisector,
     open_pose,
     open_total_ms,
-    scrim_progress,
     hover_pose,
     select_pose,
     select_total_ms,
@@ -81,14 +80,6 @@ class OpenPoseTests(unittest.TestCase):
 
     def test_total_is_just_the_open_duration(self):
         self.assertEqual(open_total_ms(), style.OPEN_MS)
-
-
-class ScrimTests(unittest.TestCase):
-    def test_linear_fade(self):
-        self.assertAlmostEqual(scrim_progress(0), 0)
-        self.assertAlmostEqual(scrim_progress(style.SCRIM_MS / 2), 0.5)
-        self.assertAlmostEqual(scrim_progress(style.SCRIM_MS), 1)
-        self.assertAlmostEqual(scrim_progress(style.SCRIM_MS * 2), 1)
 
 
 class HoverPoseTests(unittest.TestCase):

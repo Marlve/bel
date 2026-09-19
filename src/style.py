@@ -66,8 +66,6 @@ WEDGE_HOVER = ACCENT
 WEDGE_PRESSED = BODY_DIM
 LABEL_IDLE = BODY_DIM
 LABEL_HOVER = INK
-SCRIM = "#000000"
-SCRIM_ALPHA = 0.55
 GLOW = ACCENT
 GLOW_ALPHA = 0.14
 GLOW_WIDTH = 8
@@ -79,7 +77,6 @@ OPEN_EASING = "OutBack"
 OPEN_OVERSHOOT = 1.56
 OPEN_FADE_MS = 135  # opacity lands well before the scale does, so it reads as arriving
 OPEN_FADE_EASING = "OutCubic"
-SCRIM_MS = 220
 
 # Hover: only the hovered wedge moves - it slides outward and grows a little.
 HOVER_IN_MS = 110

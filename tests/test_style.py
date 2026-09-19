@@ -48,7 +48,7 @@ class ApplyScaleTests(unittest.TestCase):
 
     def test_leaves_colors_alphas_durations_ratios_counts_and_angles_untouched(self):
         before = (
-            style.SCRIM_ALPHA,
+            style.GLOW_ALPHA,
             style.OPEN_MS,
             style.RING_INNER,
             style.SETTINGS_ROWS,
@@ -57,7 +57,7 @@ class ApplyScaleTests(unittest.TestCase):
         )
         style.apply_scale(5120 / style.REFERENCE_WIDTH)
         after = (
-            style.SCRIM_ALPHA,
+            style.GLOW_ALPHA,
             style.OPEN_MS,
             style.RING_INNER,
             style.SETTINGS_ROWS,
