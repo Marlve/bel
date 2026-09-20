@@ -34,9 +34,9 @@ $hidden = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -
 $startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Bel.lnk'
 New-Lnk $startup 'powershell.exe' $hidden 'Starts the Bel desktop overlay.' 7   # 7 = minimized
 
-# 2. Stop / Reset / Start, searchable from the Start menu.
+# 2. Stop / Reset / Start / Uninstall, searchable from the Start menu.
 $programs = Join-Path ([Environment]::GetFolderPath('Programs')) 'Bel'
-foreach ($name in 'Stop', 'Reset', 'Start') {
+foreach ($name in 'Stop', 'Reset', 'Start', 'Uninstall') {
     New-Lnk (Join-Path $programs "$name Bel.lnk") (Join-Path $PSScriptRoot "$name Bel.bat") '' "$name Bel." 1
 }
 
