@@ -41,6 +41,16 @@ A chat message prefixed `?` (`? Dijkstra`): Bel searches the vault for the
 rest of the message instead of sending it to Claude as normal chat
 (`vaultSearch.lookup_query`, `ExplainQuery`).
 
+**Breakdown**:
+What a `?` lookup returns for a Korean *sentence* rather than a single word
+(`vaultSearch.parse_breakdown`): its translation, one entry per word carrying
+the surface form and the dictionary form it files under, and the grammar
+points it uses. Resolving it (`resolve_breakdown`) marks each entry with the
+`Korean/Vocab.md` or `Korean/Grammar.md` row that already holds it, so a new
+entry can be told from a filed one. Resolved off the UI thread
+(`ResolveRequest`), because the read contends with the index refresh's write
+lock.
+
 **Content match**:
 A note whose *text* holds every word of a lookup, found through the vault
 index's FTS5 table (`vaultSearch.search_content`). Distinct from a hit, which
