@@ -462,6 +462,33 @@ class WriteConfirmedTests(unittest.TestCase):
 
         self.assertEqual(path.read_text(encoding="utf-8"), "| word | line one line two |\n")
 
+    def test_append_grammar_row_appends_to_the_grammar_table_not_the_vocab_one(self):
+        # The two tables are kept apart on purpose (resolve_breakdown) - a
+        # grammar point landing in Vocab.md would answer a word lookup.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
+        (korean / "Grammar.md").write_text("| -이/가 | subject marker |\n", encoding="utf-8")
+
+        path = vaultSearch.append_grammar_row("-은/는", "topic marker", vault_path=self.vault)
+
+        self.assertEqual(path, korean / "Grammar.md")
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            "| -이/가 | subject marker |\n| -은/는 | topic marker |\n",
+        )
+        self.assertEqual((korean / "Vocab.md").read_text(encoding="utf-8"), "| 안녕 | hello |\n")
+
+    def test_append_grammar_row_creates_grammar_note_when_it_does_not_exist_yet(self):
+        # Vocab.md is a note Derich already keeps; Grammar.md may not exist
+        # until the first point is confirmed out of a sentence breakdown.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+
+        path = vaultSearch.append_grammar_row("-ㅂ니다", "formal polite ending", vault_path=self.vault)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), "| -ㅂ니다 | formal polite ending |\n")
+
 
 class LookupQueryTests(unittest.TestCase):
     def test_question_mark_prefix_marks_a_lookup(self):

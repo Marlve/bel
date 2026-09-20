@@ -552,10 +552,28 @@ def append_vocab_row(word, translation, vault_path=None):
     (issue 03's "same shape applies to Korean vocab" note). Call only after
     Derich has confirmed the row - clicking Vocab.md in the chat card's
     picker (issue 23)."""
+    return append_korean_row("Vocab.md", word, translation, vault_path=vault_path)
+
+
+def append_grammar_row(point, meaning, vault_path=None):
+    """Appends a confirmed grammar point to the Korean grammar table - the
+    other half of what a sentence breakdown turns up, and the table
+    resolve_breakdown already reads to tell a new point from a filed one.
+    Same confirm-before-write rule as append_vocab_row: call only for a point
+    Derich has picked, never straight off a breakdown."""
+    return append_korean_row("Grammar.md", point, meaning, vault_path=vault_path)
+
+
+def append_korean_row(note, left, right, vault_path=None):
+    """One row appended to a two-column table under `Areas/Korean/`, shared
+    by both confirmed-write paths. One function rather than two because the
+    Vocab and Grammar tables are the same shape - a Korean form and its
+    English - so a fix to the insert position or the encoding has to reach
+    both."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
     areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
-    path = areas / "Korean" / "Vocab.md"
-    row = f"| {escape_table_cell(word)} | {escape_table_cell(translation)} |\n"
+    path = areas / "Korean" / note
+    row = f"| {escape_table_cell(left)} | {escape_table_cell(right)} |\n"
     # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF.
     lines = path.read_bytes().decode("utf-8").splitlines(keepends=True) if path.exists() else []
     at = vocab_row_insert_index(lines)
