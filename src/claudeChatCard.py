@@ -33,6 +33,7 @@ import timetable
 import vaultSearch
 from floatingCard import paint_card_bands
 from dueList import DueList
+from breakdownBlock import BreakdownBlock
 from notePicker import NotePicker
 from organizeList import OrganizeList
 from anims import curves
@@ -113,11 +114,14 @@ class ChatCard(QWidget):
         self.focus_composer_on_land = False
         self.lookup = None  # the `?` lookup or `!` command in flight, if any (card.md)
         self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
+        self.resolve_factory = vaultSearch.ResolveRequest  # swappable in tests, so no real QThread
         self.calendar_factory = timetable.CalendarQuery  # swappable in tests, so no real fetch
         self.organize_factory = inboxOrganize.OrganizeQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.organize_list = None  # the latest `! organize`'s box, one row per Inbox note
         self.picker = None  # the latest lookup's note picker, if it got one
         self.maybe_block = None  # the latest lookup's "you've written about this" block, if it got one
+        self.breakdown_block = None  # the latest sentence lookup's breakdown, if it got one
+        self.breakdown_request = None  # its off-thread resolve, while that is still in flight
         self.due_list = None  # the latest `! today` / `! week`'s "what is due" box, if it had events
 
         self.buildContent()
@@ -410,6 +414,7 @@ class ChatCard(QWidget):
         self.lookup = None
         self.picker = None
         self.maybe_block = None
+        self.breakdown_block = None
         self.composer.setReadOnly(False)
 
         if result["kind"] == "vocab" and result["hit"]:
@@ -458,6 +463,33 @@ class ChatCard(QWidget):
             picker.picked.connect(lambda note: self.onVocabPicked(picker, query, result))
         if self.picker is not None:
             self.showPicker(picker)
+        if result["kind"] == "sentence" and result["breakdown"] is not None:
+            # Resolved off-thread, so the block can say which words and points
+            # are already in the vault without this thread touching the index
+            # (korean.md, and see ResolveRequest for why the card owns it).
+            self.breakdown_request = self.resolve_factory(result["breakdown"], parent=self)
+            self.breakdown_request.finished.connect(self.onBreakdownResolved)
+            self.breakdown_request.start()
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
+    def onBreakdownResolved(self, resolved):
+        self.breakdown_request = None
+        self.breakdown_block = BreakdownBlock(resolved, self.contentWidth())
+        block = self.breakdown_block
+        block.picked.connect(lambda entry: self.onBreakdownPicked(block, entry))
+        self.showPicker(block)
+
+    def onBreakdownPicked(self, block, entry):
+        # Confirm-before-write: this is the click, so this is where the row
+        # finally reaches the vault. A word files under its lemma, never the
+        # surface form - that's the cell resolve_breakdown matched on.
+        write = vaultSearch.append_vocab_row if entry["kind"] == "word" else vaultSearch.append_grammar_row
+        try:
+            write(entry["term"], entry["meaning"])
+        except OSError:
+            block.showFailed(entry["key"], "couldn't save it")
+            return
+        block.showSaved(entry["key"])
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def onNotePicked(self, picker, query, result, note):
@@ -574,6 +606,12 @@ class ChatCard(QWidget):
         if self.lookup is not None:
             self.lookup.cancel()
             self.lookup = None
+        if self.breakdown_request is not None:
+            # Owned here rather than by ExplainQuery: ClaudeQuery.onFinished
+            # disconnects from aboutToQuit before calling answered(), so a
+            # thread started from there would outlive the app's quit handling.
+            self.breakdown_request.cancel()
+            self.breakdown_request = None
         if self.state.request is None:
             return
         self.state.request.chunk.disconnect(self.onChunk)

@@ -1143,6 +1143,39 @@ class SearchWorkerTests(unittest.TestCase):
         self.assertEqual(outcomes, [{"found": None, "content_matches": [], "notes": [], "all_notes": [], "vocab": None}])
 
 
+class ResolveWorkerTests(unittest.TestCase):
+    def setUp(self):
+        self.breakdown = vaultSearch.parse_breakdown(BREAKDOWN_REPLY)
+
+    def test_run_emits_the_resolved_breakdown(self):
+        resolved = {"translation": "x", "words": [], "grammar": []}
+        worker = vaultSearch.ResolveWorker(self.breakdown)
+        seen = []
+        worker.finished.connect(seen.append)
+
+        with patch.object(vaultSearch, "resolve_breakdown", return_value=resolved):
+            worker.run()
+
+        self.assertEqual(seen, [resolved])
+
+    def test_run_still_emits_everything_unfiled_when_the_resolve_raises(self):
+        # Same guarantee SearchWorker.run gives the lookup: without it the
+        # card's breakdown block never leaves its pending state. Nothing may
+        # be claimed as already saved off the back of a failed read.
+        worker = vaultSearch.ResolveWorker(self.breakdown)
+        seen = []
+        worker.finished.connect(seen.append)
+
+        with patch.object(vaultSearch, "resolve_breakdown", side_effect=sqlite3.OperationalError("locked")):
+            worker.run()
+
+        resolved = seen[0]
+        self.assertEqual(resolved["translation"], "I go to school every day")
+        self.assertEqual([word["surface"] for word in resolved["words"]], ["저는", "매일", "학교에", "갑니다"])
+        self.assertTrue(all(word["row"] is None for word in resolved["words"]))
+        self.assertTrue(all(point["row"] is None for point in resolved["grammar"]))
+
+
 class ExplainQueryTests(unittest.TestCase):
     def setUp(self):
         self.vault_dir = tempfile.TemporaryDirectory()

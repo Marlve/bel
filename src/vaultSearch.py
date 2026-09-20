@@ -668,6 +668,67 @@ class SearchRequest(BackgroundRequest):
         self.stopThread()
 
 
+def unfiled_breakdown(breakdown):
+    """`breakdown` with nothing marked as already in the vault. What a failed
+    resolve reports: the breakdown still shows, and nothing is wrongly claimed
+    to be saved already."""
+    return {
+        "translation": breakdown["translation"],
+        "words": [{**word, "row": None} for word in breakdown["words"]],
+        "grammar": [{**point, "row": None} for point in breakdown["grammar"]],
+    }
+
+
+class ResolveWorker(QObject):
+    """One resolve_breakdown() on a background thread. Exists for the same
+    reason SearchWorker does: the read holds a SQLite transaction, and a
+    concurrent lookup's refresh() holds BEGIN IMMEDIATE across a whole vault
+    walk, so calling it on the UI thread would freeze the card on the busy
+    timeout."""
+
+    finished = Signal(object)
+
+    def __init__(self, breakdown, db_path=None):
+        super().__init__()
+        self.breakdown = breakdown
+        self.db_path = db_path
+
+    def run(self):
+        # `finished` must always fire, same as SearchWorker.run - it is the
+        # only thing that takes the card's breakdown block out of its
+        # pending state. resolve_breakdown already degrades a locked or
+        # unwritable index to "everything unfiled"; this catches whatever it
+        # doesn't, with the same guarantee.
+        try:
+            resolved = resolve_breakdown(self.breakdown, db_path=self.db_path)
+        except Exception:
+            resolved = unfiled_breakdown(self.breakdown)
+        self.finished.emit(resolved)
+
+
+class ResolveRequest(BackgroundRequest):
+    """One resolve_breakdown(), start to finish. Owned by whoever shows the
+    breakdown, not by ExplainQuery: ClaudeQuery.onFinished disconnects from
+    aboutToQuit before it calls answered(), so a thread started from there
+    would sit outside the app's quit handling."""
+
+    finished = Signal(object)
+
+    def __init__(self, breakdown, db_path=None, parent=None):
+        super().__init__(ResolveWorker(breakdown, db_path=db_path), parent)
+        self.worker.finished.connect(self.onWorkerFinished)
+
+    def onWorkerFinished(self, resolved):
+        # Runs on the main thread - mirrors SearchRequest.onWorkerFinished.
+        self.stopThread()
+        self.finished.emit(resolved)
+
+    def cancel(self):
+        # Nothing to interrupt mid-flight - a bounded local read, same as
+        # SearchRequest - so this just confirms the thread has stopped.
+        self.stopThread()
+
+
 class ExplainQuery(ClaudeQuery):
     """Drives one `? query` lookup for card.md's picker, using issue 02's
     chosen architecture. A ClaudeQuery, rather than a bare askBel() call, so

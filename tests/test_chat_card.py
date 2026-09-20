@@ -57,6 +57,25 @@ class FakeLookup:
         self.cancelled = True
 
 
+class FakeResolve(QObject):
+    """Stands in for vaultSearch.ResolveRequest - the test emits the resolved
+    breakdown by hand instead of spawning a QThread over the real index."""
+
+    finished = Signal(object)
+
+    def __init__(self, breakdown, parent=None):
+        super().__init__()
+        self.breakdown = breakdown
+        self.started = False
+        self.cancelled = False
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+
 NOTES = [{"path": str(Path("1 Project") / "Plan.md"), "recent": True}]
 ALL_NOTES = NOTES + [{"path": str(Path("2 Areas") / "School" / "FIT3143 Week 3.md"), "recent": False}]
 CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm.", "all_notes": ALL_NOTES}
@@ -64,6 +83,25 @@ CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation
 MAYBES = [{"path": str(Path("3 Reference") / "Dijkstra.md"), "recent": False}]
 VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
 VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "all_notes": ALL_NOTES, "vocab": VOCAB_NOTE}
+BREAKDOWN = {
+    "translation": "thank you",
+    "words": [{"surface": "감사합니다", "lemma": "감사하다", "meaning": "to thank"}],
+    "grammar": [{"point": "-ㅂ니다", "meaning": "formal polite ending"}],
+}
+# What ResolveRequest hands back: the same entries, each marked with the vault
+# row already holding it. Here the word is new and the grammar point is filed.
+RESOLVED = {
+    "translation": "thank you",
+    "words": [{"surface": "감사합니다", "lemma": "감사하다", "meaning": "to thank", "row": None}],
+    "grammar": [{"point": "-ㅂ니다", "meaning": "formal polite ending", "row": ["-ㅂ니다", "formal polite ending"]}],
+}
+
+
+def sentenceResult():
+    return {
+        "hit": False, "kind": "sentence", "draft": "thank you",
+        "breakdown": BREAKDOWN, "notes": NOTES, "all_notes": ALL_NOTES,
+    }
 FOLDERS = ["1 Project", "2 Areas", "2 Areas/School"]
 PLACED = {
     "path": Path("C:/vault/0 Inbox/Assignment ETW.md"), "folder": "2 Areas/School/ETW2001", "new_folder": True,
@@ -530,9 +568,16 @@ class ChatCardTests(unittest.TestCase):
         self.lookups.append(lookup)
         return lookup
 
+    def fakeResolve(self, breakdown, parent=None):
+        resolve = FakeResolve(breakdown, parent)
+        self.resolves.append(resolve)
+        return resolve
+
     def startLookup(self, text="? Dijkstra"):
         self.lookups = []
+        self.resolves = []
         self.card.lookup_factory = self.fakeLookup
+        self.card.resolve_factory = self.fakeResolve
         self.card.fly()
         self.card.send(text)
         return self.lookups[0] if self.lookups else None
@@ -709,23 +754,131 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertEqual(self.card.picker.rows[0].detail_label.text(), "couldn't save the word")
 
-    def test_a_korean_sentence_is_translated_but_never_offered_for_saving(self):
-        # A sentence comes back as kind "sentence" with its breakdown; the
-        # card shows the translation and offers no picker until the breakdown
-        # has a surface of its own.
+    def test_a_korean_sentence_shows_its_translation_and_no_note_picker(self):
+        # A sentence comes back as kind "sentence". The note picker is for
+        # concepts and single words; a sentence gets the breakdown block
+        # instead, and only once the resolve comes back.
         lookup = self.startLookup("? 감사 합니다")
 
-        lookup.on_result({
-            "hit": False,
-            "kind": "sentence",
-            "draft": "thank you",
-            "breakdown": {"translation": "thank you", "words": [], "grammar": []},
-            "notes": NOTES,
-            "all_notes": ALL_NOTES,
-        })
+        lookup.on_result(sentenceResult())
 
         self.assertIn("thank you", self.card.turns[-1]["text"])
         self.assertIsNone(self.card.picker)
+        self.assertIsNone(self.card.breakdown_block)
+
+    def test_a_sentence_resolves_its_breakdown_off_the_ui_thread(self):
+        lookup = self.startLookup("? 감사 합니다")
+
+        lookup.on_result(sentenceResult())
+
+        self.assertEqual(len(self.resolves), 1)
+        self.assertTrue(self.resolves[0].started)
+        self.assertEqual(self.resolves[0].breakdown["translation"], "thank you")
+
+    def test_the_resolved_breakdown_lists_every_word_and_point(self):
+        # Decision 1 on the ticket: filed entries stay listed, dimmed, rather
+        # than being dropped - the block explains the sentence, it isn't only
+        # a to-file list.
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+
+        self.resolves[0].finished.emit(RESOLVED)
+
+        block = self.card.breakdown_block
+        self.assertEqual(
+            [row.name_label.text() for row in block.rows.values()],
+            ["감사합니다 → 감사하다", "-ㅂ니다"],
+        )
+        self.assertEqual(
+            [row.detail_label.text() for row in block.rows.values()],
+            ["to thank", "formal polite ending"],
+        )
+        self.assertEqual(block.rows["grammar:-ㅂ니다"].folder_label.full_text, "filed")
+
+    def test_a_filed_entry_is_not_clickable_and_a_new_one_is(self):
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+
+        self.resolves[0].finished.emit(RESOLVED)
+
+        block = self.card.breakdown_block
+        self.assertTrue(block.rows["word:감사하다"].enabled)
+        self.assertFalse(block.rows["grammar:-ㅂ니다"].enabled)
+
+    def test_clicking_a_new_word_writes_its_lemma_to_vocab_md(self):
+        # The lemma, never the surface form - that is the cell
+        # resolve_breakdown matched on, so only it can hit a Vocab row.
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+        self.resolves[0].finished.emit(RESOLVED)
+        block = self.card.breakdown_block
+
+        with patch("claudeChatCard.vaultSearch.append_vocab_row") as append:
+            block.rows["word:감사하다"].clicked.emit("word:감사하다")
+
+        append.assert_called_once_with("감사하다", "to thank")
+        self.assertEqual(block.rows["word:감사하다"].folder_label.full_text, "saved")
+
+    def test_clicking_a_new_grammar_point_writes_to_grammar_md(self):
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+        self.resolves[0].finished.emit({
+            "translation": "thank you",
+            "words": [],
+            "grammar": [{"point": "-ㅂ니다", "meaning": "formal polite ending", "row": None}],
+        })
+        block = self.card.breakdown_block
+
+        with patch("claudeChatCard.vaultSearch.append_grammar_row") as append:
+            block.rows["grammar:-ㅂ니다"].clicked.emit("grammar:-ㅂ니다")
+
+        append.assert_called_once_with("-ㅂ니다", "formal polite ending")
+
+    def test_saving_one_row_leaves_the_others_clickable(self):
+        # The whole reason this isn't a NoteList, which locks every row on the
+        # first click because a picker is a one-shot choice.
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+        self.resolves[0].finished.emit({
+            "translation": "thank you",
+            "words": [{"surface": "감사합니다", "lemma": "감사하다", "meaning": "to thank", "row": None}],
+            "grammar": [{"point": "-ㅂ니다", "meaning": "formal polite ending", "row": None}],
+        })
+        block = self.card.breakdown_block
+
+        with patch("claudeChatCard.vaultSearch.append_vocab_row"):
+            block.rows["word:감사하다"].clicked.emit("word:감사하다")
+
+        self.assertFalse(block.rows["word:감사하다"].enabled)
+        self.assertTrue(block.rows["grammar:-ㅂ니다"].enabled)
+
+    def test_a_breakdown_save_that_fails_says_so_on_the_row(self):
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+        self.resolves[0].finished.emit(RESOLVED)
+        block = self.card.breakdown_block
+
+        with patch("claudeChatCard.vaultSearch.append_vocab_row", side_effect=OSError):
+            block.rows["word:감사하다"].clicked.emit("word:감사하다")
+
+        self.assertEqual(block.rows["word:감사하다"].folder_label.full_text, "couldn't save it")
+
+    def test_an_answer_that_botched_the_format_starts_no_resolve(self):
+        lookup = self.startLookup("? 감사 합니다")
+
+        lookup.on_result({**sentenceResult(), "draft": "", "breakdown": None})
+
+        self.assertEqual(self.resolves, [])
+        self.assertIsNone(self.card.breakdown_block)
+
+    def test_a_card_torn_down_mid_resolve_cancels_it(self):
+        lookup = self.startLookup("? 감사 합니다")
+        lookup.on_result(sentenceResult())
+
+        self.card.unwire()
+
+        self.assertTrue(self.resolves[0].cancelled)
+        self.assertIsNone(self.card.breakdown_request)
 
     def test_no_vocab_md_in_the_index_means_no_save_offer(self):
         lookup = self.startLookup("? 감사")
