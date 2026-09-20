@@ -552,7 +552,7 @@ def append_vocab_row(word, translation, vault_path=None):
     (issue 03's "same shape applies to Korean vocab" note). Call only after
     Derich has confirmed the row - clicking Vocab.md in the chat card's
     picker (issue 23)."""
-    return append_korean_row("Vocab.md", word, translation, vault_path=vault_path)
+    return append_korean_row("Vocab.md", ("Word", "Meaning"), word, translation, vault_path=vault_path)
 
 
 def append_grammar_row(point, meaning, vault_path=None):
@@ -561,21 +561,48 @@ def append_grammar_row(point, meaning, vault_path=None):
     resolve_breakdown already reads to tell a new point from a filed one.
     Same confirm-before-write rule as append_vocab_row: call only for a point
     Derich has picked, never straight off a breakdown."""
-    return append_korean_row("Grammar.md", point, meaning, vault_path=vault_path)
+    return append_korean_row("Grammar.md", ("Word", "Explanation"), point, meaning, vault_path=vault_path)
 
 
-def append_korean_row(note, left, right, vault_path=None):
+def has_table(lines):
+    """Whether `lines` already holds a markdown table: any row with a
+    `| --- |` separator under it."""
+    return any(
+        lines[index - 1].strip().startswith("|") and is_separator_row(lines[index].strip())
+        for index in range(1, len(lines))
+    )
+
+
+def with_table_header(lines, header):
+    """`lines` with an empty table started at the end. Obsidian only reads
+    `| a | b |` as a table row when a header and a `| --- |` separator sit
+    above it - without them every appended row is literal text that never
+    renders. Vocab.md hid this because Derich had already made its table by
+    hand; Grammar.md was created by append_grammar_row from nothing and
+    filled up with bare rows (Derich, 2026-09-20)."""
+    lines = list(lines)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    if lines and lines[-1].strip():
+        lines.append("\n")  # a table glued to the line above it is not a table either
+    return lines + [f"| {header[0]} | {header[1]} |\n", "| --- | --- |\n"]
+
+
+def append_korean_row(note, header, left, right, vault_path=None):
     """One row appended to a two-column table under `Areas/Korean/`, shared
     by both confirmed-write paths. One function rather than two because the
     Vocab and Grammar tables are the same shape - a Korean form and its
     English - so a fix to the insert position or the encoding has to reach
-    both."""
+    both. `header` is only used when the note has no table yet, and matches
+    the columns Derich already keeps in each note."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
     areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
     path = areas / "Korean" / note
     row = f"| {escape_table_cell(left)} | {escape_table_cell(right)} |\n"
     # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF.
     lines = path.read_bytes().decode("utf-8").splitlines(keepends=True) if path.exists() else []
+    if not has_table(lines):
+        lines = with_table_header(lines, header)
     at = vocab_row_insert_index(lines)
     if at == len(lines) and lines and not lines[-1].endswith("\n"):
         # Obsidian can save a note without a trailing newline, and the row

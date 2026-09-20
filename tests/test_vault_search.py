@@ -377,12 +377,12 @@ class WriteConfirmedTests(unittest.TestCase):
     def test_append_vocab_row_appends_to_existing_file(self):
         korean = self.vault / "2 Areas" / "Korean"
         korean.mkdir(parents=True)
-        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
+        (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n", encoding="utf-8")
 
         path = vaultSearch.append_vocab_row("감사", "thanks", vault_path=self.vault)
 
         self.assertEqual(path, korean / "Vocab.md")
-        self.assertEqual(path.read_text(encoding="utf-8"), "| 안녕 | hello |\n| 감사 | thanks |\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n| 감사 | thanks |\n")
 
     def test_append_vocab_row_flattens_carriage_returns_so_the_row_stays_findable(self):
         korean = self.vault / "2 Areas" / "Korean"
@@ -391,7 +391,10 @@ class WriteConfirmedTests(unittest.TestCase):
 
         path = vaultSearch.append_vocab_row("감사", "thanks\r\ngratitude\rthank you", vault_path=self.vault)
 
-        self.assertEqual(path.read_bytes().decode("utf-8").splitlines(), ["| 감사 | thanks gratitude thank you |"])
+        self.assertEqual(
+            path.read_bytes().decode("utf-8").splitlines(),
+            ["| Word | Meaning |", "| --- | --- |", "| 감사 | thanks gratitude thank you |"],
+        )
 
     def test_append_vocab_row_starts_a_new_line_when_the_file_does_not_end_with_one(self):
         # Obsidian can save a note without a trailing newline - the new row
@@ -451,7 +454,7 @@ class WriteConfirmedTests(unittest.TestCase):
 
         path = vaultSearch.append_vocab_row("or", "either|or", vault_path=self.vault)
 
-        self.assertEqual(path.read_text(encoding="utf-8"), "| or | either\\|or |\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| or | either\\|or |\n")
 
     def test_append_vocab_row_strips_newlines_from_a_multiline_translation(self):
         korean = self.vault / "2 Areas" / "Korean"
@@ -460,34 +463,74 @@ class WriteConfirmedTests(unittest.TestCase):
 
         path = vaultSearch.append_vocab_row("word", "line one\nline two", vault_path=self.vault)
 
-        self.assertEqual(path.read_text(encoding="utf-8"), "| word | line one line two |\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| word | line one line two |\n")
 
     def test_append_grammar_row_appends_to_the_grammar_table_not_the_vocab_one(self):
         # The two tables are kept apart on purpose (resolve_breakdown) - a
         # grammar point landing in Vocab.md would answer a word lookup.
         korean = self.vault / "2 Areas" / "Korean"
         korean.mkdir(parents=True)
-        (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
-        (korean / "Grammar.md").write_text("| -이/가 | subject marker |\n", encoding="utf-8")
+        (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n", encoding="utf-8")
+        (korean / "Grammar.md").write_text("| Word | Explanation |\n| --- | --- |\n| -이/가 | subject marker |\n", encoding="utf-8")
 
         path = vaultSearch.append_grammar_row("-은/는", "topic marker", vault_path=self.vault)
 
         self.assertEqual(path, korean / "Grammar.md")
         self.assertEqual(
             path.read_text(encoding="utf-8"),
-            "| -이/가 | subject marker |\n| -은/는 | topic marker |\n",
+            "| Word | Explanation |\n| --- | --- |\n| -이/가 | subject marker |\n| -은/는 | topic marker |\n",
         )
-        self.assertEqual((korean / "Vocab.md").read_text(encoding="utf-8"), "| 안녕 | hello |\n")
+        self.assertEqual((korean / "Vocab.md").read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n")
 
-    def test_append_grammar_row_creates_grammar_note_when_it_does_not_exist_yet(self):
-        # Vocab.md is a note Derich already keeps; Grammar.md may not exist
-        # until the first point is confirmed out of a sentence breakdown.
+    def test_append_grammar_row_creates_a_real_table_when_the_note_does_not_exist(self):
+        # The bug Derich hit on 2026-09-20: Grammar.md did not exist, so every
+        # confirmed point was appended as a bare "| a | b |" line with no
+        # header or separator above it. Obsidian renders those as literal
+        # text, never as a table, and resolve_breakdown never matched them.
         korean = self.vault / "2 Areas" / "Korean"
         korean.mkdir(parents=True)
 
         path = vaultSearch.append_grammar_row("-ㅂ니다", "formal polite ending", vault_path=self.vault)
 
-        self.assertEqual(path.read_text(encoding="utf-8"), "| -ㅂ니다 | formal polite ending |\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Explanation |\n| --- | --- |\n| -ㅂ니다 | formal polite ending |\n")
+
+    def test_a_second_point_reuses_the_table_instead_of_starting_another(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+
+        vaultSearch.append_grammar_row("-ㅂ니다", "formal polite ending", vault_path=self.vault)
+        path = vaultSearch.append_grammar_row("-은/는", "topic marker", vault_path=self.vault)
+
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            "| Word | Explanation |\n| --- | --- |\n| -ㅂ니다 | formal polite ending |\n| -은/는 | topic marker |\n",
+        )
+
+    def test_a_table_started_under_existing_prose_keeps_a_blank_line_above_it(self):
+        # A note that is notes-first, table-later: the header must not glue
+        # onto the prose, or Obsidian reads neither as a table.
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Grammar.md").write_text("# Grammar\n\nPoints I have hit.\n", encoding="utf-8")
+
+        path = vaultSearch.append_grammar_row("-에", "destination particle", vault_path=self.vault)
+
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            "# Grammar\n\nPoints I have hit.\n\n| Word | Explanation |\n| --- | --- |\n| -에 | destination particle |\n",
+        )
+
+    def test_a_note_written_without_a_trailing_newline_still_gets_its_table(self):
+        korean = self.vault / "2 Areas" / "Korean"
+        korean.mkdir(parents=True)
+        (korean / "Grammar.md").write_text("Points I have hit.", encoding="utf-8")
+
+        path = vaultSearch.append_grammar_row("-에", "destination particle", vault_path=self.vault)
+
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            "Points I have hit.\n\n| Word | Explanation |\n| --- | --- |\n| -에 | destination particle |\n",
+        )
 
 
 class LookupQueryTests(unittest.TestCase):
