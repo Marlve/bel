@@ -18,6 +18,10 @@ _ITALIC_STAR_RE = re.compile(r"(?<!\*)\*(\S(?:.*?\S)?)\*(?!\*)")
 _ITALIC_UNDERSCORE_RE = re.compile(r"(?<![\w_])_(\S(?:.*?\S)?)_(?![\w_])")
 _BULLET_RE = re.compile(r"^-\s+(.*)$")
 _NUMBERED_RE = re.compile(r"^\d+\.\s+(.*)$")
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$")
+_QUOTE_RE = re.compile(r"^&gt;\s?(.*)$")  # runs after html.escape()
+_RULE_RE = re.compile(r"^(?:-{3,}|\*{3,}|_{3,})$")
+_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
 
 _FENCE_TOKEN = "\x00%d\x00"
 _FENCE_TOKEN_RE = re.compile(r"^\x00(\d+)\x00$")
@@ -38,7 +42,10 @@ def render(text):
     fences = []
 
     def stash_fence(match):
-        fences.append(f'<pre style="font-family:{style.CHAT_MONO_FAMILY};">{match.group(1)}</pre>')
+        fences.append(
+            f'<pre style="font-family:{style.CHAT_MONO_FAMILY}; background-color:{style.CHAT_CODE_BG};'
+            f' color:{style.CHAT_BODY_TEXT};">{match.group(1)}</pre>'
+        )
         return _FENCE_TOKEN % (len(fences) - 1)
 
     body = _FENCE_RE.sub(stash_fence, escaped)
@@ -88,6 +95,22 @@ def _join(pieces):
 def _render_line(line):
     if _FENCE_TOKEN_RE.match(line):
         return ("raw", line)
+    if _RULE_RE.match(line):
+        return ("block", f'<hr style="background-color:{style.CHAT_BORDER_TAB}; border-color:{style.CHAT_BORDER_TAB};">')
+    heading = _HEADING_RE.match(line)
+    if heading:
+        # Sized from the (already scaled) body size, so it follows apply_scale().
+        size = style.CHAT_BODY_SIZE * (1.2 if len(heading.group(1)) <= 2 else 1.0)
+        return ("block", (
+            f'<p style="margin:0;margin-top:{style.CHAT_PARAGRAPH_GAP}px;font-size:{size}px;">'
+            f'<b>{_inline(heading.group(2))}</b></p>'
+        ))
+    quote = _QUOTE_RE.match(line)
+    if quote:
+        return ("block", (
+            f'<p style="margin:0;color:{style.CHAT_LABEL_MONO};">'
+            f'<span style="color:{style.CHAT_BORDER_TAB};">▎</span> {_inline(quote.group(1))}</p>'
+        ))
     bullet = _BULLET_RE.match(line)
     if bullet:
         return ("list", False, _inline(bullet.group(1)))
@@ -119,6 +142,9 @@ def _wrap_lists(rendered_lines):
             continue
         flush()
         text = item[1]
+        if item[0] == "block":
+            out.append((True, text))
+            continue
         out.append((bool(_FENCE_TOKEN_RE.match(text)), text))
     flush()
     return out
@@ -128,10 +154,16 @@ def _inline(text):
     spans = []
 
     def stash_code(match):
-        spans.append(f'<code style="font-family:{style.CHAT_MONO_FAMILY};">{match.group(1)}</code>')
+        spans.append(f'<code style="font-family:{style.CHAT_MONO_FAMILY}; background-color:{style.CHAT_CODE_BG};">{match.group(1)}</code>')
         return _CODE_TOKEN % (len(spans) - 1)
 
     text = _INLINE_CODE_RE.sub(stash_code, text)
+
+    def stash_link(match):
+        spans.append(f'<a href="{match.group(2)}" style="color:{style.CHAT_ACCENT};">{match.group(1)}</a>')
+        return _CODE_TOKEN % (len(spans) - 1)
+
+    text = _LINK_RE.sub(stash_link, text)
     text = _BOLD_RE.sub(r"<b>\1</b>", text)
     text = _ITALIC_STAR_RE.sub(r"<i>\1</i>", text)
     text = _ITALIC_UNDERSCORE_RE.sub(r"<i>\1</i>", text)

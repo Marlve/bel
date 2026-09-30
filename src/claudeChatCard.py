@@ -675,6 +675,7 @@ class ChatCard(QWidget):
             # thread started from there would outlive the app's quit handling.
             self.breakdown_request.cancel()
             self.breakdown_request = None
+        label.setOpenExternalLinks(True)
         if self.state.request is None:
             return
         self.state.request.chunk.disconnect(self.onChunk)

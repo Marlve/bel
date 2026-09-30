@@ -155,6 +155,7 @@ CHAT_USER_BUBBLE = PALETTE["200"]  # the question's bubble - one step lighter th
 CHAT_BODY_TEXT = BODY
 CHAT_LABEL_MONO = LABEL
 CHAT_INERT_HINT = HINT
+CHAT_CODE_BG = PALETTE["250"]  # inline code chips and fenced blocks in Bel's replies
 
 CHAT_BODY_SIZE = 12.5  # px, per claude-chat-flow.md's own px units
 CHAT_HEADER_SIZE = 9.5  # px mono, 0.14em tracking (applied via QFont.setLetterSpacing, not CSS)
