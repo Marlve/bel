@@ -2,7 +2,9 @@
 ; Per-user install: no admin prompt, lands in %LOCALAPPDATA%\Programs\Bel.
 
 #define AppName "Bel"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 
 [Setup]
 AppId={{B3E1C0DE-5A1F-4B7A-9C2D-BE1000000001}
@@ -31,7 +33,7 @@ Name: "{group}\Bel"; Filename: "{app}\Bel.exe"
 Name: "{userstartup}\Bel"; Filename: "{app}\Bel.exe"; Tasks: autostart
 
 [Run]
-Filename: "{app}\Bel.exe"; Description: "Launch Bel"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Bel.exe"; Description: "Launch Bel"; Flags: nowait postinstall
 
 [Code]
 // A running exe is locked, so an upgrade or uninstall would fail on it.
