@@ -12,7 +12,7 @@ Bordered inset (`#191A1C` fill, `#232427` border, 7px radius), matching the othe
 
 - Header row: search-style icon + label "ambiguous — confirm the note" (`#E8E8EA`).
 - Filter field under the header: the composer's raised fill, placeholder "filter notes…". It only takes focus when clicked, so the composer keeps focus when the block pops in.
-- Scrollable list (max ~172px), one row per candidate note, most recently edited first: sand dot for recently-edited, grey dot otherwise, note name, folder path right-aligned in Geist Mono. Rows are split by `1px solid #1D1E21` dividers, last row has none — the same rows as the `! organize` box. While the filter is empty it shows the 20 most recently edited notes. Typing narrows it to every indexed note whose name or folder path contains the text (case-insensitive), still newest first. No match shows a muted "no matching notes" line.
+- Scrollable list (max ~172px), one row per candidate note, most recently edited first: sand dot for recently-edited, grey dot otherwise, note name, folder path right-aligned in Geist Mono. Rows are split by `1px solid #1D1E21` dividers, last row has none. While the filter is empty it shows the 20 most recently edited notes. Typing narrows it to every indexed note whose name or folder path contains the text (case-insensitive), still newest first. No match shows a muted "no matching notes" line.
 - On pick: the other rows dim, and the picked row gets a smaller, dim second line saying how it went — "connected", or why it didn't — inside the same block, no navigation, no modal.
 
 ## Rules
