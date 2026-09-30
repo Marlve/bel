@@ -35,6 +35,17 @@ class TodoListAnimation:
         if timer is not None:
             timer.stop()
 
+    def settle(self):
+        """Drops every pending timer and fade, so a hide leaves no
+        half-removed row behind."""
+        for timer in self.remove_timers.values():
+            timer.stop()
+        self.remove_timers.clear()
+        for tween in self.fade_tweens.values():
+            tween.stop()
+        self.fade_tweens.clear()
+        self.remove_fade.clear()
+
     def removeIfStillDone(self, item):
         self.remove_timers.pop(id(item), None)
         if not item["done"]:

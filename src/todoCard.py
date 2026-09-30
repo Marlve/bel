@@ -72,6 +72,13 @@ class TodoList(QWidget):
     def removeIfStillDone(self, item):
         self.animation.removeIfStillDone(item)
 
+    def removeDone(self):
+        """Closing the card mid-wait finishes the removals it was waiting on."""
+        self.animation.settle()
+        self.items = [item for item in self.items if not item["done"]]
+        self.updateHeight()
+        self.update()
+
     def finishRemoval(self, item):
         for index, existing in enumerate(self.items):
             if existing is item:
@@ -268,6 +275,7 @@ class TodoCard(FloatingCard, QWidget):
         )
 
     def hideEvent(self, event):
+        self.list.removeDone()
         self.save_timer.stop()
         self.save()
         super().hideEvent(event)
