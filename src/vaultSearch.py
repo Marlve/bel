@@ -36,6 +36,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QApplication
 
 import vaultIndex
 from actions.claudeAction import ClaudeQuery, ClaudeRequest
@@ -169,6 +170,15 @@ def lookup(query, vault_path=None, db_path=None):
         "all_notes": notes,
         "vocab": vocab_note(db_path=db_path),
     }
+
+
+def note_choices(vault_path=None, db_path=None):
+    """What the note picker needs with no query: the index refreshed, then
+    the recent notes to show while its filter is empty and every note for
+    the filter to search."""
+    vaultIndex.refresh(vault_path=vault_path, db_path=db_path)
+    notes = all_notes(db_path=db_path)
+    return {"notes": notes[:RECENT_NOTES_LIMIT], "all_notes": notes}
 
 
 def search_notes(query, db_path=None):
@@ -432,16 +442,12 @@ def with_concept_bullet(lines, concept, bullet, section=CONCEPTS_HEADING):
     return lines[:at] + added + lines[at:]
 
 
-def insert_concept_link(query, note, gist="", vault_path=None):
-    """Adds a `- [[query]] — gist` bullet to the `## Concepts` section of
-    `note` (vault-relative), the note Derich picked in card.md's picker
-    (issue 25). Bel has no notion of cursor position in a file it doesn't
-    render, so the link always goes in that section. A no-op, not an error,
-    when the note can no longer be found - see the module comment above.
-    A concept the section already lists is left alone but still returns
-    the note, since it is connected."""
+def existing_note_path(note, vault_path=None):
+    """The file for vault-relative `note`, or None when it is off limits or
+    no longer exists - so a write never creates a stub or reaches outside
+    the vault."""
     vault_path = vault_path or vaultIndex.VAULT_PATH
-    # `note` is any string as far as this function knows, so the Private
+    # `note` is any string as far as a caller knows, so the Private
     # exclusion has to be enforced here (issue 16). Checked on the path
     # string first, so an ordinary Private path is refused without touching
     # the filesystem at all - even resolve() opens a handle on Windows. The
@@ -457,7 +463,21 @@ def insert_concept_link(query, note, gist="", vault_path=None):
         return None
     if not path.is_file():
         # Checked up front so a note that went missing since it was listed
-        # is reported as not found - this function never creates a stub.
+        # is reported as not found.
+        return None
+    return path
+
+
+def insert_concept_link(query, note, gist="", vault_path=None):
+    """Adds a `- [[query]] — gist` bullet to the `## Concepts` section of
+    `note` (vault-relative), the note Derich picked in card.md's picker
+    (issue 25). Bel has no notion of cursor position in a file it doesn't
+    render, so the link always goes in that section. A no-op, not an error,
+    when the note can no longer be found - see the module comment above.
+    A concept the section already lists is left alone but still returns
+    the note, since it is connected."""
+    path = existing_note_path(note, vault_path)
+    if path is None:
         return None
     bullet = f"- [[{query}]] — {gist}\n" if gist else f"- [[{query}]]\n"
     try:
@@ -539,6 +559,31 @@ def confirm_pick(query, result, note, vault_path=None):
         concept = query
         gist = concept_gist(result["draft"])
     return insert_concept_link(concept, note, gist=gist, vault_path=vault_path)
+
+
+def append_reply(note, text, vault_path=None):
+    """Appends `text` - a Bel reply Derich confirmed by clicking `note` in the
+    picker - to the end of `note` under a dated heading. Only ever adds to
+    the end, so nothing already in the note can be lost. None, not an error,
+    when the note can't be found or is off limits."""
+    path = existing_note_path(note, vault_path)
+    if path is None:
+        return None
+    # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF, and
+    # appended rather than rewritten so a failed write can't cost the note.
+    current = path.read_bytes().decode("utf-8")
+    newline = "\r\n" if "\r\n" in current else "\n"
+    if not current or current.endswith(newline * 2):
+        separator = ""
+    elif current.endswith("\n"):
+        separator = newline
+    else:
+        separator = newline * 2
+    body = text.strip().replace("\r\n", "\n").replace("\n", newline)
+    block = f"### Bel - {time.strftime('%Y-%m-%d')}{newline * 2}{body}{newline}"
+    with path.open("ab") as file:
+        file.write((separator + block).encode("utf-8"))
+    return path
 
 
 def append_vocab_row(word, translation, vault_path=None):
@@ -653,6 +698,18 @@ class SearchWorker(QObject):
         self.finished.emit(outcome)
 
 
+class NotesWorker(SearchWorker):
+    """note_choices() on a background thread, for the same reason as
+    SearchWorker. A failure is reported as no notes, so nothing gets saved."""
+
+    def run(self):
+        try:
+            outcome = note_choices(vault_path=self.vault_path, db_path=self.db_path)
+        except Exception:
+            outcome = {"notes": [], "all_notes": []}
+        self.finished.emit(outcome)
+
+
 class SearchRequest(BackgroundRequest):
     """One lookup(), start to finish. Shares ClaudeRequest's thread lifecycle
     via BackgroundRequest: moves the actual lookup to a background QThread
@@ -661,8 +718,8 @@ class SearchRequest(BackgroundRequest):
 
     finished = Signal(object)
 
-    def __init__(self, query, vault_path=None, db_path=None, parent=None):
-        super().__init__(SearchWorker(query, vault_path=vault_path, db_path=db_path), parent)
+    def __init__(self, query, vault_path=None, db_path=None, parent=None, worker_class=SearchWorker):
+        super().__init__(worker_class(query, vault_path=vault_path, db_path=db_path), parent)
         self.worker.finished.connect(self.onWorkerFinished)
 
     def onWorkerFinished(self, outcome):
@@ -739,6 +796,39 @@ class ResolveRequest(BackgroundRequest):
         # Nothing to interrupt mid-flight - a bounded local read, same as
         # SearchRequest - so this just confirms the thread has stopped.
         self.stopThread()
+
+
+class NotesQuery:
+    """One note_choices() for `! save`, callback style like ExplainQuery:
+    `on_result(choices)` gets {"notes", "all_notes"}. Cancelled on app quit so
+    its thread can't outlive the app."""
+
+    def __init__(self, on_result):
+        self.on_result = on_result
+        self.request = SearchRequest(None, worker_class=NotesWorker)
+        self.request.finished.connect(self.onFinished)
+        self.cancelled = False
+
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.cancel)
+
+    def start(self):
+        self.request.start()
+
+    def onFinished(self, choices):
+        self.disconnectAboutToQuit()
+        if not self.cancelled:
+            self.on_result(choices)
+
+    def cancel(self):
+        self.cancelled = True
+        self.request.cancel()
+
+    def disconnectAboutToQuit(self):
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.disconnect(self.cancel)
 
 
 class ExplainQuery(ClaudeQuery):

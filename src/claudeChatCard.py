@@ -116,6 +116,7 @@ class ChatCard(QWidget):
         self.lookup = None  # the `?` lookup or `!` command in flight, if any (card.md)
         self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.resolve_factory = vaultSearch.ResolveRequest  # swappable in tests, so no real QThread
+        self.notes_factory = vaultSearch.NotesQuery  # swappable in tests, so no real vault index
         self.calendar_factory = timetable.CalendarQuery  # swappable in tests, so no real fetch
         self.picker = None  # the latest lookup's note picker, if it got one
         self.maybe_block = None  # the latest lookup's "you've written about this" block, if it got one
@@ -357,6 +358,9 @@ class ChatCard(QWidget):
         if command == "ss":
             self.startScreenshot()
             return
+        if command == "save":
+            self.startSave(text)
+            return
         if command is not None:
             self.startCommand(text, command)
             return
@@ -564,6 +568,59 @@ class ChatCard(QWidget):
         picker.showSaved()
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
+    # --- `! save` ---
+
+    def lastReply(self):
+        """The text of Bel's latest reply worth saving, or None. A command's
+        output never counts - a `! save` turn least of all, or saving twice
+        would file the prompt."""
+        for turn in reversed(self.state.turns):
+            if turn["role"] == "claude" and turn["text"].strip() and not turn.get("unsaveable"):
+                return turn["text"]
+        return None
+
+    def startSave(self, text):
+        """`! save` files Bel's last reply at the end of a note Derich picks.
+        Nothing is written until the click, like every other write here."""
+        reply = self.lastReply()
+        self.appendUserTurn(text)
+        label = self.appendClaudeTurn()
+        index = self.streaming_index
+        self.state.turns[index]["unsaveable"] = True
+        if reply is None:
+            self.showReply(label, index, "nothing to save yet")
+            return
+        self.composer.setReadOnly(True)
+        self.animation.startTyping(label)
+        self.lookup = self.notes_factory(lambda choices: self.onSaveChoices(label, index, reply, choices))
+        self.lookup.start()
+
+    def onSaveChoices(self, label, index, reply, choices):
+        self.animation.stopTyping()
+        self.lookup = None
+        self.composer.setReadOnly(False)
+        if not choices["all_notes"]:
+            self.showReply(label, index, "couldn't list your notes")
+            return
+        self.showReply(label, index, "save the last reply to a note")
+        picker = NotePicker(
+            choices["notes"], self.contentWidth(), header="save the last reply to…", all_notes=choices["all_notes"]
+        )
+        picker.picked.connect(lambda note: self.onSavePicked(picker, reply, note))
+        self.showPicker(picker)
+
+    def onSavePicked(self, picker, reply, note):
+        try:
+            path = vaultSearch.append_reply(note, reply)
+        except (OSError, UnicodeDecodeError):
+            picker.showFailed("couldn't save the reply")
+            return
+        if path is None:
+            picker.showFailed("note not found")
+        else:
+            picker.showSaved()
+        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
+
     # --- `!` commands ---
 
     def startCommand(self, text, command):
@@ -572,10 +629,11 @@ class ChatCard(QWidget):
         self.appendUserTurn(text)
         label = self.appendClaudeTurn()
         index = self.streaming_index
+        self.state.turns[index]["unsaveable"] = True  # a command's output isn't a reply to file
         if command in timetable.COMMANDS:
             self.lookup = self.calendar_factory(command, lambda reply: self.onTimetableResult(label, index, reply))
         else:
-            self.showReply(label, index, "unknown command — try ! today, ! week or ! ss")
+            self.showReply(label, index, "unknown command — try ! today, ! week, ! save or ! ss")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)

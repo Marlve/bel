@@ -60,10 +60,19 @@ reworded question ("? Dijkstra's algorithm") doesn't file a second note about
 something already written. It never suppresses the draft.
 
 **Command**:
-A chat message prefixed `!` (`! today`, `! week`, `! ss`): Bel runs
+A chat message prefixed `!` (`! today`, `! week`, `! save`, `! ss`): Bel runs
 that command instead of sending the message to Claude as normal chat, and like
 a lookup it never joins the Claude session (`claudeChatCard.command_name`). A
 bare `!` is normal chat.
+
+**Save** (`! save`):
+Files Bel's last reply at the end of a note Derich picks. The note picker opens
+with recent notes and a filter over every indexed note; nothing is written until
+he clicks a row (`vaultSearch.append_reply`), which adds a `### Bel - <date>`
+block holding the reply's raw markdown. It only ever appends, never touches
+`6 Private/`, and reports "note not found" rather than creating a stub. A
+command's output (`! today`, `! save` itself) is never the "last reply", so
+saving twice files the same answer twice. It cannot create a new note.
 
 **Screenshot** (`! ss`):
 Drag a rectangle on the screen under the cursor; the crop waits as a thumbnail
