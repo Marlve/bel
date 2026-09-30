@@ -16,6 +16,9 @@
 # attribute surface via thin properties so callers outside this file don't
 # need to know the split happened.
 
+import tempfile
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication,
@@ -26,6 +29,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 import cardStore
 import chatMarkdown
 import dockCorner
+import ocr
 import screenshot
 import style
 import timetable
@@ -52,6 +56,7 @@ HELP_TEXT = """| type | what it does |
 | `! week` | what is due this week |
 | `! save` | file my last reply at the end of a note you pick |
 | `! ss` | drag a screenshot to send with your next message |
+| `! read` | drag over text on screen and it lands in the composer |
 | `! help` | this list |
 
 Ctrl+Shift+Space opens the pie menu, Ctrl+Alt+Space puts the keyboard back in this chat."""
@@ -135,7 +140,8 @@ class ChatCard(QWidget):
         self.breakdown_block = None  # the latest sentence lookup's breakdown, if it got one
         self.breakdown_request = None  # its off-thread resolve, while that is still in flight
         self.due_list = None  # the latest `! today` / `! week`'s "what is due" box, if it had events
-        self.selector = None  # the `! ss` region selector, while it is open
+        self.selector = None  # the `! ss` / `! read` region selector, while it is open
+        self.ocr_request = None  # the `! read` OCR, while it is running
         self.attachment = None  # (path, pixmap) of the screenshot waiting to ride on the next chat message
 
         self.buildContent()
@@ -373,6 +379,9 @@ class ChatCard(QWidget):
         if command == "ss":
             self.startScreenshot()
             return
+        if command == "read":
+            self.startScreenshot(self.onReadSelected)
+            return
         if command == "save":
             self.startSave(text)
             return
@@ -397,21 +406,22 @@ class ChatCard(QWidget):
 
     # --- `! ss` ---
 
-    def startScreenshot(self):
+    def startScreenshot(self, on_selected=None):
         """Nothing goes in the transcript: this only readies an attachment
         for the next message. The card fades out first so it isn't in its
-        own shot; the frozen grab is taken before the selector appears."""
+        own shot; the frozen grab is taken before the selector appears. `on_selected`
+        takes the crop; it defaults to attaching it to the next message."""
         if self.selector is not None:
             return
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         self.setWindowOpacity(0)
-        QTimer.singleShot(SHOT_SETTLE_MS, lambda: self.openSelector(screen))
+        QTimer.singleShot(SHOT_SETTLE_MS, lambda: self.openSelector(screen, on_selected or self.onShotSelected))
 
-    def openSelector(self, screen):
+    def openSelector(self, screen, on_selected):
         frozen = screen.grabWindow(0)
         self.setWindowOpacity(1)
         self.selector = screenshot.RegionSelector(screen, frozen)
-        self.selector.selected.connect(self.onShotSelected)
+        self.selector.selected.connect(on_selected)
         self.selector.cancelled.connect(self.closeSelector)
         self.selector.open()
 
@@ -427,6 +437,39 @@ class ChatCard(QWidget):
         self.chip.show_shot(pixmap)
         self.chip.show()
         self.closeSelector()
+
+    # --- `! read` ---
+
+    def onReadSelected(self, pixmap):
+        """OCR the crop and drop the text into the composer, unsent: what happens next is up to what
+        gets typed around it (a `?` in front of it, a question after it, or nothing)."""
+        self.closeSelector()
+        image = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        image.close()
+        if not pixmap.save(image.name, "PNG"):
+            self.showReadError("couldn't save the selection")
+            return
+        self.composer.setReadOnly(True)
+        self.ocr_request = ocr.OcrRequest(image.name, parent=self)
+        self.ocr_request.finished.connect(lambda text, error: self.onReadFinished(image.name, text, error))
+        self.ocr_request.start()
+
+    def onReadFinished(self, image_path, text, error):
+        self.ocr_request = None
+        Path(image_path).unlink(missing_ok=True)
+        if error or not text:
+            self.showReadError(error or "couldn't read any text there")
+            return
+        self.composer.setReadOnly(False)
+        self.composer.insertPlainText(text)
+        self.focusComposer()
+
+    def showReadError(self, message):
+        self.composer.setReadOnly(False)
+        label = self.appendClaudeTurn()
+        index = self.streaming_index
+        self.state.turns[index]["unsaveable"] = True
+        self.showReply(label, index, message)
 
     def closeSelector(self):
         self.selector.hide()
@@ -698,6 +741,9 @@ class ChatCard(QWidget):
         if self.lookup is not None:
             self.lookup.cancel()
             self.lookup = None
+        if self.ocr_request is not None:
+            self.ocr_request.cancel()
+            self.ocr_request = None
         if self.breakdown_request is not None:
             # Owned here rather than by ExplainQuery: ClaudeQuery.onFinished
             # disconnects from aboutToQuit before calling answered(), so a
