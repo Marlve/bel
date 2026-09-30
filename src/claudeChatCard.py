@@ -25,9 +25,7 @@ from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import cardStore
 import chatMarkdown
-import claude
 import dockCorner
-import inboxOrganize
 import screenshot
 import style
 import timetable
@@ -36,7 +34,6 @@ from floatingCard import paint_card_bands
 from dueList import DueList
 from breakdownBlock import BreakdownBlock
 from notePicker import NotePicker
-from organizeList import OrganizeList
 from anims import curves
 from claudeChatCardState import ChatCardState
 from claudeChatCardAnimation import ChatCardAnimation
@@ -120,8 +117,6 @@ class ChatCard(QWidget):
         self.lookup_factory = vaultSearch.ExplainQuery  # swappable in tests, so no real vault or `claude` subprocess
         self.resolve_factory = vaultSearch.ResolveRequest  # swappable in tests, so no real QThread
         self.calendar_factory = timetable.CalendarQuery  # swappable in tests, so no real fetch
-        self.organize_factory = inboxOrganize.OrganizeQuery  # swappable in tests, so no real vault or `claude` subprocess
-        self.organize_list = None  # the latest `! organize`'s box, one row per Inbox note
         self.picker = None  # the latest lookup's note picker, if it got one
         self.maybe_block = None  # the latest lookup's "you've written about this" block, if it got one
         self.breakdown_block = None  # the latest sentence lookup's breakdown, if it got one
@@ -164,10 +159,6 @@ class ChatCard(QWidget):
     @property
     def session_id(self):
         return self.state.session_id
-
-    @property
-    def socratic(self):
-        return self.state.socratic
 
     @property
     def request(self):
@@ -377,10 +368,7 @@ class ChatCard(QWidget):
         self.composer.setReadOnly(True)
         self.animation.startTyping(self.streaming_label)
 
-        # The rule goes on the message, not the system prompt, so a toggle
-        # reaches a conversation already under way (see claude.SOCRATIC_RULE).
-        # The transcript above still shows the bare line he typed.
-        message = text + claude.SOCRATIC_RULE if self.state.socratic else text
+        message = text
         if shot:
             message += f"\n\n[The user attached a screenshot at {shot[0]}. Read that image file to see it.]"
         self.state.request = self.state.action(message, session_id=self.state.session_id)
@@ -580,23 +568,14 @@ class ChatCard(QWidget):
 
     def startCommand(self, text, command):
         """A `! today`-style message runs a command instead of chatting.
-        Like a `?` lookup, none of them joins the Claude session - though
-        `! socratic` changes which prompt the next chat turn speaks with."""
+        Like a `?` lookup, none of them joins the Claude session."""
         self.appendUserTurn(text)
         label = self.appendClaudeTurn()
         index = self.streaming_index
-        if command == "socratic":
-            # The only command that runs nothing: it flips the persona the
-            # next chat turn speaks with and reads the new state back.
-            self.state.socratic = not self.state.socratic
-            self.showReply(label, index, f"socratic mode {'on' if self.state.socratic else 'off'}")
-            return
         if command in timetable.COMMANDS:
             self.lookup = self.calendar_factory(command, lambda reply: self.onTimetableResult(label, index, reply))
-        elif command == "organize":
-            self.lookup = self.organize_factory(lambda result: self.onOrganizeResult(label, index, result))
         else:
-            self.showReply(label, index, "unknown command — try ! today, ! week, ! organize, ! ss or ! socratic")
+            self.showReply(label, index, "unknown command — try ! today, ! week or ! ss")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)
@@ -618,39 +597,6 @@ class ChatCard(QWidget):
             label.hide()
             self.due_list = DueList(reply["boxes"], self.contentWidth())
             self.showPicker(self.due_list)
-
-    def onOrganizeResult(self, label, index, result):
-        """One box with a row per Inbox note (command-styling/01) under a
-        count line: Claude's proposal, or every folder to filter and pick
-        from when there's no usable proposal. Clicking files that note
-        alone."""
-        self.organize_list = None
-        if "error" in result:
-            self.onCommandResult(label, index, result["error"])
-            return
-        proposals = result["proposals"]
-        if not proposals:
-            self.onCommandResult(label, index, "Inbox is empty")
-            return
-
-        count = f"{len(proposals)} note{'s' if len(proposals) != 1 else ''} in Inbox — click a row to file it"
-        if result["failed"]:
-            count += "\ncouldn't get suggestions, so pick a folder for each"
-        self.onCommandResult(label, index, count)
-
-        self.organize_list = OrganizeList(proposals, result["folders"], self.contentWidth())
-        for entry in self.organize_list.entries:
-            entry.filed.connect(lambda folder, entry=entry: self.onOrganizeFiled(entry, folder))
-        self.showPicker(self.organize_list)
-
-    def onOrganizeFiled(self, entry, folder):
-        try:
-            outcome = inboxOrganize.organize(entry.proposal, folder)
-        except (OSError, ValueError):
-            entry.showFailed()
-            return
-        entry.showMoved(outcome["linked"])
-        QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
     def showPicker(self, picker):
         row = QHBoxLayout()
@@ -675,7 +621,6 @@ class ChatCard(QWidget):
             # thread started from there would outlive the app's quit handling.
             self.breakdown_request.cancel()
             self.breakdown_request = None
-        label.setOpenExternalLinks(True)
         if self.state.request is None:
             return
         self.state.request.chunk.disconnect(self.onChunk)
@@ -730,6 +675,7 @@ class ChatCard(QWidget):
 
         label = QLabel("")
         label.setTextFormat(Qt.RichText)
+        label.setOpenExternalLinks(True)
         label.setWordWrap(True)
         label.setStyleSheet(style.chat_turn_stylesheet())
         # A word-wrapping QLabel's sizeHint doesn't equal maximumWidth() - Qt

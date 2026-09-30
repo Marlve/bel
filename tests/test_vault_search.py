@@ -834,55 +834,6 @@ class ConfirmPickTests(unittest.TestCase):
         self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.")
 
 
-class ListInboxEntriesTests(unittest.TestCase):
-    def setUp(self):
-        self.vault_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.vault_dir.cleanup)
-        self.vault = Path(self.vault_dir.name)
-
-    def test_list_inbox_entries_finds_notes_in_numbered_inbox_folder(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        (inbox / "Stray thought.md").write_text("content")
-
-        entries = vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-        self.assertEqual(entries, [inbox / "Stray thought.md"])
-
-    def test_list_inbox_entries_matches_inbox_folder_ignoring_numeric_prefix(self):
-        inbox = self.vault / "Inbox"
-        inbox.mkdir()
-        (inbox / "Stray thought.md").write_text("content")
-
-        entries = vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-        self.assertEqual(entries, [inbox / "Stray thought.md"])
-
-    def test_list_inbox_entries_is_sorted_by_name(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        (inbox / "Zebra.md").write_text("content")
-        (inbox / "Apple.md").write_text("content")
-
-        entries = vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-        self.assertEqual(entries, [inbox / "Apple.md", inbox / "Zebra.md"])
-
-    def test_list_inbox_entries_ignores_non_markdown_files(self):
-        inbox = self.vault / "0 Inbox"
-        inbox.mkdir()
-        (inbox / "Note.md").write_text("content")
-        (inbox / "image.png").write_bytes(b"\x89PNG")
-
-        entries = vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-        self.assertEqual(entries, [inbox / "Note.md"])
-
-    def test_list_inbox_entries_raises_when_inbox_folder_is_missing(self):
-        with self.assertRaises(FileNotFoundError):
-            vaultSearch.list_inbox_entries(vault_path=self.vault)
-
-
 SENTENCE = "저는 매일 학교에 갑니다"
 
 BREAKDOWN_REPLY = """{
@@ -911,7 +862,7 @@ class ParseBreakdownTests(unittest.TestCase):
         self.assertEqual([point["point"] for point in breakdown["grammar"]], ["-은/는", "-에", "-ㅂ니다"])
 
     def test_reads_the_json_out_of_a_reply_that_says_more_than_the_object(self):
-        # BEL_PROMPT's tutor persona can still add a line around the object.
+        # Bel's chat voice can still add a line around the object.
         text = f"Here you go:\n\n{BREAKDOWN_REPLY}\n\nHope that helps."
 
         self.assertEqual(vaultSearch.parse_breakdown(text)["translation"], "I go to school every day")

@@ -60,47 +60,23 @@ reworded question ("? Dijkstra's algorithm") doesn't file a second note about
 something already written. It never suppresses the draft.
 
 **Command**:
-A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`, `! ss`): Bel runs
+A chat message prefixed `!` (`! today`, `! week`, `! ss`): Bel runs
 that command instead of sending the message to Claude as normal chat, and like
 a lookup it never joins the Claude session (`claudeChatCard.command_name`). A
-bare `!` is normal chat. `! socratic` is the odd one out - it runs no request
-at all, only flipping how the next chat turn is asked.
+bare `!` is normal chat.
 
 **Screenshot** (`! ss`):
 Drag a rectangle on the screen under the cursor; the crop waits as a thumbnail
 chip above the composer and rides on the next plain chat message only. It is
 saved under `claude.SHOTS_DIR` (inside the CLI's cwd, so no permission prompt)
-and the message ends with its path for Claude to read. Like `! socratic`, it
-runs no request itself and adds no transcript turn.
-
-**Socratic mode**:
-Off by default; `! socratic` toggles it, and the reply reads the new state
-back. On, `claude.SOCRATIC_RULE` is appended to the message sent to the CLI -
-the transcript still shows the bare line he typed. In memory only, like
-`session_id`, so it starts off every launch.
-
-It rides on the message rather than the system prompt because
-`--append-system-prompt` is only honoured when the CLI **creates** a session;
-on `--resume` it is ignored and the session keeps the prompt it was born with
-(measured 2026-09-18 - a fresh session obeyed an instruction a resumed one
-ignored). A system-prompt swap would therefore flip the toggle, print
-"socratic mode on", and change nothing about the answer. The message is new
-every turn, so the rule reaches a conversation already under way. The same
-constraint means `BEL_PROMPT` is fixed for a session's whole life - fine,
-since the persona never changes within one.
-
-There is no way to turn socratic mode off by asking (Derich, 2026-09-18): the
-rule tells Bel not to give in to "just tell me", because the mode drops
-otherwise at exactly the moment it is worth having. `! socratic` is the only
-way out.
+and the message ends with its path for Claude to read. It runs no request
+itself and adds no transcript turn.
 
 **Bel's prompt**:
-`claude.BEL_PROMPT`, one literal, appended to every `claude` call - chat, `?`,
-`! organize` and the todo wedge alike. Bel is a tutor throughout. Its last rule
+`claude.BEL_PROMPT`, one literal, appended to every `claude` call - chat, `?`
+and the todo wedge alike. Bel is a plain assistant, not a tutor. Its last rule
 is what makes one prompt enough: a message that names its own output format
-("Reply with only a JSON array", "Reply with only that one word") outranks the
-teaching voice. Verified against the real CLI - `! organize` returned clean
-JSON and triage a bare "Project" under the tutor persona.
+("Reply with only that one word") outranks the usual chat voice.
 
 **Picked note**:
 The vault note Derich clicks in a lookup's note picker (`card.md`) - where

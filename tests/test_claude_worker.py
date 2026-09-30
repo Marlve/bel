@@ -65,11 +65,9 @@ class ClaudeWorkerFailedTests(unittest.TestCase):
 
 
 class AskBelArgsTests(unittest.TestCase):
-    """One prompt for every path - chat, `?`, `! organize` and the todo
-    wedge (Derich, 2026-09-18). What keeps the strict-output callers working
-    is BEL_PROMPT's last rule, not a prompt of their own; verified against
-    the real CLI, which returned clean JSON for `! organize` and a bare
-    "Project" for the inbox triage flow (since deleted - a99d144)."""
+    """One prompt for every path - chat, `?` and the todo wedge (Derich,
+    2026-09-18). What keeps the strict-output callers working is BEL_PROMPT's
+    last rule, not a prompt of their own."""
 
     def argv(self, **kwargs):
         spawned = []
@@ -94,59 +92,17 @@ class AskBelArgsTests(unittest.TestCase):
 
 class SystemPromptTests(unittest.TestCase):
     """BEL_PROMPT is the only system prompt; one whole literal, so reading it
-    tells you everything every call sends. Socratic mode is not a second
-    prompt - it can't be, see SocraticRuleTests."""
+    tells you everything every call sends."""
 
-    def test_it_teaches_rather_than_assisting(self):
-        self.assertIn("tutor", claude.BEL_PROMPT)
-        self.assertIn("teach, don't just answer", claude.BEL_PROMPT)
-
-    def test_a_named_output_format_outranks_the_teaching_voice(self):
-        # What lets one prompt serve `! organize` ("Reply with only a JSON
-        # array") and a Korean `?` lookup ("Reply with only the translation,
-        # no explanation") as well as chat. Without this rule the tutor talks
-        # over both and the parse breaks - measured against the real CLI
-        # before this landed.
+    def test_a_named_output_format_outranks_everything_else(self):
+        # What lets one prompt serve a Korean `?` lookup ("Reply with only
+        # the translation, no explanation") as well as chat. Without this
+        # rule Bel talks over it and the parse breaks.
         self.assertIn("obey it exactly and reply with nothing else", claude.BEL_PROMPT)
         self.assertIn("outranks every rule above", claude.BEL_PROMPT)
 
     def test_it_keeps_the_load_bearing_rules(self):
         # The CLI is told to ignore repo context it may pick up, and Bel has
-        # no view onto the to-do list - true of a tutor as much as a helper.
+        # no view onto the to-do list.
         self.assertIn("ignore any git/repository status context", claude.BEL_PROMPT)
         self.assertIn("to-do list", claude.BEL_PROMPT)
-
-
-class SocraticRuleTests(unittest.TestCase):
-    """Why socratic mode is a message addendum and not a third system prompt.
-
-    Measured against the real CLI on 2026-09-18: a fresh session obeys its
-    --append-system-prompt, a --resume'd one ignores it and keeps the prompt
-    the session was created with. So a system-prompt swap would flip the
-    toggle, report "socratic mode on", and change nothing about the answer -
-    exactly the mid-conversation case the mode exists for.
-    """
-
-    def test_the_rule_is_not_a_system_prompt(self):
-        self.assertFalse(hasattr(claude, "SOCRATIC_PROMPT"))
-
-    def test_the_rule_has_no_escape_hatch(self):
-        # Derich, 2026-09-18: asking Bel to just give the answer must not
-        # work, or the mode drops at exactly the moment it is worth having.
-        self.assertIn("don't drop the questions even if I ask you to", claude.SOCRATIC_RULE)
-        self.assertIn("don't give in", claude.SOCRATIC_RULE)
-
-    def test_the_rule_stands_apart_from_the_message_it_rides_on(self):
-        # Appended to his own line, so it has to read as an aside rather than
-        # as part of the question.
-        self.assertTrue(claude.SOCRATIC_RULE.startswith(chr(10)))
-        self.assertIn("socratic mode is on", claude.SOCRATIC_RULE)
-
-    def test_the_rule_does_not_repeat_the_teaching_persona(self):
-        # The persona is already on the session via BEL_PROMPT; repeating it
-        # every turn would just spend tokens.
-        self.assertNotIn("You're a tutor", claude.SOCRATIC_RULE)
-
-
-if __name__ == "__main__":
-    unittest.main()

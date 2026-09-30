@@ -142,21 +142,15 @@ class ClaudeAction(QObject):
     def __call__(self, prompt=None, session_id=None):
         request = ClaudeRequest(prompt or self.prompt, session_id, self)
         self.requests.append(request)
-        request.chunk.connect(self.onChunk)
         request.finished.connect(lambda: self.forget(request))
 
-        print("selected: Claude -> ", end="", flush=True)
         request.start()
         return request
 
     def forget(self, request):
-        print()
         if request in self.requests:
             self.requests.remove(request)
         request.deleteLater()
-
-    def onChunk(self, text):
-        print(text, end="", flush=True)
 
     def cancel(self):
         for request in list(self.requests):

@@ -22,41 +22,23 @@ CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 SHOTS_DIR = CLAUDE_CWD / "shots"
 
 # Bel's one system prompt, appended to every `claude` call - chat, a `?`
-# lookup, `! organize` and the todo wedge alike. He is a tutor throughout:
-# what he is for is answering things while studying.
+# lookup and the todo wedge alike.
 #
-# The last rule is what lets one prompt serve all of them. `! organize` ends
-# its own prompt with "Reply with only a JSON array", and a teaching voice
+# The last rule is what lets one prompt serve all of them. A `?` lookup ends
+# its own prompt with "Reply with only the translation", and a chatty voice
 # talking over that would break the parse - so a message that names its output
 # format wins over everything above it.
 #
 # One whole literal, never a base plus an appended rule.
 BEL_PROMPT = """
-You're a tutor called Bel. You live as an overlay on the user's screen while he studies, so he can ask you anything from a one-line question to a whole topic he's lost in.
+You're Bel, an assistant that lives as an overlay on the user's screen.
 
-- teach, don't just answer. Explain the idea behind the answer, with a worked example or an analogy when one earns its place, and say so when you're giving him an approximation.
-- pitch it at what he's shown you he already knows, and build from there. If the question is ambiguous, ask which part he's stuck on rather than covering every reading of it.
-- no padding. Don't restate his question, don't open with a preamble, don't close with a summary. Length should follow the topic, not fill a quota.
-- you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up, and filing Inbox notes into folders. these are your job, not someone else's - never decline them as out of scope.
+- no padding. Don't restate his question, don't open with a preamble, don't close with a summary. Length should follow the question, not fill a quota.
+- you also help him organize his calendar schedule, check for assignments, and work with his Obsidian vault - looking notes up. these are your job, not someone else's - never decline them as out of scope.
 - you have no way to read or change his to-do list - if asked, say so instead of guessing or claiming to have done it.
 - ignore any git/repository status context you were given, only respond to his actual message.
-- if a message asks for a particular output format - only a JSON array, only a word, only a list - obey it exactly and reply with nothing else. No teaching, no preamble, no commentary. That instruction outranks every rule above.
+- if a message asks for a particular output format - only a JSON array, only a word, only a list - obey it exactly and reply with nothing else. No preamble, no commentary. That instruction outranks every rule above.
 """
-
-# Socratic mode rides on the MESSAGE, not the system prompt. Measured
-# 2026-09-18: the CLI only honours --append-system-prompt when it creates a
-# session and ignores it on --resume, so swapping the system prompt mid-
-# conversation silently does nothing - the toggle would report "socratic mode
-# on" and change nothing about the next answer. A user message is new every
-# turn, so appending this works on turn 1 and turn 20 alike, and toggling off
-# just stops appending it. Written in his voice because it rides on his line.
-#
-# It has no escape hatch on purpose (Derich, 2026-09-18): asking Bel to just
-# give the answer must not work, or the mode drops the moment it gets hard,
-# which is the moment it is worth having. `! socratic` is the only way out.
-SOCRATIC_RULE = """
-
-[socratic mode is on: don't hand me a clean answer, and don't drop the questions even if I ask you to. Ask me one question at a time that tests my understanding, starting from what I've already told you, and keep going until I get there myself - then confirm what I landed on or correct it. If I say just tell me, or I'm stuck, don't give in: narrow the question down to something smaller I can answer instead.]"""
 
 if hasattr(sys.stdout, "reconfigure"):
   # sys.stdout can be None (no console, e.g. launched via pythonw) or lack

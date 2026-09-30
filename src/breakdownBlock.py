@@ -8,8 +8,7 @@
 # effect. A new-only list would drop a word from the explanation of his own
 # sentence the moment he saved it.
 #
-# Rows are NoteRow, shared with the note picker and the `! organize` box, so
-# all three look the same. NoteList is deliberately not reused: it locks and
+# Rows are NoteRow, shared with the note picker, so the two look the same. NoteList is deliberately not reused: it locks and
 # dims every other row on a click, because a picker is a one-shot choice -
 # here each row is filed on its own and the rest must stay live. It has no
 # scroll area either; a sentence's worth of rows can't run away the way a

@@ -1,4 +1,4 @@
-# The chat card's conversation data - session id, socratic mode, the request
+# The chat card's conversation data - session id, the request
 # in flight, and the transcript itself. Pure Python, no Qt: claudeChatCard.py
 # (view) and claudeChatCardAnimation.py read and write these fields
 # directly, the same way EdgeDockDriver reads/writes EdgeDock.
@@ -16,7 +16,6 @@ class ChatCardState:
         self.wedge_id = None
         self.action = None
         self.session_id = None
-        self.socratic = False  # `! socratic`; in memory only, like session_id
         self.request = None
         self.buffered = ""
         self.turns = []  # {"role": "user"/"claude", "text": ...}, one per transcript row

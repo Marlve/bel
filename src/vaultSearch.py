@@ -27,10 +27,6 @@
 # concept-note hits/writes get a link - a `[[word]]` link to a Korean vocab
 # table row wouldn't resolve to anything in Obsidian, so append_vocab_row
 # doesn't call it.
-#
-# list_inbox_entries is what's left of issue 04's per-entry triage flow:
-# `! organize` (inboxOrganize.py) replaced it, proposing moves for the whole
-# Inbox at once and doing its own rename on confirmation.
 
 import json
 import os
@@ -52,8 +48,7 @@ KOREAN_PROMPT_TEMPLATE = 'Translate the Korean "{query}" into English. Reply wit
 # A sentence is a grammar question, not a translation (korean.md), so it asks
 # for the whole breakdown in one call - per-word calls would cost ~4.8s each
 # to first token. The reply names its own output format, which BEL_PROMPT's
-# last rule lets outrank the tutor persona, the same way `! organize` gets
-# clean JSON back. The lemma is the point of the word entries: search_notes
+# last rule lets outrank its usual chat voice. The lemma is the point of the word entries: search_notes
 # matches a whole cell, so only a dictionary form can ever hit its Vocab row.
 KOREAN_SENTENCE_PROMPT_TEMPLATE = """Break down the Korean sentence "{query}".
 
@@ -286,8 +281,7 @@ def matching_table_row(content, query):
 def parse_breakdown(text):
     """The sentence breakdown in Claude's answer, or None if the answer isn't
     one, rather than raising. An entry missing a field is dropped instead of
-    failing the whole breakdown, same tolerance as
-    inboxOrganize.parse_proposals - but an answer with no translation is no
+    failing the whole breakdown, but an answer with no translation is no
     breakdown at all, since the translation is what the card shows.
 
     None covers two different answers, which ExplainQuery.answered tells
@@ -629,15 +623,6 @@ def vocab_row_insert_index(lines):
                     at = index + 1
             return at
     return len(lines)
-
-
-def list_inbox_entries(vault_path=None):
-    """Lists the vault's Inbox notes for `! organize` to propose a
-    destination for. Non-recursive - Inbox is a flat dropzone of individual
-    notes, not subfoldered like the other top-level folders."""
-    vault_path = vault_path or vaultIndex.VAULT_PATH
-    inbox = vaultIndex.resolve_top_folder(vault_path, "Inbox")
-    return sorted(entry for entry in inbox.iterdir() if entry.suffix.casefold() == ".md")
 
 
 class SearchWorker(QObject):

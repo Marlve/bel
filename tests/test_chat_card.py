@@ -16,7 +16,6 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
 import cardStore
-import claude
 import dockCorner
 import style
 from claudeChatCard import ChatCard, ChatSlot
@@ -102,15 +101,6 @@ def sentenceResult():
         "hit": False, "kind": "sentence", "draft": "thank you",
         "breakdown": BREAKDOWN, "notes": NOTES, "all_notes": ALL_NOTES,
     }
-FOLDERS = ["1 Project", "2 Areas", "2 Areas/School"]
-PLACED = {
-    "path": Path("C:/vault/0 Inbox/Assignment ETW.md"), "folder": "2 Areas/School/ETW2001", "new_folder": True,
-    "title": "ETW Report", "name": "ETW Report", "related": ["Week 3"], "atlas": "5 Atlas/School.md",
-}
-UNPLACED = {
-    "path": Path("C:/vault/0 Inbox/Loose idea.md"), "folder": None, "new_folder": False,
-    "title": "Loose idea", "name": "Loose idea", "related": [], "atlas": None,
-}
 
 
 def teardownCard(card):
@@ -508,43 +498,8 @@ class ChatCardTests(unittest.TestCase):
         self.assertEqual(self.card.animation.typing_clock.state(), QVariantAnimation.Stopped)
         self.assertNotEqual(self.card.streaming_label.text(), "")
 
-    def test_chat_sends_the_bare_line_when_socratic_is_off(self):
+    def test_chat_sends_the_bare_line(self):
         self.card.fly()
-        self.card.send("hello")
-        self.assertEqual(self.requests[0].prompt, "hello")
-
-    def test_socratic_mode_rides_on_the_message_not_the_system_prompt(self):
-        # The CLI only honours --append-system-prompt when it CREATES a
-        # session and ignores it on --resume (measured 2026-09-18), so a
-        # system-prompt swap would silently do nothing mid-conversation.
-        self.card.fly()
-        self.card.send("! socratic")
-        self.card.send("hello")
-        self.assertIn(claude.SOCRATIC_RULE, self.requests[0].prompt)
-        self.assertTrue(self.requests[0].prompt.startswith("hello"))
-
-    def test_the_transcript_shows_what_he_typed_not_the_rule(self):
-        self.card.fly()
-        self.card.send("! socratic")
-        self.card.send("hello")
-        self.assertEqual(self.card.turns[-2]["text"], "hello")
-
-    def test_socratic_reaches_a_conversation_already_under_way(self):
-        # The regression this whole approach exists for: toggling on at turn
-        # three has to affect turn four, on the SAME resumed session.
-        self.card.fly()
-        self.card.send("first")
-        self.requests[-1].session_started.emit("session-1")
-        self.requests[-1].finished.emit()
-        self.card.send("! socratic")
-        self.card.send("second")
-        self.assertEqual(self.requests[-1].session_id, "session-1")  # same conversation
-        self.assertIn(claude.SOCRATIC_RULE, self.requests[-1].prompt)
-
-    def test_toggling_socratic_off_stops_appending_the_rule(self):
-        self.card.fly()
-        self.card.send("! socratic")
-        self.card.send("! socratic")
         self.card.send("hello")
         self.assertEqual(self.requests[0].prompt, "hello")
 
@@ -1022,31 +977,12 @@ class ChatCardTests(unittest.TestCase):
 
         self.assertEqual(self.requests, [])
 
-    def test_bang_socratic_toggles_the_mode_and_says_so(self):
-        # Unlike the other commands it runs no request at all - the reply is
-        # just the new state read back.
-        query = self.startCommand("! socratic")
-
-        self.assertIsNone(query)
-        self.assertEqual(self.requests, [])
-        self.assertTrue(self.card.socratic)
-        self.assertIn("socratic mode on", self.card.turns[-1]["text"])
-        self.assertFalse(self.card.composer.isReadOnly())
-
-    def test_bang_socratic_again_turns_it_back_off(self):
-        self.startCommand("! socratic")
-        self.card.send("! socratic")
-
-        self.assertFalse(self.card.socratic)
-        self.assertIn("socratic mode off", self.card.turns[-1]["text"])
-
     def test_an_unknown_command_says_so_without_asking_anything(self):
         query = self.startCommand("! tomorrow")
 
         self.assertIsNone(query)
         self.assertEqual(self.requests, [])
         self.assertIn("unknown command", self.card.turns[-1]["text"])
-        self.assertIn("! socratic", self.card.turns[-1]["text"])
         self.assertFalse(self.card.composer.isReadOnly())
 
     def test_a_bare_bang_is_normal_chat(self):
@@ -1060,102 +996,6 @@ class ChatCardTests(unittest.TestCase):
         self.card.dismiss()
 
         self.assertTrue(query.cancelled)
-
-    # --- `! organize` ---
-
-    def startOrganize(self):
-        self.lookups = []
-        self.card.organize_factory = lambda on_result: self.fakeLookup("organize", on_result)
-        self.card.fly()
-        self.card.send("! organize")
-        return self.lookups[0]
-
-    def test_bang_organize_asks_about_the_inbox_instead_of_chatting(self):
-        query = self.startOrganize()
-
-        self.assertTrue(query.started)
-        self.assertEqual(self.requests, [])
-        self.assertTrue(self.card.composer.isReadOnly())
-
-    def test_an_empty_inbox_says_so(self):
-        query = self.startOrganize()
-
-        query.on_result({"proposals": [], "folders": FOLDERS, "failed": False})
-
-        self.assertEqual(self.card.turns[-1]["text"], "Inbox is empty")
-        self.assertIsNone(self.card.organize_list)
-        self.assertFalse(self.card.composer.isReadOnly())
-        self.assertIsNone(self.card.lookup)
-
-    def test_an_organize_error_is_the_reply(self):
-        query = self.startOrganize()
-
-        query.on_result({"error": "no Inbox folder in the vault"})
-
-        self.assertEqual(self.card.turns[-1]["text"], "no Inbox folder in the vault")
-
-    def test_every_inbox_note_gets_a_row_in_one_box_under_a_count_line(self):
-        query = self.startOrganize()
-
-        query.on_result({"proposals": [PLACED, UNPLACED], "folders": FOLDERS, "failed": False})
-
-        box = self.card.organize_list
-        self.assertEqual([entry.proposal for entry in box.entries], [PLACED, UNPLACED])
-        self.assertEqual(box.width(), self.card.contentWidth())
-        self.assertEqual(self.card.turns[-1]["text"], "2 notes in Inbox — click a row to file it")
-
-    def test_a_failed_answer_says_every_note_needs_a_folder(self):
-        query = self.startOrganize()
-
-        query.on_result({"proposals": [UNPLACED], "folders": FOLDERS, "failed": True})
-
-        self.assertIn("couldn't get suggestions", self.card.turns[-1]["text"])
-
-    def test_clicking_a_proposal_files_the_note_there(self):
-        query = self.startOrganize()
-        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [entry] = self.card.organize_list.entries
-
-        moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
-        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
-            entry.row.clicked.emit(entry.row.path)
-
-        organize.assert_called_once_with(PLACED, "2 Areas/School/ETW2001")
-        self.assertEqual(entry.row.detail_label.text(), "moved")
-        self.assertEqual(entry.row.name_color, style.PICKER_DIM_TEXT)
-
-    def test_picking_a_folder_files_an_unplaced_note_there(self):
-        query = self.startOrganize()
-        query.on_result({"proposals": [UNPLACED], "folders": FOLDERS, "failed": False})
-        [entry] = self.card.organize_list.entries
-
-        moved = Path("C:/vault/1 Project/Loose idea.md")
-        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": True}) as organize:
-            entry.folder_list.rows[0].clicked.emit("1 Project")
-
-        organize.assert_called_once_with(UNPLACED, "1 Project")
-
-    def test_a_move_that_fails_says_so(self):
-        query = self.startOrganize()
-        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [entry] = self.card.organize_list.entries
-
-        with patch("claudeChatCard.inboxOrganize.organize", side_effect=OSError):
-            entry.row.clicked.emit(entry.row.path)
-
-        self.assertEqual(entry.row.detail_label.text(), "couldn't move the note")
-
-    def test_a_move_whose_links_failed_says_so(self):
-        query = self.startOrganize()
-        query.on_result({"proposals": [PLACED], "folders": FOLDERS, "failed": False})
-        [entry] = self.card.organize_list.entries
-
-        moved = Path("C:/vault/2 Areas/School/ETW2001/ETW Report.md")
-        with patch("claudeChatCard.inboxOrganize.organize", return_value={"path": moved, "linked": False}):
-            entry.row.clicked.emit(entry.row.path)
-
-        self.assertEqual(entry.row.detail_label.text(), "moved, but couldn't add its links")
-
 
 class ChatSlotTests(unittest.TestCase):
     """The dedupe rule: reopening the same wedge's card reveals it instead

@@ -10,7 +10,6 @@
 # This widget never touches the vault itself - it only emits `picked`, and
 # ChatCard calls vaultSearch.confirm_pick or append_vocab_row and reports
 # back via showConnected/showSaved/showFailed. NoteRow and NoteList are
-# shared with the `! organize` box (organizeList.py), so both look the same.
 
 from pathlib import Path
 
@@ -89,8 +88,8 @@ class SearchIcon(QWidget):
 
 class NoteRow(QFrame):
     """One clickable row: a name, its folder right-aligned in dim mono, and
-    a smaller second line, hidden until it has something to say. The
-    `! organize` box's rows pass no `dot_color` and get no dot."""
+    a smaller second line, hidden until it has something to say. A row
+    that passes no `dot_color` gets no dot."""
 
     clicked = Signal(str)
 
