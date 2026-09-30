@@ -9,6 +9,12 @@
 
 <p align="center">A Windows overlay: press a hotkey, pick a wedge, and get a todo list, a sticky note or a Claude chat floating above whatever you're doing.</p>
 
+<p align="center">
+  <a href="https://youtu.be/jrh_ZC58SSM">
+    <img src="https://img.youtube.com/vi/jrh_ZC58SSM/maxresdefault.jpg" alt="Watch the Bel demo on YouTube" width="640">
+  </a>
+</p>
+
 ## Features
 
 - **Pie menu** that opens around your cursor on a global hotkey. Wedges are editable from the Settings wedge.
@@ -23,7 +29,16 @@
 - Python 3.13 (only to run from source)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in, so `claude` works in a terminal. The chat card runs it in the background.
 
-## Quickstart
+## Install
+
+1. Install [Claude Code](https://docs.claude.com/en/docs/claude-code) and log in, so `claude` works in a terminal.
+2. Download `Bel-Setup-<version>.exe` from the [latest release](https://github.com/Marlve/bel/releases/latest) and run it.
+3. Tick **Start Bel when I sign in to Windows** if you want it at logon, then finish the wizard. Bel launches and sits in the system tray.
+4. Press **Ctrl+Shift+Space** to open the pie menu.
+
+Windows may show a SmartScreen warning because the installer isn't code-signed. Choose **More info → Run anyway**. Bel checks for updates itself; to upgrade by hand, run the newer installer over the old one. It closes a running Bel first.
+
+## Run from source
 
 ```powershell
 git clone <this repo's url> bel
@@ -73,7 +88,7 @@ Open **Settings → Connect** and press **Browse** to choose your vault folder. 
 
 Until you choose one there is no vault, and the vault features stay quiet: `? word` finds no notes and Bel answers it like a normal question, and `! save` has no notes to pick from. Nothing crashes, but nothing gets filed either. Everything else works without a vault.
 
-## Build an exe
+## Build an exe or installer
 
 ```powershell
 pip install -r requirements-build.txt
@@ -81,6 +96,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
 
 This produces `dist\Bel\Bel.exe`. Quit Bel from the tray first, or the build stops with a message telling you to.
+
+To build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and run `scripts\build-installer.ps1`. It runs `build.ps1` and writes `dist\installer\Bel-Setup-<version>.exe`, with the version taken from `src\version.py`.
 
 To start Bel at logon, run `scripts\install-autostart.ps1` once. `scripts\Stop Bel.bat`, `Start Bel.bat` and `Reset Bel.bat` are double-clickable helpers, and `scripts\Uninstall Bel.bat` removes the autostart entry.
 
