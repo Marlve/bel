@@ -36,13 +36,14 @@ def parse_hotkey(hotkey):
 
 
 class HotkeyFilter(QAbstractNativeEventFilter):
-    def __init__(self, on_hotkey):
+    def __init__(self, on_hotkey, hotkey_id=HOTKEY_ID):
         super().__init__()
         self.on_hotkey = on_hotkey
+        self.hotkey_id = hotkey_id
 
     def nativeEventFilter(self, event_type, message):
         msg = ctypes.wintypes.MSG.from_address(int(message))
-        if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
+        if msg.message == WM_HOTKEY and msg.wParam == self.hotkey_id:
             self.on_hotkey()
             return True, 0
         return False, 0
@@ -51,16 +52,17 @@ class HotkeyFilter(QAbstractNativeEventFilter):
 class HotkeyListener(QObject):
     triggered = Signal()
 
-    def __init__(self, hotkey):
+    def __init__(self, hotkey, hotkey_id=HOTKEY_ID):
         super().__init__()
         self.hotkey = hotkey
-        self.filter = HotkeyFilter(self.triggered.emit)
+        self.hotkey_id = hotkey_id  # one per listener, so two combos don't answer each other
+        self.filter = HotkeyFilter(self.triggered.emit, hotkey_id)
 
     def start(self):
         """Must run on the Qt main thread: a hotkey registered without a
         window belongs to the thread that registered it."""
         modifiers, vk = parse_hotkey(self.hotkey)
-        if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, modifiers, vk):
+        if not ctypes.windll.user32.RegisterHotKey(None, self.hotkey_id, modifiers, vk):
             print(f"Bel: couldn't register {self.hotkey} - another app (or another Bel) already has it", file=sys.stderr)
             return
         QApplication.instance().installNativeEventFilter(self.filter)

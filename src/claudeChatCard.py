@@ -38,7 +38,7 @@ from anims import curves
 from claudeChatCardState import ChatCardState
 from claudeChatCardAnimation import ChatCardAnimation
 from claudeEdgeDockState import OPEN
-from util import reduced_motion
+from util import force_foreground, reduced_motion
 
 STORE_KEY = "chat"
 
@@ -417,8 +417,7 @@ class ChatCard(QWidget):
         self.selector.hide()
         self.selector.deleteLater()
         self.selector = None
-        self.activateWindow()
-        self.composer.setFocus()
+        self.focusComposer()
 
     def clearAttachment(self):
         self.attachment = None
@@ -867,6 +866,14 @@ class ChatCard(QWidget):
                 self.activateWindow()  # see focusComposerIfPending()'s comment on WA_ShowWithoutActivating
                 self.composer.setFocus()
 
+    def focusComposer(self):
+        """Hands the composer the OS keyboard focus, from wherever it is:
+        the capture overlay just closed, or another app has the foreground
+        (see focusComposerIfPending()'s comment on WA_ShowWithoutActivating)."""
+        force_foreground(int(self.winId()))
+        self.activateWindow()
+        self.composer.setFocus()
+
     def redock(self):
         self.animation.redock()
 
@@ -1017,6 +1024,20 @@ class ChatSlot:
         else:
             card.reveal(focus=True)
         return True
+
+    def focus(self):
+        """The refocus hotkey: puts the keyboard in the open chat, tucked
+        away or not. Never minimizes - unlike reselecting the wedge, pressing
+        it twice leaves the chat where it is."""
+        card = self.card
+        if card is None:
+            return
+        if card.isOpen() and card.isOnScreen():
+            card.focusComposer()
+        else:
+            card.redock()
+            card.reveal(focus=True)
+            card.focusComposer()
 
     def open(self, born, prompt, wedge_id, action):
         card = self.cardFor(wedge_id)
