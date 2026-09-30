@@ -145,6 +145,7 @@ REJECT_SHAKES = 2
 # so the chat card no longer reads as a different surface from the ring. ---
 
 CHAT_MONO_FAMILY = "Consolas"
+CHAT_TEXT_FAMILY = "Geist, 'Segoe UI'"  # proportional, for reading replies - the rest of the UI stays mono
 
 CHAT_SURFACE = SURFACE  # card surface
 CHAT_BORDER = BORDER_DIM  # card border, open
@@ -423,14 +424,14 @@ def chat_turn_stylesheet():
     # Full CHAT_BODY_TEXT brightness rather than a dimmer secondary tone -
     # Bel's reply is the thing being read here, so it shouldn't be styled
     # as lower-priority than the user's own bubble text.
-    return f"color: {CHAT_BODY_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
+    return f"color: {CHAT_BODY_TEXT}; font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
 
 
 def chat_bubble_stylesheet():
     tl, tr, br, bl = CHAT_BUBBLE_RADIUS
     return (
         f"background: {CHAT_USER_BUBBLE}; color: {CHAT_BODY_TEXT};"
-        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
         f"padding: {CHAT_BUBBLE_PADDING_V}px {CHAT_BUBBLE_PADDING_H}px;"
         f"border-top-left-radius: {tl}px; border-top-right-radius: {tr}px;"
         f"border-bottom-right-radius: {br}px; border-bottom-left-radius: {bl}px;"
