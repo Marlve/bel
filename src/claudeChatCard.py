@@ -44,6 +44,18 @@ STORE_KEY = "chat"
 
 COMMAND_PREFIX = "!"
 
+HELP_LINES = ("?help", "? help", "!help", "! help")
+HELP_TEXT = """| type | what it does |
+| --- | --- |
+| `? word` | look a word or concept up in your vault |
+| `! today` | what is due today |
+| `! week` | what is due this week |
+| `! save` | file my last reply at the end of a note you pick |
+| `! ss` | drag a screenshot to send with your next message |
+| `! help` | this list |
+
+Ctrl+Shift+Space opens the pie menu, Ctrl+Alt+Space puts the keyboard back in this chat."""
+
 SHOT_SETTLE_MS = 120  # for the card to actually leave the screen before it is grabbed
 SHOT_TRANSCRIPT_HEIGHT = 96
 
@@ -350,6 +362,9 @@ class ChatCard(QWidget):
     def send(self, text):
         if self.state.request is not None or self.lookup is not None or self.state.action is None:
             return
+        if text.strip().casefold() in HELP_LINES:
+            self.startHelp(text)
+            return
         query = vaultSearch.lookup_query(text)
         if query is not None:
             self.startLookup(text, query)
@@ -620,6 +635,17 @@ class ChatCard(QWidget):
             picker.showSaved()
         QTimer.singleShot(0, self.scrollToBottomIfNeeded)
 
+    # --- `! help` ---
+
+    def startHelp(self, text):
+        """The list of what can be typed here. No request, no session, and
+        not a reply worth `! save`."""
+        self.appendUserTurn(text)
+        label = self.appendClaudeTurn()
+        index = self.streaming_index
+        self.state.turns[index]["unsaveable"] = True
+        self.showReply(label, index, HELP_TEXT)
+
     # --- `!` commands ---
 
     def startCommand(self, text, command):
@@ -632,7 +658,7 @@ class ChatCard(QWidget):
         if command in timetable.COMMANDS:
             self.lookup = self.calendar_factory(command, lambda reply: self.onTimetableResult(label, index, reply))
         else:
-            self.showReply(label, index, "unknown command — try ! today, ! week, ! save or ! ss")
+            self.showReply(label, index, "unknown command — try ! help")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)
