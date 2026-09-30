@@ -2,11 +2,14 @@
 
 import sys
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QLockFile, QDir
+from PySide6.QtGui import QIcon
 
 from pieMenu import PieMenu
 from hotkey import HotkeyListener
 from claude import resetClaudeHistory
+from trayIcon import TrayIcon
+from assets import assetPath
 import style
 
 PIE_MENU_HOTKEY = "ctrl+shift+space"
@@ -14,8 +17,16 @@ CHAT_FOCUS_HOTKEY = "ctrl+alt+space"  # brings the open chat back under the keyb
 
 
 def main():
-    resetClaudeHistory()
     app = QApplication(sys.argv)
+
+    # One instance only: a second copy would run with dead hotkeys, since the first already owns them.
+    lock = QLockFile(QDir.tempPath() + "/bel.lock")
+    if not lock.tryLock(0):
+        sys.exit(0)
+
+    resetClaudeHistory()
+    app.setWindowIcon(QIcon(assetPath("bel.ico")))
+    tray = TrayIcon(app)
 
     screen = app.primaryScreen()
     # size() is in logical (DPI-scaled) pixels; multiply back to physical

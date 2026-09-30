@@ -8,3 +8,6 @@ docs
 extra
 .vscode
 .scratch
+build/
+dist/
+*.spec
