@@ -40,6 +40,7 @@ class TodoList(QWidget):
         self.card = card
         self.items = []  # [{"text": ..., "done": bool}, ...]
         self.press_row = None
+        self.selected = None  # keyboard-highlighted row, or None while typing in the add-field
         self.animation = TodoListAnimation(self)
 
     @property
@@ -69,6 +70,23 @@ class TodoList(QWidget):
         else:
             self.animation.cancelRemoval(item)
 
+    def moveSelection(self, delta):
+        """Up past the first row hands the highlight back to the add-field."""
+        if not self.items:
+            return
+        if self.selected is None:
+            self.selected = 0 if delta > 0 else len(self.items) - 1
+        else:
+            moved = self.selected + delta
+            self.selected = None if moved < 0 else min(moved, len(self.items) - 1)
+        if self.selected is not None:
+            self.card.scroll.ensureVisible(0, (self.selected + 0.5) * style.TODO_ROW_HEIGHT, 0, style.TODO_ROW_HEIGHT)
+        self.update()
+
+    def toggleSelected(self):
+        if self.selected is not None:
+            self.toggle(self.selected)
+
     def removeIfStillDone(self, item):
         self.animation.removeIfStillDone(item)
 
@@ -86,6 +104,8 @@ class TodoList(QWidget):
                 break
         else:
             return
+        if self.selected is not None:
+            self.selected = min(self.selected, len(self.items) - 1) if self.items else None
         self.updateHeight()
         self.update()
         self.card.scheduleSave()
@@ -106,6 +126,8 @@ class TodoList(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        if self.selected is not None:
+            painter.fillRect(0, self.selected * style.TODO_ROW_HEIGHT, self.width(), style.TODO_ROW_HEIGHT, QColor(style.CHAT_CODE_BG))
         for index, item in enumerate(self.items):
             self.paintRow(painter, index, item)
 
@@ -247,6 +269,7 @@ class TodoCard(FloatingCard, QWidget):
     def addItem(self):
         text = self.add_field.text().strip()
         if not text:
+            self.list.toggleSelected()  # Enter on an empty field ticks the highlighted row
             return
         self.list.items.append({"text": text, "done": False})
         self.list.updateHeight()
@@ -276,6 +299,7 @@ class TodoCard(FloatingCard, QWidget):
 
     def hideEvent(self, event):
         self.list.removeDone()
+        self.list.selected = None
         self.save_timer.stop()
         self.save()
         super().hideEvent(event)
@@ -288,6 +312,9 @@ class TodoCard(FloatingCard, QWidget):
     # --- input ---
 
     def eventFilter(self, watched, event):
+        if watched is self.add_field and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+            self.list.moveSelection(-1 if event.key() == Qt.Key_Up else 1)
+            return True
         if watched is self.add_field and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
             self.hide()
             return True
