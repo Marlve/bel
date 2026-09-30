@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette, QCursor
 from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
 
 import cardStore
@@ -28,6 +28,7 @@ import chatMarkdown
 import claude
 import dockCorner
 import inboxOrganize
+import screenshot
 import style
 import timetable
 import vaultSearch
@@ -45,6 +46,9 @@ from util import reduced_motion
 STORE_KEY = "chat"
 
 COMMAND_PREFIX = "!"
+
+SHOT_SETTLE_MS = 120  # for the card to actually leave the screen before it is grabbed
+SHOT_TRANSCRIPT_HEIGHT = 96
 
 
 def command_name(text):
@@ -123,6 +127,8 @@ class ChatCard(QWidget):
         self.breakdown_block = None  # the latest sentence lookup's breakdown, if it got one
         self.breakdown_request = None  # its off-thread resolve, while that is still in flight
         self.due_list = None  # the latest `! today` / `! week`'s "what is due" box, if it had events
+        self.selector = None  # the `! ss` region selector, while it is open
+        self.attachment = None  # (path, pixmap) of the screenshot waiting to ride on the next chat message
 
         self.buildContent()
         self.setContent(False)
@@ -285,6 +291,10 @@ class ChatCard(QWidget):
         root.addLayout(header)
         root.addSpacing(style.SPACE_2)
         root.addWidget(self.scroll, 1)
+        self.chip = screenshot.ShotChip(self)
+        self.chip.cleared.connect(self.clearAttachment)
+        self.chip.hide()
+        root.addWidget(self.chip)
         # Matches the card's own bottom padding, so the composer sits as far
         # from the transcript above it as from the card's edge below it - see
         # card-visual-polish/03's live-check follow-up.
@@ -294,11 +304,13 @@ class ChatCard(QWidget):
     def setContent(self, visible):
         for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(visible)
+        self.chip.setVisible(visible and self.attachment is not None)
 
     def setCompactVisual(self, compact):
         """TAB and HIDDEN show the bare frame only."""
         for widget in (self.header_label, self.minimize_button, self.close_button, self.scroll, self.composer):
             widget.setVisible(not compact)
+        self.chip.setVisible(not compact and self.attachment is not None)
 
     def focusComposerIfPending(self):
         """Shared by the initial flight-landing and every later dock-tween
@@ -351,10 +363,15 @@ class ChatCard(QWidget):
             self.startLookup(text, query)
             return
         command = command_name(text)
+        if command == "ss":
+            self.startScreenshot()
+            return
         if command is not None:
             self.startCommand(text, command)
             return
-        self.appendUserTurn(text)
+        shot = self.attachment
+        self.clearAttachment()
+        self.appendUserTurn(text, shot[1] if shot else None)
         self.streaming_label = self.appendClaudeTurn()
         self.state.streaming_text = ""
         self.composer.setReadOnly(True)
@@ -364,10 +381,56 @@ class ChatCard(QWidget):
         # reaches a conversation already under way (see claude.SOCRATIC_RULE).
         # The transcript above still shows the bare line he typed.
         message = text + claude.SOCRATIC_RULE if self.state.socratic else text
+        if shot:
+            message += f"\n\n[The user attached a screenshot at {shot[0]}. Read that image file to see it.]"
         self.state.request = self.state.action(message, session_id=self.state.session_id)
         self.state.request.chunk.connect(self.onChunk)
         self.state.request.session_started.connect(self.onSessionStarted)
         self.state.request.finished.connect(self.onStreamFinished)
+
+    # --- `! ss` ---
+
+    def startScreenshot(self):
+        """Nothing goes in the transcript: this only readies an attachment
+        for the next message. The card fades out first so it isn't in its
+        own shot; the frozen grab is taken before the selector appears."""
+        if self.selector is not None:
+            return
+        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        self.setWindowOpacity(0)
+        QTimer.singleShot(SHOT_SETTLE_MS, lambda: self.openSelector(screen))
+
+    def openSelector(self, screen):
+        frozen = screen.grabWindow(0)
+        self.setWindowOpacity(1)
+        self.selector = screenshot.RegionSelector(screen, frozen)
+        self.selector.selected.connect(self.onShotSelected)
+        self.selector.cancelled.connect(self.closeSelector)
+        self.selector.open()
+
+    def onShotSelected(self, pixmap):
+        try:
+            path = screenshot.save(pixmap)
+        except OSError:
+            self.closeSelector()
+            label = self.appendClaudeTurn()
+            self.showReply(label, self.streaming_index, "couldn't save the screenshot")
+            return
+        self.attachment = (path, pixmap)
+        self.chip.show_shot(pixmap)
+        self.chip.show()
+        self.closeSelector()
+
+    def closeSelector(self):
+        self.selector.hide()
+        self.selector.deleteLater()
+        self.selector = None
+        self.activateWindow()
+        self.composer.setFocus()
+
+    def clearAttachment(self):
+        self.attachment = None
+        self.chip.hide()
 
     def onSessionStarted(self, session_id):
         self.state.session_id = session_id
@@ -533,7 +596,7 @@ class ChatCard(QWidget):
         elif command == "organize":
             self.lookup = self.organize_factory(lambda result: self.onOrganizeResult(label, index, result))
         else:
-            self.showReply(label, index, "unknown command — try ! today, ! week, ! organize or ! socratic")
+            self.showReply(label, index, "unknown command — try ! today, ! week, ! organize, ! ss or ! socratic")
             return
         self.composer.setReadOnly(True)
         self.animation.startTyping(label)
@@ -621,9 +684,21 @@ class ChatCard(QWidget):
 
     # --- transcript ---
 
-    def appendUserTurn(self, text):
+    def appendUserTurn(self, text, shot=None):
         follows_claude = bool(self.state.turns) and self.state.turns[-1]["role"] == "claude"
         self.state.turns.append({"role": "user", "text": text})
+
+        if shot is not None:
+            thumb = QLabel()
+            thumb.setPixmap(screenshot.thumbnail(shot, SHOT_TRANSCRIPT_HEIGHT))
+            thumb.setStyleSheet(f"border: 1px solid {style.CHAT_BORDER}; background: transparent;")
+            shot_row = QHBoxLayout()
+            if follows_claude:
+                shot_row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
+                follows_claude = False  # the gap belongs above the thumbnail, not between it and the bubble
+            shot_row.addStretch(1)
+            shot_row.addWidget(thumb)
+            self.insertTurnRow(shot_row)
 
         bubble = QLabel(text)
         # Qt.AutoText's rich-text sniff can't fire on html.escape()'d text

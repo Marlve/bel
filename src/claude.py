@@ -16,6 +16,11 @@ from PySide6.QtCore import QObject, Signal
 # anyway (ChatCard's session_id lives only in memory).
 CLAUDE_CWD = Path.home() / ".bel" / "claude-cwd"
 
+# `! ss` crops land here. Inside CLAUDE_CWD on purpose: the CLI reads
+# under its cwd without a permission prompt, and -p mode has no way to answer
+# one. resetClaudeHistory() empties it at startup, like the session bucket.
+SHOTS_DIR = CLAUDE_CWD / "shots"
+
 # Bel's one system prompt, appended to every `claude` call - chat, a `?`
 # lookup, `! organize` and the todo wedge alike. He is a tutor throughout:
 # what he is for is answering things while studying.
@@ -81,6 +86,7 @@ def resetClaudeHistory():
   encoded = str(CLAUDE_CWD).translate(str.maketrans(":\\/.", "----"))
   bucket = Path.home() / ".claude" / "projects" / encoded
   shutil.rmtree(bucket, ignore_errors=True)
+  shutil.rmtree(SHOTS_DIR, ignore_errors=True)
 
 def askBel(prompt, session_id=None, on_process=None, on_session=None):
   """Yields each text delta as Claude streams its response, instead of

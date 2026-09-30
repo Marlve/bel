@@ -60,11 +60,18 @@ reworded question ("? Dijkstra's algorithm") doesn't file a second note about
 something already written. It never suppresses the draft.
 
 **Command**:
-A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`): Bel runs
+A chat message prefixed `!` (`! today`, `! week`, `! organize`, `! socratic`, `! ss`): Bel runs
 that command instead of sending the message to Claude as normal chat, and like
 a lookup it never joins the Claude session (`claudeChatCard.command_name`). A
 bare `!` is normal chat. `! socratic` is the odd one out - it runs no request
 at all, only flipping how the next chat turn is asked.
+
+**Screenshot** (`! ss`):
+Drag a rectangle on the screen under the cursor; the crop waits as a thumbnail
+chip above the composer and rides on the next plain chat message only. It is
+saved under `claude.SHOTS_DIR` (inside the CLI's cwd, so no permission prompt)
+and the message ends with its path for Claude to read. Like `! socratic`, it
+runs no request itself and adds no transcript turn.
 
 **Socratic mode**:
 Off by default; `! socratic` toggles it, and the reply reads the new state
