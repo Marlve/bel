@@ -23,7 +23,9 @@ _QUOTE_RE = re.compile(r"^&gt;\s?(.*)$")  # runs after html.escape()
 _RULE_RE = re.compile(r"^(?:-{3,}|\*{3,}|_{3,})$")
 _LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
 
-_FENCE_TOKEN = "\x00%d\x00"
+_TABLE_DIVIDER_CELL_RE = re.compile(r"^:?-+:?$")
+
+_FENCE_TOKEN ="\x00%d\x00"
 _FENCE_TOKEN_RE = re.compile(r"^\x00(\d+)\x00$")
 _CODE_TOKEN = "\x01%d\x01"
 
@@ -49,12 +51,76 @@ def render(text):
         return _FENCE_TOKEN % (len(fences) - 1)
 
     body = _FENCE_RE.sub(stash_fence, escaped)
-    lines = [_render_line(line) for line in body.split("\n")]
+    lines = [_render_line(line) for line in _stash_tables(body.split("\n"), fences)]
     body = _join(_wrap_lists(lines))
 
     for index, fence in enumerate(fences):
         body = body.replace(_FENCE_TOKEN % index, fence)
     return body
+
+
+def _table_cells(line):
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|"):
+        line = line[:-1]
+    return [cell.strip() for cell in line.split("|")]
+
+
+def _is_table_row(line):
+    return line.strip().startswith("|")
+
+
+def _is_table_divider(line):
+    return "|" in line and all(_TABLE_DIVIDER_CELL_RE.match(cell) for cell in _table_cells(line))
+
+
+def _stash_tables(lines, blocks):
+    """Replaces each markdown table (a `|` row, a `---` divider row, then more
+    `|` rows) with one placeholder line, its html parked in `blocks` beside
+    the fences. Until the divider row streams in, the header is just a line
+    of text - so a half-received table never renders half-styled."""
+    out = []
+    index = 0
+    while index < len(lines):
+        if _is_table_row(lines[index]) and index + 1 < len(lines) and _is_table_divider(lines[index + 1]):
+            end = index + 2
+            while end < len(lines) and _is_table_row(lines[end]):
+                end += 1
+            blocks.append(_table_html(lines[index], lines[index + 1], lines[index + 2:end]))
+            out.append(_FENCE_TOKEN % (len(blocks) - 1))
+            index = end
+        else:
+            out.append(lines[index])
+            index += 1
+    return out
+
+
+def _table_html(header, divider, rows):
+    aligns = []
+    for cell in _table_cells(divider):
+        if cell.startswith(":") and cell.endswith(":"):
+            aligns.append("center")
+        elif cell.endswith(":"):
+            aligns.append("right")
+        else:
+            aligns.append("left")
+
+    def cells(line, tag, style_css):
+        texts = _table_cells(line)[:len(aligns)]
+        texts += [""] * (len(aligns) - len(texts))  # a short row still fills its columns
+        return "".join(
+            f'<{tag} align="{align}" style="{style_css}">{_inline(text)}</{tag}>'
+            for text, align in zip(texts, aligns)
+        )
+
+    pad = f"padding:{style.CHAT_TABLE_PADDING}px;"
+    head_css = f"{pad} background-color:{style.CHAT_CODE_BG};"
+    body_css = f"{pad} border-top:1px solid {style.CHAT_BORDER};"
+    head = f"<tr>{cells(header, 'th', head_css)}</tr>"
+    body = "".join(f"<tr>{cells(row, 'td', body_css)}</tr>" for row in rows)
+    return f'<table width="100%" cellspacing="0" cellpadding="0">{head}{body}</table>'
 
 
 def _join(pieces):
