@@ -15,5 +15,7 @@ $iscc = @(
 if (-not $iscc) { throw "Inno Setup 6 not found - run: winget install JRSoftware.InnoSetup" }
 
 & (Join-Path $PSScriptRoot 'build.ps1')
-& $iscc installer\bel.iss
+# src\version.py is the one place the version lives; Bel checks updates against it.
+$version = (Select-String -Path src\version.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
+& $iscc "/DAppVersion=$version" installer\bel.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
