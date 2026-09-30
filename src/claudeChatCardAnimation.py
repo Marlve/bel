@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QGraphicsEffect
 
 import dockCorner
 import screenBounds
+import chatMarkdown
 import style
 from anims import curves, pose
 from anims.clock import Clock, Tween
@@ -145,7 +146,7 @@ class ChatCardAnimation:
             f'<span style="color:{pose.mix(style.MUTED, style.CHAT_ACCENT, b).name()};">•</span>'
             for b in brightnesses
         )
-        self.typing_label.setText(dots)
+        self.typing_label.setText(chatMarkdown.reply_header("typing") + dots)
 
     # --- the note picker popping in under a `?` lookup's answer ---
 
@@ -296,7 +297,7 @@ class ChatCardAnimation:
         rather than a second tween class."""
         area = self.screen.availableGeometry()
         self.state.corner = corner
-        self.state.dock_rect = dockCorner.rect(corner, area, style.CHAT_SIZE, style.CHAT_MARGIN)
+        self.state.dock_rect = dockCorner.rect(corner, area, self.state.dock_rect.width(), style.CHAT_MARGIN)
         self.parent.onCornerChanged(corner)
 
         if self.edge_trigger:

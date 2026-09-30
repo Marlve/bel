@@ -65,8 +65,7 @@ class ClaudeWorkerFailedTests(unittest.TestCase):
 
 
 class AskBelArgsTests(unittest.TestCase):
-    """One prompt for every path - chat, `?` and the todo wedge (Derich,
-    2026-09-18). What keeps the strict-output callers working is BEL_PROMPT's
+    """One prompt for every path - chat, `?` and the todo wedge (2026-09-18). What keeps the strict-output callers working is BEL_PROMPT's
     last rule, not a prompt of their own."""
 
     def argv(self, **kwargs):

@@ -1,13 +1,49 @@
 import ctypes
 
+import cardStore
+
 SPI_GETCLIENTAREAANIMATION = 0x1042
+MOTION_STORE_KEY = "motion"
 
 
 def reduced_motion():
-    """True when Windows' "Show animations" accessibility setting is off."""
+    """True when Windows' "Show animations" accessibility setting is off, or
+    Bel's own Reduce motion switch in Settings is on."""
     enabled = ctypes.c_int(1)
     ctypes.windll.user32.SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, ctypes.byref(enabled), 0)
-    return not enabled.value
+    return not enabled.value or reduce_motion_setting()
+
+
+_reduce_setting = None  # read from disk once - motion is asked on every hover
+
+
+def reduce_motion_setting():
+    global _reduce_setting
+    if _reduce_setting is None:
+        _reduce_setting = bool(cardStore.load(MOTION_STORE_KEY, {}).get("reduce", False))
+    return _reduce_setting
+
+
+def save_reduce_motion_setting(reduce):
+    global _reduce_setting
+    _reduce_setting = bool(reduce)
+    cardStore.save(MOTION_STORE_KEY, {"reduce": _reduce_setting})
+
+
+class LiveMotion:
+    """A `motion` flag that follows reduced_motion() on every read, so the
+    Settings switch (or Windows') takes effect on an open card at once,
+    until something assigns `motion` explicitly."""
+
+    motion_override = None
+
+    @property
+    def motion(self):
+        return self.motion_override if self.motion_override is not None else not reduced_motion()
+
+    @motion.setter
+    def motion(self, value):
+        self.motion_override = value
 
 
 def force_foreground(hwnd):

@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $bel = Join-Path $env:USERPROFILE '.bel'
 
 # Derived or throwaway, all of it rebuilt on demand. Two things are
-# deliberately NOT here, because they are choices Derich made rather than
+# deliberately NOT here, because they are choices the user made rather than
 # state Bel derived, and neither can be reproduced from the repo:
 #   timetable.ical-url    - the actual calendar subscription URL
 #   cards/wedges.json     - the pie menu's relabelled/reordered wedges

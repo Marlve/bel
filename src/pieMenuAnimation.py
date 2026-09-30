@@ -8,15 +8,14 @@
 
 from anims.clock import Clock, HoverClock
 from pieMenuState import HIDDEN, OPEN
-from util import reduced_motion
+from util import LiveMotion
 
 
-class PieMenuAnimation:
+class PieMenuAnimation(LiveMotion):
     def __init__(self, parent, state, wedge_count, prompt_flow_clock, request_repaint, on_select_done, on_closed):
         self.state = state
         self.request_repaint = request_repaint
         self.on_closed = on_closed
-        self.motion = not reduced_motion()
 
         # Elapsed ms into each phase. A phase that hasn't run sits at 0,
         # where its pose is the resting one, so they all just multiply

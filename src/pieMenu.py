@@ -7,11 +7,12 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QWidget
-from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QPen, QRadialGradient
+from PySide6.QtGui import QPainter, QColor, QCursor, QPen, QRadialGradient
 from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
 
 import style
 import screenBounds
+from ringGeometry import ring_segment
 from anims import pose
 from promptFlow import PromptFlow
 from claudeChatCard import ChatSlot
@@ -66,19 +67,6 @@ def logHotkeyPress(phase):
             f.write(f"{datetime.now().isoformat(timespec='seconds')} phase={phase}\n")
     except OSError:
         pass
-
-
-def ring_segment(outer, inner, start_angle, span):
-    """Annular sector centered on the origin. Angles are Qt's: degrees,
-    0 = right, growing counter-clockwise."""
-    outer_rect = QRectF(-outer, -outer, outer * 2, outer * 2)
-    inner_rect = QRectF(-inner, -inner, inner * 2, inner * 2)
-    path = QPainterPath()
-    path.arcMoveTo(outer_rect, start_angle)
-    path.arcTo(outer_rect, start_angle, span)
-    path.arcTo(inner_rect, start_angle + span, -span)
-    path.closeSubpath()
-    return path
 
 
 class PieMenu(QWidget):

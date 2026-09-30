@@ -5,10 +5,10 @@
 #
 # write_concept_note/append_vocab_row are the confirm-before-write half of
 # issue 03 steps 4-5: nothing writes to the vault until one of these is
-# called explicitly, which only happens after Derich confirms the drafted
+# called explicitly, which only happens after the user confirms the drafted
 # text - ExplainQuery itself never calls them.
 #
-# The `[[Concept]]` link goes into whichever note Derich clicks in card.md's
+# The `[[Concept]]` link goes into whichever note the user clicks in card.md's
 # note picker, shown on every `?` lookup - nothing is remembered between
 # lookups (this replaced issue 05's sticky set_current_note designation). On
 # a concept miss, that click is also the confirmation for writing the draft
@@ -19,7 +19,7 @@
 # (parse_breakdown), which resolve_breakdown matches against
 # Korean/Vocab.md and Korean/Grammar.md. Nothing is saved yet, and nothing
 # resolves yet either - both wait on the surface that would offer the misses
-# for filing, which is Derich's to design.
+# for filing, which is the user's to design.
 #
 # insert_concept_link is a no-op rather than an error when the picked note
 # can't be found - it's a convenience on top of the primary
@@ -134,7 +134,7 @@ def vocab_note(db_path=None, now=None):
     finally:
         conn.close()
     for path, mtime in rows:
-        if folder_matches(path, "Areas", "Korean", "Vocab.md"):
+        if folder_matches(path, "Reference", "Vocab.md"):
             return {"path": path, "recent": now - mtime <= RECENT_SECONDS}
     return None
 
@@ -184,7 +184,7 @@ def note_choices(vault_path=None, db_path=None):
 def search_notes(query, db_path=None):
     """Checks for an existing answer to `query` before Bel explains or files
     anything new: an atomic concept note at `<Reference>/<query>.md`, or a
-    matching row inside `<Areas>/Korean/Vocab.md`. Returns a dict describing
+    matching row inside `<Reference>/Vocab.md`. Returns a dict describing
     the hit, or None on a miss.
 
     Looks up paths first and only fetches a candidate's content once it has
@@ -205,7 +205,7 @@ def search_notes(query, db_path=None):
                 return {"kind": "concept", "path": path, "content": content}
 
         for rowid, path in rows:
-            if folder_matches(path, "Areas", "Korean", "Vocab.md"):
+            if folder_matches(path, "Reference", "Vocab.md"):
                 content = conn.execute("SELECT content FROM notes WHERE rowid = ?", (rowid,)).fetchone()[0]
                 row = matching_table_row(content, query)
                 if row:
@@ -239,14 +239,14 @@ def search_query_terms(query):
 def search_content(query, db_path=None, now=None):
     """The indexed notes whose text holds every word of `query`, best match
     first and capped at CONTENT_MATCH_LIMIT. Where search_notes answers "this
-    note is the answer", these are maybes: notes Derich may already have
+    note is the answer", these are maybes: notes the user may already have
     written on the subject, under a title he didn't think to type. Returned
     in the picker's note shape, like all_notes and vocab_note, so the card
     can draw one without reshaping it.
 
     Scoped to the content column because the FTS table indexes `path` too - an
-    unscoped MATCH answers "Korean" with every note under `2 Areas/Korean/`,
-    on the strength of the folder name alone. Reference is not excluded the
+    unscoped MATCH answers a word that is also a folder name with every note
+    under it, on the strength of the folder name alone. Reference is not excluded the
     way the note picker excludes it: a duplicate would be filed there, so it
     is the folder that matters most here.
 
@@ -339,8 +339,8 @@ def resolve_breakdown(breakdown, db_path=None):
             # One read transaction, so a refresh() committing between the two
             # reads can't reuse a matched rowid for a different note.
             conn.execute("BEGIN")
-            vocab = table_note_content(conn, "Areas", "Korean", "Vocab.md")
-            grammar = table_note_content(conn, "Areas", "Korean", "Grammar.md")
+            vocab = table_note_content(conn, "Reference", "Vocab.md")
+            grammar = table_note_content(conn, "Reference", "Grammar.md")
         finally:
             conn.close()
     except (sqlite3.Error, OSError):
@@ -446,7 +446,7 @@ def existing_note_path(note, vault_path=None):
     """The file for vault-relative `note`, or None when it is off limits or
     no longer exists - so a write never creates a stub or reaches outside
     the vault."""
-    vault_path = vault_path or vaultIndex.VAULT_PATH
+    vault_path = vaultIndex.current_vault(vault_path)
     # `note` is any string as far as a caller knows, so the Private
     # exclusion has to be enforced here (issue 16). Checked on the path
     # string first, so an ordinary Private path is refused without touching
@@ -470,7 +470,7 @@ def existing_note_path(note, vault_path=None):
 
 def insert_concept_link(query, note, gist="", vault_path=None):
     """Adds a `- [[query]] — gist` bullet to the `## Concepts` section of
-    `note` (vault-relative), the note Derich picked in card.md's picker
+    `note` (vault-relative), the note the user picked in card.md's picker
     (issue 25). Bel has no notion of cursor position in a file it doesn't
     render, so the link always goes in that section. A no-op, not an error,
     when the note can no longer be found - see the module comment above.
@@ -529,12 +529,12 @@ def is_valid_note_title(query):
 
 def write_concept_note(query, content, vault_path=None):
     """Writes a confirmed miss-case explanation as a new atomic concept
-    note (issue 03 step 4). Call only after Derich has confirmed the draft
+    note (issue 03 step 4). Call only after the user has confirmed the draft
     - this performs the write with no confirmation of its own, but refuses
     to overwrite an existing note."""
     if not is_valid_note_title(query):
         raise ValueError(f"query must be a single valid note title: {query!r}")
-    vault_path = vault_path or vaultIndex.VAULT_PATH
+    vault_path = vaultIndex.current_vault(vault_path)
     reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
     path = reference / f"{query}.md"
     # "x" (exclusive create) raises FileExistsError rather than clobbering a
@@ -545,7 +545,7 @@ def write_concept_note(query, content, vault_path=None):
 
 
 def confirm_pick(query, result, note, vault_path=None):
-    """Derich clicked `note` in the picker for ExplainQuery's `result` -
+    """The user clicked `note` in the picker for ExplainQuery's `result` -
     card.md's "clicking a row is the action". On a concept hit that only
     inserts the link, named after the matched note's real filename (a hit
     can be case-insensitive, so the query's casing isn't the title's). On a
@@ -562,7 +562,7 @@ def confirm_pick(query, result, note, vault_path=None):
 
 
 def append_reply(note, text, vault_path=None):
-    """Appends `text` - a Bel reply Derich confirmed by clicking `note` in the
+    """Appends `text` - a Bel reply the user confirmed by clicking `note` in the
     picker - to the end of `note` under a dated heading. Only ever adds to
     the end, so nothing already in the note can be lost. None, not an error,
     when the note can't be found or is off limits."""
@@ -589,7 +589,7 @@ def append_reply(note, text, vault_path=None):
 def append_vocab_row(word, translation, vault_path=None):
     """Appends a confirmed word/translation pair to the Korean vocab table
     (issue 03's "same shape applies to Korean vocab" note). Call only after
-    Derich has confirmed the row - clicking Vocab.md in the chat card's
+    the user has confirmed the row - clicking Vocab.md in the chat card's
     picker (issue 23)."""
     return append_korean_row("Vocab.md", ("Word", "Meaning"), word, translation, vault_path=vault_path)
 
@@ -599,7 +599,7 @@ def append_grammar_row(point, meaning, vault_path=None):
     other half of what a sentence breakdown turns up, and the table
     resolve_breakdown already reads to tell a new point from a filed one.
     Same confirm-before-write rule as append_vocab_row: call only for a point
-    Derich has picked, never straight off a breakdown."""
+    the user has picked, never straight off a breakdown."""
     return append_korean_row("Grammar.md", ("Word", "Explanation"), point, meaning, vault_path=vault_path)
 
 
@@ -616,9 +616,9 @@ def with_table_header(lines, header):
     """`lines` with an empty table started at the end. Obsidian only reads
     `| a | b |` as a table row when a header and a `| --- |` separator sit
     above it - without them every appended row is literal text that never
-    renders. Vocab.md hid this because Derich had already made its table by
+    renders. Vocab.md hid this because its table had already been made by
     hand; Grammar.md was created by append_grammar_row from nothing and
-    filled up with bare rows (Derich, 2026-09-20)."""
+    filled up with bare rows (2026-09-20)."""
     lines = list(lines)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
@@ -628,15 +628,15 @@ def with_table_header(lines, header):
 
 
 def append_korean_row(note, header, left, right, vault_path=None):
-    """One row appended to a two-column table under `Areas/Korean/`, shared
+    """One row appended to a two-column table under `Reference/`, shared
     by both confirmed-write paths. One function rather than two because the
     Vocab and Grammar tables are the same shape - a Korean form and its
     English - so a fix to the insert position or the encoding has to reach
     both. `header` is only used when the note has no table yet, and matches
-    the columns Derich already keeps in each note."""
-    vault_path = vault_path or vaultIndex.VAULT_PATH
-    areas = vaultIndex.resolve_top_folder(vault_path, "Areas")
-    path = areas / "Korean" / note
+    the columns the user already keeps in each note."""
+    vault_path = vaultIndex.current_vault(vault_path)
+    reference = vaultIndex.resolve_top_folder(vault_path, "Reference")
+    path = reference / note
     row = f"| {escape_table_cell(left)} | {escape_table_cell(right)} |\n"
     # Bytes in and out, so Windows' text mode can't turn "\n" into CRLF.
     lines = path.read_bytes().decode("utf-8").splitlines(keepends=True) if path.exists() else []
@@ -840,7 +840,7 @@ class ExplainQuery(ClaudeQuery):
     work.
 
     Never writes to the vault: on_result gets the hit or draft plus the
-    notes to pick from, and confirm_pick does the writing once Derich
+    notes to pick from, and confirm_pick does the writing once the user
     clicks one."""
 
     def __init__(

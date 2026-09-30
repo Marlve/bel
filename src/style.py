@@ -1,5 +1,7 @@
 # Centralized colors, sizes and motion for every overlay. Change a value here, not per-window.
 
+import cardStore
+
 # --- Shared neutral palette. One grayscale system - ring, prompt bar, and
 # chat card all read from these same primitives, the way claude-chat-flow.md
 # specified for the chat card alone. No hue anywhere; "accent" is near-white,
@@ -32,11 +34,10 @@ LABEL = PALETTE["500"]  # mono labels, muted body text
 BODY_DIM = PALETTE["700"]  # secondary/idle text
 BODY = PALETTE["800"]  # primary text
 INK = PALETTE["000"]  # near-black, for text on top of the accent
-ACCENT_NEUTRAL = PALETTE["750"]  # the one accent - near-white, not a hue
 
 BACKGROUND = SURFACE + "dd"
 TEXT = BODY
-ACCENT = ACCENT_NEUTRAL
+ACCENT = "#A78BFA"  # violet, the default; apply_accent() swaps it for the Settings choice
 BORDER = BORDER_DIM
 
 FONT_FAMILY = "Geist Mono"
@@ -63,7 +64,7 @@ RING_LABEL = 0.68  # label centroid distance from the center
 WEDGE_IDLE = SURFACE
 WEDGE_BORDER = BORDER_DIM
 WEDGE_HOVER = ACCENT
-WEDGE_PRESSED = BODY_DIM
+WEDGE_PRESSED = "#8B6CEF"  # a step deeper than the hover accent, so the click reads as a press, not a flash
 LABEL_IDLE = BODY_DIM
 LABEL_HOVER = INK
 GLOW = ACCENT
@@ -144,7 +145,7 @@ REJECT_SHAKES = 2
 # also the app's palette everywhere else (see the shared primitives above),
 # so the chat card no longer reads as a different surface from the ring. ---
 
-CHAT_MONO_FAMILY = "Consolas"
+CHAT_MONO_FAMILY = "Geist Mono"
 CHAT_TEXT_FAMILY = "Geist, 'Segoe UI'"  # proportional, for reading replies - the rest of the UI stays mono
 
 CHAT_SURFACE = SURFACE  # card surface
@@ -163,6 +164,10 @@ CHAT_HEADER_SIZE = 9.5  # px mono, 0.14em tracking (applied via QFont.setLetterS
 CHAT_HEADER_TRACKING_PERCENT = 114  # 1 + 0.14em, as QFont.PercentageSpacing wants it
 
 CHAT_SIZE = 480
+CHAT_LOGO_HEIGHT = 18  # px, the Bel mark in the chat header
+CHAT_SIZE_SCALE = 1.0  # the Settings slider's factor on CHAT_SIZE, for the chat card only
+CHAT_SIZE_SCALE_MIN = 0.7
+CHAT_SIZE_SCALE_MAX = 1.3
 CHAT_MARGIN = 8 # from the work area's edges
 CHAT_PADDING = SPACE_2  # 8px card-edge margin, shared by todo/notes/chat so they stay aligned
 
@@ -175,8 +180,6 @@ CHAT_DISMISS_SLIDE = 24  # leaves toward the edge it rested against
 CHAT_TYPING_PERIOD_MS = 900  # one full sweep of the pre-reply typing indicator's 3-dot pulse
 
 CHAT_BUBBLE_RADIUS = (8, 8, 2, 8)  # top-left, top-right, bottom-right, bottom-left
-CHAT_BUBBLE_PADDING_H = 9
-CHAT_BUBBLE_PADDING_V = 7
 CHAT_BUBBLE_MAX_WIDTH_FRACTION = 0.84
 CHAT_BUBBLE_GAP_EXTRA = SPACE_3  # added on top of transcript_layout's own row spacing, only across a role change (user<->Bel), never between two turns from the same role
 CHAT_REPLY_INSET = SPACE_2  # Bel's reply label stops this much short of contentWidth() - a deliberate visual margin instead of running flush with the composer's right edge
@@ -229,6 +232,7 @@ DUE_LABEL_TEXT = LABEL
 # above) so all three read as one family; only their content differs. ---
 
 CARD_BODY = PALETTE["000"]  # todo/chat card body - one step darker than the SURFACE header bar above it
+ACCENT_RULE_HEIGHT = 2  # px, the accent underline beneath the todo/notes title
 CARD_DIVIDER = PALETTE["250"]  # notes' header/body seam (its body is lighter, not darker, than the header)
 # and todo/chat's footer seam (their footer is the same CARD_BODY tone as the body, so only this line marks it)
 
@@ -288,17 +292,30 @@ TODO_ITEM_FADE_MS = 180  # a ticked row fades out over this long before it's act
 
 SETTINGS_WIDTH = CHAT_SIZE
 SETTINGS_HEADER_HEIGHT = 24
+SETTINGS_TAB_HEIGHT = 30
 SETTINGS_ROW_HEIGHT = 32
 SETTINGS_ROW_GAP = 8
 SETTINGS_ARROW_SIZE = 22
+SETTINGS_SLIDER_WIDTH = 150
+SETTINGS_SWATCH_SIZE = 22
+SETTINGS_TOGGLE_WIDTH = 38
+SETTINGS_TOGGLE_HEIGHT = 20
+SETTINGS_INPUT_HEIGHT = 30
+SETTINGS_BUTTON_HEIGHT = 28
 SETTINGS_ROWS = 3  # todo, note, claude - wedgeConfig.DEFAULT_OTHER_WEDGES's length
+SETTINGS_BODY_HEIGHT = 380  # the tallest tab's rows; every tab shares it so the card never resizes
 SETTINGS_HEIGHT = (
     SETTINGS_HEADER_HEIGHT
-    + 10
-    + SETTINGS_ROWS * SETTINGS_ROW_HEIGHT
-    + (SETTINGS_ROWS - 1) * SETTINGS_ROW_GAP
-    + 2 * CHAT_PADDING
+    + SETTINGS_TAB_HEIGHT
+    + SETTINGS_BODY_HEIGHT
+    + 3 * CHAT_PADDING
+    + 20  # gaps between header, tabs and body
 )
+RING_PREVIEW_SIZE = 220  # px, Settings' picture of the ring
+SETTINGS_TITLE_SIZE = 13.0  # px, a row's name
+SETTINGS_DESC_SIZE = 11.0  # px, the line under it
+
+STATUS_OK = "#2DD4BF"  # the settings status dots' "ready" - the one hue besides the accent and the picker's sand
 
 
 # --- Edge dock. The chat card's right-edge proximity behaviour: OPEN, or
@@ -346,22 +363,24 @@ _SCALE_INT_NAMES = [
     "FIELD_WIDTH", "FIELD_HEIGHT", "FIELD_RADIUS", "FIELD_INSET_LEFT", "FIELD_INSET_RIGHT",
     "FIELD_FONT_SIZE", "FONT_SIZE",
     "REJECT_SHIFT",
-    "CHAT_SIZE", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
-    "CHAT_DISMISS_SLIDE", "CHAT_BUBBLE_PADDING_H", "CHAT_BUBBLE_PADDING_V",
+    "CHAT_SIZE", "CHAT_LOGO_HEIGHT", "CHAT_MARGIN", "CHAT_PADDING", "CHAT_RADIUS",
+    "CHAT_DISMISS_SLIDE", 
     "CHAT_BUBBLE_GAP_EXTRA", "CHAT_REPLY_INSET", "CHAT_PARAGRAPH_GAP", "CHAT_TABLE_PADDING",
     "CHAT_COMPOSER_HEIGHT",
     "PICKER_RADIUS", "PICKER_LIST_MAX_HEIGHT", "PICKER_DOT_SIZE", "PICKER_ICON_SIZE", "PICKER_POP_RISE",
     "PICKER_FILTER_HEIGHT", "PICKER_FILTER_RADIUS",
     "DUE_RADIUS",
     "TODO_DEFAULT_WIDTH", "NOTE_DEFAULT_WIDTH",
-    "CARD_DRAG_THRESHOLD_PX", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
+    "CARD_DRAG_THRESHOLD_PX", "ACCENT_RULE_HEIGHT", "CARD_MIN_WIDTH", "CARD_MIN_HEIGHT",
     "CARD_RESIZE_GRIP_HIT", "CARD_RESIZE_GRIP_PAINT",
     "CARD_RESIZE_GRIP_EDGE_OFFSET", "CARD_RESIZE_GRIP_PAINT_OFFSET",
     "CARD_SPAWN_OFFSET", "CARD_SHADOW_BLUR", "CARD_SHADOW_OFFSET_Y",
     "CARD_SHADOW_MARGIN", "CARD_EDGE_MARGIN",
     "TODO_ROW_HEIGHT", "TODO_CHECKBOX", "TODO_CHECKBOX_RADIUS",
     "SETTINGS_WIDTH", "SETTINGS_HEADER_HEIGHT", "SETTINGS_ROW_HEIGHT",
-    "SETTINGS_ROW_GAP", "SETTINGS_ARROW_SIZE",
+    "SETTINGS_ROW_GAP", "SETTINGS_ARROW_SIZE", "SETTINGS_SLIDER_WIDTH", "SETTINGS_SWATCH_SIZE",
+    "RING_PREVIEW_SIZE", "SETTINGS_TAB_HEIGHT", "SETTINGS_TOGGLE_WIDTH", "SETTINGS_TOGGLE_HEIGHT", "SETTINGS_INPUT_HEIGHT",
+    "SETTINGS_BUTTON_HEIGHT", "SETTINGS_BODY_HEIGHT",
     "SETTINGS_HEIGHT",
     "DOCK_COMPACT_SIZE", "DOCK_TAB_VISIBLE_PX", "DOCK_ARM_PX", "DOCK_DISARM_PX",
     "DOCK_TRIGGER_WIDTH",
@@ -369,7 +388,10 @@ _SCALE_INT_NAMES = [
 
 # Already floats in their reference form - scaled but kept as floats, not
 # rounded to int.
-_SCALE_FLOAT_NAMES = ["CHAT_BODY_SIZE", "CHAT_HEADER_SIZE", "PICKER_DETAIL_SIZE", "CARD_RESIZE_GRIP_STROKE"]
+_SCALE_FLOAT_NAMES = [
+    "CHAT_BODY_SIZE", "CHAT_HEADER_SIZE", "PICKER_DETAIL_SIZE", "CARD_RESIZE_GRIP_STROKE",
+    "SETTINGS_TITLE_SIZE", "SETTINGS_DESC_SIZE",
+]
 
 # Tuples of pixel lengths - each element scaled and rounded individually.
 _SCALE_INT_TUPLE_NAMES = ["CHAT_BUBBLE_RADIUS"]
@@ -383,6 +405,62 @@ def apply_scale(factor):
         g[name] = g[name] * factor
     for name in _SCALE_INT_TUPLE_NAMES:
         g[name] = tuple(round(v * factor) for v in g[name])
+
+
+CHAT_SIZE_STORE_KEY = "chatSize"
+
+
+def chat_size():
+    """The chat card's side in px, after the Settings slider."""
+    return round(CHAT_SIZE * CHAT_SIZE_SCALE)
+
+
+def load_chat_size_scale():
+    """Reads the saved slider factor into CHAT_SIZE_SCALE. Called once at startup."""
+    global CHAT_SIZE_SCALE
+    saved = cardStore.load(CHAT_SIZE_STORE_KEY, {}).get("scale", 1.0)
+    CHAT_SIZE_SCALE = min(max(saved, CHAT_SIZE_SCALE_MIN), CHAT_SIZE_SCALE_MAX)
+
+
+def save_chat_size_scale(scale):
+    global CHAT_SIZE_SCALE
+    CHAT_SIZE_SCALE = scale
+    cardStore.save(CHAT_SIZE_STORE_KEY, {"scale": scale})
+
+
+# name -> (accent, the deeper shade a pressed wedge shows). First is the default.
+ACCENT_CHOICES = {
+    "violet": ("#A78BFA", "#8B6CEF"),
+    "blue": ("#60A5FA", "#4287E8"),
+    "teal": ("#2DD4BF", "#20B5A2"),
+    "amber": ("#FBBF24", "#E5A50F"),
+    "coral": ("#FB7185", "#EC5670"),
+    "neutral": ("#D9D9DC", "#B4B5B9"),
+}
+ACCENT_STORE_KEY = "accent"
+accent_name = "violet"
+
+
+def apply_accent(name):
+    """Points every accent-derived color at the named choice. The ring reads
+    these at paint time, so it changes at once; a widget that baked a
+    stylesheet from them picks the change up the next time it is built."""
+    global accent_name, ACCENT, WEDGE_HOVER, WEDGE_PRESSED, GLOW, FIELD_BORDER_SENDING, FIELD_HINT_LIT, CHAT_ACCENT
+    accent_name = name
+    ACCENT = WEDGE_HOVER = GLOW = FIELD_BORDER_SENDING = FIELD_HINT_LIT = CHAT_ACCENT = ACCENT_CHOICES[name][0]
+    WEDGE_PRESSED = ACCENT_CHOICES[name][1]
+
+
+def load_accent():
+    """Applies the saved accent. Called once at startup."""
+    saved = cardStore.load(ACCENT_STORE_KEY, {}).get("name")
+    if saved in ACCENT_CHOICES:
+        apply_accent(saved)
+
+
+def save_accent(name):
+    apply_accent(name)
+    cardStore.save(ACCENT_STORE_KEY, {"name": name})
 
 
 def prompt_field_stylesheet(text_color):
@@ -424,18 +502,37 @@ def chat_scrollbar_stylesheet():
 def chat_turn_stylesheet():
     # Full CHAT_BODY_TEXT brightness rather than a dimmer secondary tone -
     # Bel's reply is the thing being read here, so it shouldn't be styled
-    # as lower-priority than the user's own bubble text.
-    return f"color: {CHAT_BODY_TEXT}; font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
+    # as lower-priority than the user's own text. The accent rule down its
+    # left edge is what marks a turn as Bel's now that nothing is boxed.
+    return (
+        f"color: {CHAT_BODY_TEXT}; font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; background: transparent;"
+        f"border-left: 2px solid {CHAT_ACCENT}; padding-left: {SPACE_3}px;"
+    )
 
 
 def chat_bubble_stylesheet():
-    tl, tr, br, bl = CHAT_BUBBLE_RADIUS
+    """The user's own turn: plain text, no fill - the YOU label above it says whose it is."""
     return (
-        f"background: {CHAT_USER_BUBBLE}; color: {CHAT_BODY_TEXT};"
+        f"background: transparent; color: {CHAT_BODY_TEXT};"
         f"font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
-        f"padding: {CHAT_BUBBLE_PADDING_V}px {CHAT_BUBBLE_PADDING_H}px;"
-        f"border-top-left-radius: {tl}px; border-top-right-radius: {tr}px;"
-        f"border-bottom-right-radius: {br}px; border-bottom-left-radius: {bl}px;"
+    )
+
+
+def chat_role_stylesheet():
+    """The small mono YOU line above a user turn."""
+    return (
+        f"color: {CHAT_LABEL_MONO}; background: transparent;"
+        f"font-family: {CHAT_MONO_FAMILY}; font-size: {CHAT_HEADER_SIZE}px;"
+    )
+
+
+def chat_action_stylesheet():
+    """A reply's Copy / Save to vault: bare mono text, brighter on hover."""
+    return (
+        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; text-align: left;"
+        f" font-family: {CHAT_MONO_FAMILY}; font-size: {CHAT_HEADER_SIZE}px; padding: 2px 0; }}"
+        f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
+        f"QPushButton:disabled {{ color: {CHAT_INERT_HINT}; }}"
     )
 
 
@@ -446,34 +543,86 @@ def plain_field_stylesheet():
     ChatCard.paintFrame)."""
     return (
         "background: transparent; border: none;"
-        f"color: {CHAT_BODY_TEXT}; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"color: {CHAT_BODY_TEXT}; font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
     )
 
 
 def settings_field_stylesheet():
     return (
         f"background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
-        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
-        f"border: 1px solid {CHAT_INERT_HINT}; border-radius: 6px;"
-        "padding: 0 8px;"
+        f"font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"border: 1px solid {BORDER_DIM}; border-radius: 8px;"
+        "padding: 0 10px;"
     )
 
 
 def settings_combo_stylesheet():
     return (
         f"QComboBox {{ background: {CHAT_COMPOSER_FIELD}; color: {CHAT_BODY_TEXT};"
-        f"font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
-        f"border: 1px solid {CHAT_INERT_HINT}; border-radius: 6px; padding: 0 8px; }}"
+        f"font-family: {CHAT_TEXT_FAMILY}; font-size: {CHAT_BODY_SIZE}px;"
+        f"border: 1px solid {BORDER_DIM}; border-radius: 8px; padding: 0 10px; }}"
         f"QComboBox QAbstractItemView {{ background: {CHAT_SURFACE}; color: {CHAT_BODY_TEXT};"
         f"selection-background-color: {CHAT_USER_BUBBLE}; border: 1px solid {CHAT_BORDER}; }}"
     )
 
 
-def settings_arrow_stylesheet():
+def settings_swatch_stylesheet(color, selected):
+    ring = CHAT_BODY_TEXT if selected else "transparent"
     return (
-        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; }}"
+        f"QPushButton {{ background: {color}; border: 2px solid {ring};"
+        f" border-radius: {SETTINGS_SWATCH_SIZE // 2}px; }}"
+    )
+
+
+def settings_slider_stylesheet():
+    return (
+        f"QSlider::groove:horizontal {{ height: 4px; background: {BORDER_DIM}; border-radius: 2px; }}"
+        f"QSlider::sub-page:horizontal {{ background: {CHAT_ACCENT}; border-radius: 2px; }}"
+        f"QSlider::handle:horizontal {{ background: {CHAT_ACCENT}; width: 12px; margin: -4px 0; border-radius: 6px; }}"
+    )
+
+
+def settings_tab_stylesheet():
+    """The Wedges / Look / Chat / Connect strip: the checked tab fills with the accent."""
+    return (
+        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; border-radius: 8px;"
+        f" font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; padding: 0 14px; }}"
         f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
+        f"QPushButton:checked {{ background: {CHAT_ACCENT}; color: {INK}; }}"
+    )
+
+
+def settings_segment_stylesheet():
+    """One option of a segmented control: the checked one is a raised chip."""
+    return (
+        f"QPushButton {{ color: {CHAT_LABEL_MONO}; background: transparent; border: none; border-radius: 6px;"
+        f" font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; padding: 0 11px; }}"
+        f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
+        f"QPushButton:checked {{ background: {BORDER_DIM}; color: {CHAT_BODY_TEXT}; }}"
         f"QPushButton:disabled {{ color: {CHAT_INERT_HINT}; }}"
+    )
+
+
+def settings_button_stylesheet():
+    return (
+        f"QPushButton {{ color: {BODY_DIM}; background: transparent; border: 1px solid {BORDER_DIM};"
+        f" border-radius: 8px; font-family: {FONT_FAMILY}; font-size: {CHAT_BODY_SIZE}px; padding: 0 12px; }}"
+        f"QPushButton:hover {{ color: {CHAT_BODY_TEXT}; }}"
+        f"QPushButton:disabled {{ color: {CHAT_INERT_HINT}; border-style: dashed; }}"
+    )
+
+
+def settings_title_stylesheet():
+    return (
+        f"color: {CHAT_BODY_TEXT}; background: transparent;"
+        f"font-family: {CHAT_TEXT_FAMILY}; font-size: {SETTINGS_TITLE_SIZE}px;"
+    )
+
+
+def settings_desc_stylesheet():
+    return (
+        f"color: {CHAT_LABEL_MONO}; background: transparent;"
+        f"font-family: {CHAT_TEXT_FAMILY}; font-size: {SETTINGS_DESC_SIZE}px;"
     )
 
 

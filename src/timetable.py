@@ -1,5 +1,5 @@
 # `! today` and `! week` (.scratch/today-week/issues/01): every event in
-# Derich's timetable for today or the next 7 days, read straight from the
+# the user's timetable for today or the next 7 days, read straight from the
 # timetable's iCal link. No Google Calendar MCP and no Claude call, so the
 # answer is a fetch plus a date filter. Nothing is cached, since a fresh
 # timetable is the point.
@@ -93,18 +93,34 @@ def fetch(url):
         return response.read()
 
 
+def saved_link(url_path=None):
+    """The timetable link Settings holds, or "" when none is set."""
+    try:
+        return (url_path or URL_PATH).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def save_link(link, url_path=None):
+    """Stores the link, or forgets it when `link` is blank."""
+    url_path = url_path or URL_PATH
+    link = link.strip()
+    if link:
+        url_path.parent.mkdir(parents=True, exist_ok=True)
+        url_path.write_text(link, encoding="utf-8")
+    else:
+        url_path.unlink(missing_ok=True)
+
+
 def answer(command, today=None, url_path=None, fetch=fetch, tz=None):
     """The whole command, start to finish: read the link, fetch the feed,
     list the range's events. Returns {"text", "boxes"}; every failure is
     answered in words with no boxes rather than raised."""
     today = today or date.today()
     url_path = url_path or URL_PATH
-    try:
-        url = url_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        url = ""
+    url = saved_link(url_path)
     if not url:
-        return {"text": f"no timetable link set — put the iCal link in {url_path}", "boxes": []}
+        return {"text": "no timetable link set — add your calendar's iCal link in Settings", "boxes": []}
     if url.startswith("webcal://"):
         # A subscription link is the same feed over https.
         url = "https://" + url[len("webcal://"):]

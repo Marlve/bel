@@ -26,7 +26,6 @@ import style
 import shadow
 from promptBarState import PromptBarState, EMPTY, TYPING, SENDING, REJECTED
 from promptBarAnimation import PromptBarAnimation
-from util import reduced_motion
 
 BORDER_BY_STATE = {
     EMPTY: style.FIELD_BORDER,
@@ -44,7 +43,7 @@ class PromptBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bar_state = PromptBarState()
-        self.animation = PromptBarAnimation(self, not reduced_motion())
+        self.animation = PromptBarAnimation(self)
 
         # A press on the frame's own chrome - the send hint's inset -
         # would otherwise reach the overlay behind it, which reads any click

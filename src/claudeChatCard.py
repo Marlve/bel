@@ -17,16 +17,18 @@
 # need to know the split happened.
 
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
-    QVBoxLayout, QHBoxLayout, QLayout, QApplication,
+    QVBoxLayout, QHBoxLayout, QLayout, QApplication, QFrame,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QPalette, QCursor
-from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, Signal
+from PySide6.QtGui import QPainter, QColor, QPen, QFontMetrics, QPalette, QCursor, QPixmap
+from PySide6.QtCore import Qt, QRect, QRectF, QTimer, QVariantAnimation, Signal
 
 import cardStore
+from assets import assetPath
 import chatMarkdown
 import dockCorner
 import ocr
@@ -61,8 +63,13 @@ HELP_TEXT = """| type | what it does |
 
 Ctrl+Shift+Space opens the pie menu, Ctrl+Alt+Space puts the keyboard back in this chat."""
 
+LOGO_MARK_BOUNDS = QRect(205, 60, 596, 904)  # where the mark sits inside bel-mark-*-1024.png
 SHOT_SETTLE_MS = 120  # for the card to actually leave the screen before it is grabbed
 SHOT_TRANSCRIPT_HEIGHT = 96
+
+
+def clock_time():
+    return datetime.now().strftime("%H:%M")
 
 
 def command_name(text):
@@ -224,12 +231,9 @@ class ChatCard(QWidget):
         self.animation.motion = value
 
     def buildContent(self):
-        self.header_label = QLabel("Bel", self)
-        header_font = QFont(style.CHAT_MONO_FAMILY)
-        header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
-        header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
-        self.header_label.setFont(header_font)
-        self.header_label.setStyleSheet(f"color: {style.CHAT_LABEL_MONO}; background: transparent;")
+        self.header_label = QLabel(self)
+        self.header_label.setPixmap(self.headerLogo())
+        self.header_label.setStyleSheet("background: transparent;")
         # Lets a press pass through to the card's own mousePressEvent below
         # instead of being swallowed here - the header is the drag-to-corner
         # zone (same "margins pass through, buttons don't" split as notes',
@@ -290,7 +294,7 @@ class ChatCard(QWidget):
 
         root = QVBoxLayout(self)
         # This card's size is managed entirely by the dock state machine
-        # (HIDDEN 64x64, TAB's puck, OPEN style.CHAT_SIZE square), not by Qt - left
+        # (HIDDEN 64x64, TAB's puck, OPEN style.chat_size() square), not by Qt - left
         # at Qt's default, activating the layout floors the widget's
         # minimumSize at whatever's visible *at that moment*, and it never
         # shrinks back down again even once content is hidden for a smaller
@@ -503,6 +507,8 @@ class ChatCard(QWidget):
         self.animation.stopTyping()  # a reply that finished with zero chunks would otherwise pulse forever
         if self.streaming_label is not None:
             self.setTurnHtml(self.streaming_label, self.state.streaming_text, caret=False)
+            if self.state.streaming_text.strip():
+                self.addReplyActions(self.reply_row, self.streaming_index)
         self.streaming_label = None
         self.composer.setReadOnly(False)
         self.unwire()
@@ -637,7 +643,7 @@ class ChatCard(QWidget):
         return None
 
     def startSave(self, text):
-        """`! save` files Bel's last reply at the end of a note Derich picks.
+        """`! save` files Bel's last reply at the end of a note the user picks.
         Nothing is written until the click, like every other write here."""
         reply = self.lastReply()
         self.appendUserTurn(text)
@@ -761,7 +767,7 @@ class ChatCard(QWidget):
 
     def appendUserTurn(self, text, shot=None):
         follows_claude = bool(self.state.turns) and self.state.turns[-1]["role"] == "claude"
-        self.state.turns.append({"role": "user", "text": text})
+        self.state.turns.append({"role": "user", "text": text, "time": clock_time()})
 
         if shot is not None:
             thumb = QLabel()
@@ -787,22 +793,32 @@ class ChatCard(QWidget):
         bubble.setStyleSheet(style.chat_bubble_stylesheet())
         bubble.setFixedWidth(self.userBubbleWidth(text))
 
-        row = QHBoxLayout()
+        role = QLabel(f'YOU&nbsp;&nbsp;<span style="color:{style.HINT};">{self.state.turns[-1]["time"]}</span>')
+        role.setStyleSheet(style.chat_role_stylesheet())
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background: {style.CARD_DIVIDER};")
+
+        row = QVBoxLayout()
+        row.setSpacing(style.CHAT_PARAGRAPH_GAP)
         if follows_claude:
             # Mirrors appendClaudeTurn()'s own follows_user check - see
             # chat-bubble-polish/02's follow-up: the extra gap only widened
             # the user-to-Bel transition, leaving Bel-to-user asymmetric.
             row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
-        row.addStretch(1)
-        row.addWidget(bubble)
+        row.addWidget(role)
+        row.addWidget(bubble, 0, Qt.AlignLeft)
+        row.addSpacing(style.SPACE_1)
+        row.addWidget(rule)
         self.insertTurnRow(row)
 
     def appendClaudeTurn(self):
         follows_user = bool(self.state.turns) and self.state.turns[-1]["role"] == "user"
-        self.state.turns.append({"role": "claude", "text": ""})
+        self.state.turns.append({"role": "claude", "text": "", "time": clock_time()})
         self.streaming_index = len(self.state.turns) - 1
 
         label = QLabel("")
+        label.setProperty("time", self.state.turns[-1]["time"])
         label.setTextFormat(Qt.RichText)
         label.setOpenExternalLinks(True)
         label.setWordWrap(True)
@@ -816,17 +832,34 @@ class ChatCard(QWidget):
         # own right edge instead of running flush with it).
         label.setFixedWidth(self.replyWidth())
 
-        row = QHBoxLayout()
+        row = QVBoxLayout()
+        row.setSpacing(style.SPACE_1)
         if follows_user:
             # transcript_layout's own spacing already separates every turn
-            # row uniformly - this widens just the user-bubble-to-Bel-reply
+            # row uniformly - this widens just the user-turn-to-Bel-reply
             # transition (appendUserTurn() mirrors this for Bel-to-user),
             # leaving Bel-to-Bel/user-to-user gaps untouched.
             row.setContentsMargins(0, style.CHAT_BUBBLE_GAP_EXTRA, 0, 0)
-        row.addWidget(label)
-        row.addStretch(1)
+        row.addWidget(label, 0, Qt.AlignLeft)
+        self.reply_row = row
         self.insertTurnRow(row)
         return label
+
+    def addReplyActions(self, row, index):
+        """Copy / Save to vault under a finished reply."""
+        actions = QHBoxLayout()
+        actions.setContentsMargins(style.SPACE_3 + 2, 0, 0, 0)  # lines up with the reply's text, past its accent rule
+        actions.setSpacing(style.SPACE_3)
+        copy = QPushButton("COPY")
+        copy.clicked.connect(lambda: QApplication.clipboard().setText(self.state.turns[index]["text"]))
+        save = QPushButton("SAVE TO VAULT")
+        save.clicked.connect(lambda: self.send("! save"))
+        for button in (copy, save):
+            button.setCursor(Qt.PointingHandCursor)
+            button.setStyleSheet(style.chat_action_stylesheet())
+            actions.addWidget(button)
+        actions.addStretch(1)
+        row.addLayout(actions)
 
     def insertTurnRow(self, row):
         # Before the trailing stretch, so the stretch keeps doing its job of
@@ -838,7 +871,8 @@ class ChatCard(QWidget):
         # a space instead of breaking the line, unlike the user bubble
         # (plain text) - pre-wrap makes it honor the newlines chatMarkdown
         # joins lines/blocks with, while still word-wrapping.
-        body = f'<span style="white-space:pre-wrap;">{chatMarkdown.render(text)}</span>'
+        body = chatMarkdown.reply_header(label.property("time") or "")
+        body += f'<span style="white-space:pre-wrap;">{chatMarkdown.render(text)}</span>'
         if caret:
             body += f'<span style="color:{style.CHAT_ACCENT};">▏</span>'
         label.setText(body)
@@ -893,7 +927,7 @@ class ChatCard(QWidget):
         return self.contentWidth() - style.CHAT_REPLY_INSET
 
     def contentWidth(self):
-        return style.CHAT_SIZE - 2 * style.CHAT_PADDING
+        return round(self.state.dock_rect.width()) - 2 * style.CHAT_PADDING
 
     def onScrollValueChanged(self, value):
         bar = self.scroll.verticalScrollBar()
@@ -1031,6 +1065,15 @@ class ChatCard(QWidget):
 
         self.paintFrame(painter, QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
 
+    def headerLogo(self):
+        """The Bel mark for the header, cropped to the mark itself (the
+        source image is a padded square) and drawn at the screen's pixel density."""
+        ratio = self.devicePixelRatioF()
+        mark = QPixmap(assetPath("bel-mark-light-1024.png")).copy(LOGO_MARK_BOUNDS)
+        logo = mark.scaledToHeight(round(style.CHAT_LOGO_HEIGHT * ratio), Qt.SmoothTransformation)
+        logo.setDevicePixelRatio(ratio)
+        return logo
+
     def paintFrame(self, painter, frame):
         border = style.CHAT_BORDER_TAB if self.isTabbed() else style.CHAT_BORDER
         radius = self.animation.radius
@@ -1067,7 +1110,7 @@ class ChatSlot:
 
     def dockRect(self, screen):
         area = screen.availableGeometry()  # work area, not monitor bounds
-        return dockCorner.rect(self.corner, area, style.CHAT_SIZE, style.CHAT_MARGIN)
+        return dockCorner.rect(self.corner, area, style.chat_size(), style.CHAT_MARGIN)
 
     def onCornerChanged(self, corner):
         self.corner = corner

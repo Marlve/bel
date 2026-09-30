@@ -92,7 +92,7 @@ class SearchNotesTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_hit_on_korean_vocab_row(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 안녕 | hello |\n| 감사 | thanks |\n", encoding="utf-8")
         self.refresh()
@@ -100,11 +100,11 @@ class SearchNotesTests(unittest.TestCase):
         result = vaultSearch.search_notes("안녕", db_path=self.db_path)
 
         self.assertEqual(result["kind"], "vocab")
-        self.assertEqual(result["path"], str(Path("2 Areas") / "Korean" / "Vocab.md"))
+        self.assertEqual(result["path"], str(Path("3 Reference") / "Vocab.md"))
         self.assertEqual(result["row"], ["안녕", "hello"])
 
     def test_vocab_miss_when_word_not_present_in_file(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
         self.refresh()
@@ -114,7 +114,7 @@ class SearchNotesTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_vocab_miss_when_query_is_only_a_fragment_of_a_cell(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 그리고 | and, additionally |\n", encoding="utf-8")
         self.refresh()
@@ -124,7 +124,7 @@ class SearchNotesTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_vocab_hit_matches_a_whole_cell_case_insensitively(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 안녕 | Hello |\n", encoding="utf-8")
         self.refresh()
@@ -134,7 +134,7 @@ class SearchNotesTests(unittest.TestCase):
         self.assertEqual(result["kind"], "vocab")
 
     def test_vocab_miss_on_header_separator_heading_and_empty_query(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text(
             "# Korean vocab\n\n| Korean | English |\n| --- | --- |\n| 안녕 | hello |\n",
@@ -147,7 +147,7 @@ class SearchNotesTests(unittest.TestCase):
                 self.assertIsNone(vaultSearch.search_notes(query, db_path=self.db_path))
 
     def test_vocab_hit_ignores_surrounding_whitespace_in_the_query(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 안녕 | hello |\n", encoding="utf-8")
         self.refresh()
@@ -157,7 +157,7 @@ class SearchNotesTests(unittest.TestCase):
     def test_vocab_escaped_pipe_stays_inside_one_cell(self):
         # append_vocab_row escapes "|" as "\|" - the cell must still be read
         # back as one cell, not split in two.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| 또는 | or \\| either |\n", encoding="utf-8")
         self.refresh()
@@ -169,9 +169,7 @@ class SearchNotesTests(unittest.TestCase):
         reference = self.vault / "3 Reference"
         reference.mkdir()
         (reference / "Term.md").write_text("Reference explanation.")
-        korean = self.vault / "2 Areas" / "Korean"
-        korean.mkdir(parents=True)
-        (korean / "Vocab.md").write_text("Term shows up here too.")
+        (reference / "Vocab.md").write_text("Term shows up here too.")
         self.refresh()
 
         result = vaultSearch.search_notes("Term", db_path=self.db_path)
@@ -352,7 +350,7 @@ class WriteConfirmedTests(unittest.TestCase):
             vaultSearch.write_concept_note("async/await", "Explanation.", vault_path=self.vault)
 
     def test_write_concept_note_refuses_to_overwrite_an_existing_note(self):
-        # A stale index can report a miss for a note Derich just created in
+        # A stale index can report a miss for a note the user just created in
         # Obsidian - confirming the draft must not clobber the real note.
         reference = self.vault / "3 Reference"
         reference.mkdir()
@@ -375,7 +373,7 @@ class WriteConfirmedTests(unittest.TestCase):
                     vaultSearch.write_concept_note(query, "Explanation.", vault_path=self.vault)
 
     def test_append_vocab_row_appends_to_existing_file(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n", encoding="utf-8")
 
@@ -385,7 +383,7 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n| 감사 | thanks |\n")
 
     def test_append_vocab_row_flattens_carriage_returns_so_the_row_stays_findable(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("", encoding="utf-8")
 
@@ -399,7 +397,7 @@ class WriteConfirmedTests(unittest.TestCase):
     def test_append_vocab_row_starts_a_new_line_when_the_file_does_not_end_with_one(self):
         # Obsidian can save a note without a trailing newline - the new row
         # must not glue onto the last table row.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |", encoding="utf-8")
 
@@ -410,7 +408,7 @@ class WriteConfirmedTests(unittest.TestCase):
     def test_append_vocab_row_goes_after_the_last_filled_row_not_after_empty_rows(self):
         # Obsidian's table editor leaves empty rows and a trailing blank line
         # - appending to the end of the file would land outside the table.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_bytes(
             "---\ntype: vocab\n---\n\n| Word | Meaning |\n| ---- | ------- |\n| 안녕   | Hello   |\n|      |         |\n|      |         |\n\n\n".encode()
@@ -424,7 +422,7 @@ class WriteConfirmedTests(unittest.TestCase):
         )
 
     def test_append_vocab_row_goes_right_after_the_separator_of_an_empty_table(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_bytes("| Word | Meaning |\n| ---- | ------- |\n|  |  |\n\nnotes below\n".encode())
 
@@ -436,7 +434,7 @@ class WriteConfirmedTests(unittest.TestCase):
         )
 
     def test_append_vocab_row_matches_areas_folder_ignoring_numeric_prefix(self):
-        korean = self.vault / "Areas" / "Korean"
+        korean = self.vault / "Reference"
         korean.mkdir(parents=True)
 
         path = vaultSearch.append_vocab_row("안녕", "hello", vault_path=self.vault)
@@ -448,7 +446,7 @@ class WriteConfirmedTests(unittest.TestCase):
             vaultSearch.append_vocab_row("안녕", "hello", vault_path=self.vault)
 
     def test_append_vocab_row_escapes_a_pipe_in_the_translation(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("", encoding="utf-8")
 
@@ -457,7 +455,7 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| or | either\\|or |\n")
 
     def test_append_vocab_row_strips_newlines_from_a_multiline_translation(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("", encoding="utf-8")
 
@@ -468,7 +466,7 @@ class WriteConfirmedTests(unittest.TestCase):
     def test_append_grammar_row_appends_to_the_grammar_table_not_the_vocab_one(self):
         # The two tables are kept apart on purpose (resolve_breakdown) - a
         # grammar point landing in Vocab.md would answer a word lookup.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n", encoding="utf-8")
         (korean / "Grammar.md").write_text("| Word | Explanation |\n| --- | --- |\n| -이/가 | subject marker |\n", encoding="utf-8")
@@ -483,11 +481,11 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual((korean / "Vocab.md").read_text(encoding="utf-8"), "| Word | Meaning |\n| --- | --- |\n| 안녕 | hello |\n")
 
     def test_append_grammar_row_creates_a_real_table_when_the_note_does_not_exist(self):
-        # The bug Derich hit on 2026-09-20: Grammar.md did not exist, so every
+        # The bug found on 2026-09-20: Grammar.md did not exist, so every
         # confirmed point was appended as a bare "| a | b |" line with no
         # header or separator above it. Obsidian renders those as literal
         # text, never as a table, and resolve_breakdown never matched them.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
 
         path = vaultSearch.append_grammar_row("-ㅂ니다", "formal polite ending", vault_path=self.vault)
@@ -495,7 +493,7 @@ class WriteConfirmedTests(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), "| Word | Explanation |\n| --- | --- |\n| -ㅂ니다 | formal polite ending |\n")
 
     def test_a_second_point_reuses_the_table_instead_of_starting_another(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
 
         vaultSearch.append_grammar_row("-ㅂ니다", "formal polite ending", vault_path=self.vault)
@@ -509,7 +507,7 @@ class WriteConfirmedTests(unittest.TestCase):
     def test_a_table_started_under_existing_prose_keeps_a_blank_line_above_it(self):
         # A note that is notes-first, table-later: the header must not glue
         # onto the prose, or Obsidian reads neither as a table.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Grammar.md").write_text("# Grammar\n\nPoints I have hit.\n", encoding="utf-8")
 
@@ -521,7 +519,7 @@ class WriteConfirmedTests(unittest.TestCase):
         )
 
     def test_a_note_written_without_a_trailing_newline_still_gets_its_table(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Grammar.md").write_text("Points I have hit.", encoding="utf-8")
 
@@ -823,7 +821,7 @@ class ConfirmPickTests(unittest.TestCase):
         self.assertEqual(self.plan.read_text(encoding="utf-8"), "Notes.\n\n## Concepts\n- [[Dijkstra]] — Finds shortest paths\n")
 
     def test_a_miss_that_would_overwrite_a_note_links_nothing(self):
-        # A stale index can miss a note Derich just created in Obsidian.
+        # A stale index can miss a note the user just created in Obsidian.
         (self.reference / "Dijkstra.md").write_text("real note", encoding="utf-8")
         miss = {"hit": False, "draft": "Drafted explanation."}
 
@@ -895,7 +893,7 @@ class ResolveBreakdownTests(unittest.TestCase):
         self.addCleanup(self.db_dir.cleanup)
         self.vault = Path(self.vault_dir.name)
         self.db_path = Path(self.db_dir.name) / "vault-index.sqlite3"
-        self.korean = self.vault / "2 Areas" / "Korean"
+        self.korean = self.vault / "3 Reference"
         self.korean.mkdir(parents=True)
 
     def writeTable(self, name, header, rows):
@@ -1082,7 +1080,7 @@ class LookupTests(unittest.TestCase):
     def test_a_korean_miss_looks_for_no_content_matches(self):
         # The Korean flows have their own block, so nothing would show them -
         # the query is skipped rather than run and thrown away.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Grammar.md").write_text("안녕 is the casual greeting.", encoding="utf-8")
 
@@ -1317,14 +1315,14 @@ class ExplainQueryTests(unittest.TestCase):
         self.assertEqual(self.results, [{"hit": False, "kind": "vocab", "draft": "Thanks.", "notes": [], "all_notes": [], "vocab": None}])
 
     def test_a_korean_miss_reports_the_indexed_vocab_md_to_save_into(self):
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text("| Word | Meaning |\n| --- | --- |\n", encoding="utf-8")
         explain = self.start("감사")
 
         explain.request.finished.emit()
 
-        self.assertEqual(self.results[0]["vocab"], {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": True})
+        self.assertEqual(self.results[0]["vocab"], {"path": str(Path("3 Reference") / "Vocab.md"), "recent": True})
 
     def test_a_korean_miss_asks_for_a_translation_only(self):
         explain = self.start("감사")
@@ -1418,7 +1416,7 @@ class ExplainQueryTests(unittest.TestCase):
         # search_notes can whole-cell match a sentence written into a Vocab
         # row; that's a hit like any other, answered from the vault with no
         # request and no breakdown.
-        korean = self.vault / "2 Areas" / "Korean"
+        korean = self.vault / "3 Reference"
         korean.mkdir(parents=True)
         (korean / "Vocab.md").write_text(f"| word | meaning |\n| --- | --- |\n| {SENTENCE} | I go to school |\n", encoding="utf-8")
 

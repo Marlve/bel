@@ -4,7 +4,6 @@
 # PieMenuAnimation read and write these fields directly, the same way
 # EdgeDockDriver reads/writes EdgeDock.
 
-import math
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -13,6 +12,7 @@ from PySide6.QtCore import QPointF
 import style
 import wedgeConfig
 from actions import ACTIONS
+from ringGeometry import wedge_index  # noqa: F401 - lives beside ring_segment so Settings' preview can share it
 
 def inner_radius():
     return style.RING_INNER * style.RING_RADIUS  # hollow center doubles as the dead zone
@@ -27,25 +27,6 @@ def hit_radius():
 HIDDEN, OPENING, OPEN, SELECTING, HANDOFF, PROMPTING, CLOSING = (
     "hidden", "opening", "open", "selecting", "handoff", "prompting", "closing",
 )
-
-
-def wedge_index(dx, dy, count, deadzone=0, radius=None):
-    """Index of the wedge (0 = up, going clockwise) that (dx, dy) points
-    into, or None if the point is inside the deadzone or outside radius.
-    dx/dy are a screen space offset from the menu's center - y grows
-    downward.
-    """
-    dist = math.hypot(dx, dy)
-    if dist < deadzone:
-        return None
-    if radius is not None and dist > radius:
-        return None
-
-    math_angle = math.degrees(math.atan2(-dy, dx)) % 360  # 0=right, 90=up
-    compass_angle = (90 - math_angle) % 360  # 0=up, 90=right, clockwise
-    wedge_width = 360 / count
-    shifted = (compass_angle + wedge_width / 2) % 360
-    return int(shifted // wedge_width)
 
 
 def compass_wedge(count, angle):

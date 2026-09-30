@@ -8,13 +8,13 @@
 import math
 
 import style
+from util import LiveMotion
 from anims.clock import Tween
 
 
-class PromptBarAnimation:
-    def __init__(self, parent, motion):
+class PromptBarAnimation(LiveMotion):
+    def __init__(self, parent):
         self.parent = parent
-        self.motion = motion
         self.rect_opacity = 0.0  # the frame fades in as the wedge fades out
         self.chrome_opacity = 0.0  # the send hint follows, once the frame is at rest
         self.rest_x = 0

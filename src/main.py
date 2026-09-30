@@ -11,6 +11,7 @@ from claude import resetClaudeHistory
 from trayIcon import TrayIcon
 from assets import assetPath
 import style
+import vaultIndex
 
 PIE_MENU_HOTKEY = "ctrl+shift+space"
 CHAT_FOCUS_HOTKEY = "ctrl+alt+space"  # brings the open chat back under the keyboard
@@ -36,6 +37,9 @@ def main():
     physical_height = screen.size().height() * screen.devicePixelRatio()
     scale = min(physical_width / style.REFERENCE_WIDTH, physical_height / style.REFERENCE_HEIGHT)
     style.apply_scale(scale)
+    style.load_chat_size_scale()
+    style.load_accent()
+    vaultIndex.load_vault_path()
 
     pie_menu = PieMenu()
     hotkey = HotkeyListener(PIE_MENU_HOTKEY)

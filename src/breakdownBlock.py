@@ -3,10 +3,10 @@
 # the vault dimmed and the new ones clickable to file them.
 #
 # It shows all of them rather than only the new ones on purpose
-# (.scratch/korean-sentence/issues/02): a sentence Derich typed is one he is
+# (.scratch/korean-sentence/issues/02): a sentence the user typed is one they are
 # trying to read, so the explanation is the point and filing is the side
-# effect. A new-only list would drop a word from the explanation of his own
-# sentence the moment he saved it.
+# effect. A new-only list would drop a word from the explanation of their own
+# sentence the moment they saved it.
 #
 # Rows are NoteRow, shared with the note picker, so the two look the same. NoteList is deliberately not reused: it locks and
 # dims every other row on a click, because a picker is a one-shot choice -

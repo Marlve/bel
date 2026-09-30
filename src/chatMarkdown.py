@@ -237,3 +237,11 @@ def _inline(text):
     for index, span in enumerate(spans):
         text = text.replace(_CODE_TOKEN % index, span)
     return text
+
+
+def reply_header(note):
+    """The small mono line above Bel's reply: her name in the accent, then `note` (a time, or "typing") dimmed."""
+    return (
+        f'<div style="margin-bottom:6px; font-family:{style.CHAT_MONO_FAMILY}; font-size:{style.CHAT_HEADER_SIZE}px;'
+        f' color:{style.CHAT_ACCENT};">BEL&nbsp;&nbsp;<span style="color:{style.HINT};">{note}</span></div>'
+    )

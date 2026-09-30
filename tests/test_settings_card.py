@@ -10,11 +10,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QPointF
 from PySide6.QtGui import QKeyEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 import cardStore
+import style
 from settingsCard import SettingsCard
 
 
@@ -43,51 +45,76 @@ class SettingsCardTests(unittest.TestCase):
         cardStore.LEGACY_STORE_PATH = self.original_legacy_path
         self.tmp.cleanup()
 
-    def test_starts_with_the_default_rows_in_order(self):
-        self.assertEqual([row.assigned_id for row in self.card.rows], ["todo", "note", "claude"])
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Bel"])
+    def ids(self):
+        return [entry["id"] for entry in self.card.entries]
 
-    def test_editing_a_label_saves_and_notifies(self):
-        self.card.rows[0].label_field.setText("Tasks")
-        self.card.save()
-        self.assertEqual(self.changes[-1][0], {"id": "todo", "label": "Tasks"})
-        self.assertEqual(cardStore.load("wedges", None)[0], {"id": "todo", "label": "Tasks"})
+    def wedgeCenter(self, index):
+        """Where to click to hit wedge `index` of the preview - the middle of its label, out on the bisector."""
+        from anims import pose
+        preview = self.card.ring_preview
+        bx, by = pose.bisector(index, len(preview.config))
+        radius = style.RING_LABEL * preview.radius()
+        return QPointF(preview.width() / 2 + bx * radius, preview.height() / 2 + by * radius)
 
-    def test_blank_label_falls_back_to_untitled_rather_than_an_empty_wedge(self):
-        self.card.rows[0].label_field.setText("   ")
-        self.card.save()
-        self.assertEqual(self.changes[-1][0]["label"], "Untitled")
+    def click(self, index):
+        preview = self.card.ring_preview
+        QTest.mouseClick(preview, Qt.LeftButton, Qt.NoModifier, self.wedgeCenter(index).toPoint())
 
-    def test_picking_an_action_already_used_by_another_row_swaps_them(self):
-        self.card.rows[0].action_combo.setCurrentIndex(self.card.rows[0].action_combo.findData("note"))
-        self.assertEqual([row.assigned_id for row in self.card.rows], ["note", "todo", "claude"])
-        # labels stay with their own row - only the underlying action moved
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Todo", "Note", "Bel"])
-        self.assertEqual(self.changes[-1], [{"id": "note", "label": "Todo"}, {"id": "todo", "label": "Note"}, {"id": "claude", "label": "Bel"}])
+    def drag(self, source, target):
+        preview = self.card.ring_preview
+        QTest.mousePress(preview, Qt.LeftButton, Qt.NoModifier, self.wedgeCenter(source).toPoint())
+        QTest.mouseRelease(preview, Qt.LeftButton, Qt.NoModifier, self.wedgeCenter(target).toPoint())
 
-    def test_reordering_moves_the_whole_row_not_just_the_id(self):
-        self.card.rows[0].label_field.setText("Tasks")
-        self.card.moveRow(self.card.rows[0], 1)
-        self.assertEqual([row.assigned_id for row in self.card.rows], ["note", "todo", "claude"])
-        self.assertEqual([row.label_field.text() for row in self.card.rows], ["Note", "Tasks", "Bel"])
+    def test_starts_with_the_default_wedges_in_order(self):
+        self.assertEqual(self.ids(), ["todo", "note", "claude"])
+        self.assertEqual([entry["label"] for entry in self.card.entries], ["Todo", "Note", "Bel"])
 
-    def test_arrows_are_disabled_at_the_ends(self):
-        self.assertFalse(self.card.rows[0].up_button.isEnabled())
-        self.assertTrue(self.card.rows[0].down_button.isEnabled())
-        self.assertTrue(self.card.rows[-1].up_button.isEnabled())
-        self.assertFalse(self.card.rows[-1].down_button.isEnabled())
+    def test_the_preview_shows_the_ring_with_settings_pinned_in(self):
+        self.assertEqual([entry["id"] for entry in self.card.ring_preview.config], ["todo", "note", "settings", "claude"])
 
-    def test_escape_in_a_label_field_closes_the_card(self):
+    def test_moving_a_wedge_to_a_place_shifts_the_others_and_saves(self):
+        self.card.moveWedge("todo", 2)
+        self.assertEqual(self.ids(), ["note", "claude", "todo"])
+        self.assertEqual([entry["id"] for entry in self.changes[-1]], ["note", "claude", "todo"])
+        self.assertEqual([entry["id"] for entry in cardStore.load("wedges", None)], ["note", "claude", "todo"])
+
+    def test_moving_a_wedge_to_where_it_already_is_changes_nothing(self):
+        self.card.moveWedge("note", 1)
+        self.assertEqual(self.changes, [])
+
+    def test_saved_wedges_carry_their_default_names(self):
+        self.card.moveWedge("todo", 1)
+        self.assertEqual([entry["label"] for entry in self.changes[-1]], ["Note", "Todo", "Bel"])
+
+    def test_dragging_one_wedge_onto_another_moves_it_there(self):
+        self.drag(0, 3)  # Todo onto Bel: last
+        self.assertEqual(self.ids(), ["note", "claude", "todo"])
+
+    def test_clicking_a_wedge_then_another_moves_the_first_there(self):
+        self.click(3)  # pick up Bel
+        self.assertEqual(self.card.ring_preview.selected, "claude")
+        self.click(0)  # ...and put it where Todo is
+        self.assertEqual(self.ids(), ["claude", "todo", "note"])
+        self.assertIsNone(self.card.ring_preview.selected)
+
+    def test_clicking_the_picked_up_wedge_again_puts_it_back_down(self):
+        self.click(1)
+        self.click(1)
+        self.assertIsNone(self.card.ring_preview.selected)
+        self.assertEqual(self.ids(), ["todo", "note", "claude"])
+
+    def test_the_settings_wedge_can_be_neither_picked_up_nor_dropped_on(self):
+        self.click(2)
+        self.assertIsNone(self.card.ring_preview.selected)
+        self.drag(0, 2)
+        self.drag(2, 0)
+        self.assertEqual(self.ids(), ["todo", "note", "claude"])
+
+    def test_escape_in_the_calendar_field_closes_the_card(self):
         self.card.show()
-        handled = self.card.eventFilter(self.card.rows[0].label_field, key(Qt.Key_Escape))
+        handled = self.card.eventFilter(self.card.link_field, key(Qt.Key_Escape))
         self.assertTrue(handled)
         self.assertFalse(self.card.isVisible())
-
-    def test_hiding_flushes_a_pending_label_edit(self):
-        self.card.show()  # hideEvent only fires when a visible widget is hidden
-        self.card.rows[0].label_field.setText("Tasks")  # only schedules a debounced save
-        self.card.hide()
-        self.assertEqual(cardStore.load("wedges", None)[0]["label"], "Tasks")
 
 
 if __name__ == "__main__":

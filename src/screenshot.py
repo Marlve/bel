@@ -66,7 +66,14 @@ class RegionSelector(QWidget):
         painter.drawPixmap(self.rect(), self.frozen)
         painter.fillRect(self.rect(), DIM)
         if not self.selection.isEmpty():
-            painter.drawPixmap(self.selection, self.frozen, self.source(self.selection))
+            # The whole frozen image again, clipped to the box, rather than a
+            # copy of just that region: on a scaled display the box lands on
+            # fractional device pixels, and a resampled copy shimmered inside
+            # it as the drag changed its size.
+            painter.save()
+            painter.setClipRect(self.selection)
+            painter.drawPixmap(self.rect(), self.frozen)
+            painter.restore()
             painter.setPen(QPen(QColor(style.CHAT_ACCENT), 1))
             painter.drawRect(self.selection.adjusted(0, 0, -1, -1))
 
@@ -81,8 +88,9 @@ class RegionSelector(QWidget):
         if self.origin is not None:
             # QRect(p1, p2) includes both corner pixels; the -1 makes the
             # crop exactly as wide as the drag.
+            previous = self.selection
             self.selection = QRect(self.origin, event.position().toPoint()).normalized().adjusted(0, 0, -1, -1)
-            self.update()
+            self.update(previous.united(self.selection).adjusted(-2, -2, 2, 2))  # just what changed, not the whole screen
 
     def mouseReleaseEvent(self, event):
         if self.origin is None or event.button() != Qt.LeftButton:

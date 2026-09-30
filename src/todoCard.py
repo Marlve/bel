@@ -17,9 +17,9 @@ import shadow
 import cardStore
 from anims.clock import Tween
 from draggable import WindowDrag, ResizeGrip
-from floatingCard import FloatingCard, paint_card_bands
+from floatingCard import FloatingCard, paint_card_bands, paint_header_accent
 from todoListAnimation import TodoListAnimation
-from util import reduced_motion
+from util import LiveMotion
 
 STORE_KEY = "todo"
 
@@ -153,6 +153,7 @@ class TodoList(QWidget):
         painter.drawRoundedRect(box, style.TODO_CHECKBOX_RADIUS, style.TODO_CHECKBOX_RADIUS)
 
         font = painter.font()
+        font.setFamily("Geist")
         font.setStrikeOut(item["done"])
         painter.setFont(font)
         painter.setPen(QColor(style.CHAT_BODY_TEXT))
@@ -165,7 +166,7 @@ class TodoList(QWidget):
         painter.restore()
 
 
-class TodoCard(FloatingCard, QWidget):
+class TodoCard(LiveMotion, FloatingCard, QWidget):
     def __init__(self):
         super().__init__(None)  # top-level: outlives the ring, persists for the app's life
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -178,7 +179,6 @@ class TodoCard(FloatingCard, QWidget):
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self.save)
-        self.motion = not reduced_motion()
         self.fade = Tween(self, self.onFadeTick)
         shadow.apply(self)
 
@@ -205,7 +205,7 @@ class TodoCard(FloatingCard, QWidget):
         self.add_field.end(False)  # caret after any text the field already holds
 
     def buildContent(self):
-        self.header_label = QLabel("Today", self)
+        self.header_label = QLabel("Todo", self)
         header_font = QFont(style.CHAT_MONO_FAMILY)
         header_font.setPointSizeF(style.CHAT_HEADER_SIZE)
         header_font.setLetterSpacing(QFont.PercentageSpacing, style.CHAT_HEADER_TRACKING_PERCENT)
@@ -353,6 +353,7 @@ class TodoCard(FloatingCard, QWidget):
         # see card-visual-polish/03's live-check follow-up.
         footer_seam = self.scroll.y() + self.scroll.height()
         paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, self.scroll.y(), footer_seam)
+        paint_header_accent(painter, self.header_label, self.scroll.y())
 
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))

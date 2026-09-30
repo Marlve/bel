@@ -7,7 +7,7 @@
 # codebase's cards (ticket 09).
 
 from PySide6.QtGui import QCursor, QColor, QPainterPath, QPen
-from PySide6.QtCore import QRectF, QPointF, QPoint
+from PySide6.QtCore import Qt, QRectF, QPointF, QPoint
 
 import style
 import screenBounds
@@ -31,6 +31,16 @@ def paint_card_bands(painter, frame, radius, body_color, header_bottom, divider_
     )
     painter.setPen(QPen(QColor(style.CARD_DIVIDER), 1))
     painter.drawLine(QPointF(frame.left(), divider_y), QPointF(frame.right(), divider_y))
+    painter.restore()
+
+
+def paint_header_accent(painter, title, header_bottom):
+    """A short accent rule under a card's title, sitting on the header's lower edge -
+    todo and notes share it so the accent shows on both even with nothing selected."""
+    painter.save()
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(style.CHAT_ACCENT))
+    painter.drawRect(QRectF(title.x(), header_bottom - style.ACCENT_RULE_HEIGHT, title.width(), style.ACCENT_RULE_HEIGHT))
     painter.restore()
 
 

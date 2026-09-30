@@ -108,8 +108,7 @@ class WedgeToggleTests(unittest.TestCase):
         before_settings = self.existingIds(SettingsCard)
         self.pickWedge(SETTINGS_WEDGE)
         settings_card = self.newCards(SettingsCard, before_settings)[0]
-        settings_card.rows[-1].label_field.setText("Ask AI")  # unrelated to the todo wedge
-        settings_card.save()
+        settings_card.save()  # nothing changed - a save on its own must still leave the todo card wired
 
         self.pickWedge(TODO_WEDGE)  # toggles the *same* card closed if it's still wired up
         self.assertFalse(todo_card.isVisible())
@@ -118,10 +117,10 @@ class WedgeToggleTests(unittest.TestCase):
         before_settings = self.existingIds(SettingsCard)
         self.pickWedge(SETTINGS_WEDGE)
         settings_card = self.newCards(SettingsCard, before_settings)[0]
-        settings_card.rows[0].label_field.setText("Tasks")
-        settings_card.save()
+        settings_card.moveWedge("todo", 2)  # Todo last: note, claude, todo
 
-        self.assertEqual(self.menu.wedges[TODO_WEDGE].label, "Tasks")
+        # Settings pins itself between them (see wedgeConfig.full_config), so the ring reads note, claude, settings, todo.
+        self.assertEqual([wedge.label for wedge in self.menu.wedges], ["Note", "Bel", "Settings", "Todo"])
 
 
 if __name__ == "__main__":

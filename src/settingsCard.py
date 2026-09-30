@@ -1,70 +1,33 @@
 # Settings (wedge always pinned near the bottom of the ring, per
-# wedgeConfig.full_config) - lets you relabel, reorder, or reassign the
-# ring's other wedges. Same toggled-square shape as note/todo (see
-# noteCard.py): built lazily on first pick, then just shown/hidden.
+# wedgeConfig.full_config) - four tabs: Wedges (relabel, reorder, or reassign
+# the ring's other wedges), Look, Chat and Connect. Same toggled-square shape
+# as note/todo (see noteCard.py): built lazily on first pick, then just
+# shown/hidden.
 
-from PySide6.QtWidgets import QWidget, QLabel, QLineEdit, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout
+from PySide6.QtWidgets import (
+    QFileDialog, QWidget, QLabel, QLineEdit, QPushButton, QSlider, QStackedWidget, QButtonGroup, QVBoxLayout, QHBoxLayout,
+)
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QCursor
 from PySide6.QtCore import Qt, QRectF, QTimer, QEvent
 
 import style
 import shadow
 import screenBounds
+import timetable
 import wedgeConfig
+import autostart
+import vaultIndex
 from draggable import WindowDrag
+from floatingCard import paint_card_bands
+from ringPreview import RingPreview
+from settingsWidgets import Toggle, Segmented, SettingRow, ghost_button, status_line
+from util import reduce_motion_setting, save_reduce_motion_setting
+
+WEDGE_NAMES = dict(wedgeConfig.ACTION_CHOICES)
+
 
 def margin():
     return style.CARD_SHADOW_MARGIN  # extra window room around the visible face, for the shadow
-
-
-class SettingsRow(QWidget):
-    """One editable wedge: label field, action picker, reorder arrows."""
-
-    def __init__(self, card, entry, is_first, is_last):
-        super().__init__(card)
-        self.card = card
-        self.assigned_id = entry["id"]
-        self.setFixedHeight(style.SETTINGS_ROW_HEIGHT)
-
-        self.label_field = QLineEdit(entry["label"], self)
-        self.label_field.setStyleSheet(style.settings_field_stylesheet())
-        self.label_field.textChanged.connect(card.scheduleSave)
-        self.label_field.installEventFilter(card)  # Escape closes the card, not just the field
-
-        self.action_combo = QComboBox(self)
-        self.action_combo.setStyleSheet(style.settings_combo_stylesheet())
-        for action_id, display in wedgeConfig.ACTION_CHOICES:
-            self.action_combo.addItem(display, action_id)
-        self.action_combo.setCurrentIndex(self.action_combo.findData(entry["id"]))
-        self.action_combo.currentIndexChanged.connect(lambda: card.onActionChanged(self))
-
-        self.up_button = QPushButton("↑", self)
-        self.down_button = QPushButton("↓", self)
-        for button in (self.up_button, self.down_button):
-            button.setFixedSize(style.SETTINGS_ARROW_SIZE, style.SETTINGS_ARROW_SIZE)
-            button.setCursor(Qt.PointingHandCursor)
-            button.setStyleSheet(style.settings_arrow_stylesheet())
-        self.up_button.setEnabled(not is_first)
-        self.down_button.setEnabled(not is_last)
-        self.up_button.clicked.connect(lambda: card.moveRow(self, -1))
-        self.down_button.clicked.connect(lambda: card.moveRow(self, 1))
-
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
-        row.addWidget(self.label_field, 1)
-        row.addWidget(self.action_combo)
-        row.addWidget(self.up_button)
-        row.addWidget(self.down_button)
-
-    def setAssignedId(self, action_id):
-        self.assigned_id = action_id
-        self.action_combo.blockSignals(True)
-        self.action_combo.setCurrentIndex(self.action_combo.findData(action_id))
-        self.action_combo.blockSignals(False)
-
-    def entry(self):
-        return {"id": self.assigned_id, "label": self.label_field.text().strip() or "Untitled"}
 
 
 class SettingsCard(QWidget):
@@ -122,51 +85,218 @@ class SettingsCard(QWidget):
         header.addStretch(1)
         header.addWidget(self.close_button)
 
-        self.rows_layout = QVBoxLayout()
-        self.rows_layout.setSpacing(style.SETTINGS_ROW_GAP)
-        self.rows = []
-        self.rebuildRows(wedgeConfig.load_other_wedges())
+        self.stack = QStackedWidget(self)
+        self.stack.setFixedHeight(style.SETTINGS_BODY_HEIGHT)
+        pages = [
+            ("WEDGES", self.buildWedgesPage()),
+            ("LOOK", self.buildLookPage()),
+            ("CONNECT", self.buildConnectPage()),
+        ]
+        self.tabs = QButtonGroup(self)
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(style.SPACE_1)
+        for index, (name, page) in enumerate(pages):
+            tab = QPushButton(name, self)
+            tab.setCheckable(True)
+            tab.setChecked(index == 0)
+            tab.setFixedHeight(style.SETTINGS_TAB_HEIGHT)
+            tab.setCursor(Qt.PointingHandCursor)
+            tab.setStyleSheet(style.settings_tab_stylesheet())
+            self.tabs.addButton(tab, index)
+            tab_row.addWidget(tab)
+            self.stack.addWidget(page)
+        tab_row.addStretch(1)
+        self.tabs.idClicked.connect(self.stack.setCurrentIndex)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(*[style.CHAT_PADDING + margin()] * 4)
         root.setSpacing(10)
         root.addLayout(header)
-        root.addLayout(self.rows_layout)
+        root.addLayout(tab_row)
+        root.addWidget(self.stack)
         root.addStretch(1)
 
-    def rebuildRows(self, entries):
-        while self.rows_layout.count():
-            self.rows_layout.takeAt(0).widget().deleteLater()
-        self.rows = [
-            SettingsRow(self, entry, index == 0, index == len(entries) - 1)
-            for index, entry in enumerate(entries)
-        ]
-        for row in self.rows:
-            self.rows_layout.addWidget(row)
+    def newPage(self):
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(style.SPACE_3, style.SPACE_2, style.SPACE_3, style.SPACE_2)
+        layout.setSpacing(0)
+        return page, layout
 
-    def currentEntries(self):
-        return [row.entry() for row in self.rows]
+    def buildWedgesPage(self):
+        page, layout = self.newPage()
+        self.entries = [{"id": entry["id"], "label": WEDGE_NAMES[entry["id"]]} for entry in wedgeConfig.load_other_wedges()]
+        self.ring_preview = RingPreview(self)
+        self.ring_preview.setConfig(wedgeConfig.full_config(self.entries))
+        self.ring_preview.moved.connect(self.moveWedge)
+        hint = QLabel("Click a wedge, then click where it should go. Or drag it there.", self)
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setWordWrap(True)
+        hint.setStyleSheet(style.settings_desc_stylesheet())
+        layout.addSpacing(style.SPACE_4)
+        layout.addWidget(self.ring_preview, 0, Qt.AlignHCenter)
+        layout.addSpacing(style.SPACE_3)
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        return page
 
-    def moveRow(self, row, direction):
-        entries = self.currentEntries()
-        index = self.rows.index(row)
-        target = index + direction
-        entries[index], entries[target] = entries[target], entries[index]
-        self.rebuildRows(entries)
-        self.save()
+    def buildLookPage(self):
+        page, layout = self.newPage()
+        layout.addWidget(SettingRow(self, "Accent", "Ring hover, links, slider and checks", self.buildAccentControl()))
+        layout.addWidget(SettingRow(self, "Chat card size", "Applies the next time the chat opens", self.buildSizeControl()))
+        self.motion_toggle = Toggle(self, reduce_motion_setting())
+        self.motion_toggle.toggled.connect(save_reduce_motion_setting)
+        layout.addWidget(SettingRow(self, "Reduce motion", "Skip the ring and card animations; an open chat updates next time", self.motion_toggle))
+        self.startup_toggle = Toggle(self, autostart.isEnabled())
+        self.startup_toggle.toggled.connect(autostart.setEnabled)
+        layout.addWidget(SettingRow(self, "Start with Windows", "Runs quietly in the tray", self.startup_toggle))
+        layout.addStretch(1)
+        return page
 
-    def onActionChanged(self, changed_row):
-        """A 3-item list has no "unassigned" slot, so picking an action
-        already claimed by another row swaps the two rather than leaving
-        both silently pointing at the same action."""
-        new_id = changed_row.action_combo.currentData()
-        old_id = changed_row.assigned_id
-        if new_id == old_id:
+    def buildConnectPage(self):
+        page, layout = self.newPage()
+
+        self.link_saved = timetable.saved_link()
+        self.link_field = QLineEdit(self.link_saved, self)
+        self.link_field.setEchoMode(QLineEdit.Password)  # anyone with the link can read the calendar
+        self.link_field.setPlaceholderText("iCal link (optional)")
+        self.link_field.setFixedHeight(style.SETTINGS_INPUT_HEIGHT)
+        self.link_field.setStyleSheet(style.settings_field_stylesheet())
+        self.link_field.textChanged.connect(self.scheduleSave)
+        self.link_field.textChanged.connect(self.updateCalendarStatus)
+        self.link_field.installEventFilter(self)  # Escape closes the card, not just the field
+        calendar_row = SettingRow(self, "Calendar", stacked=True)
+        calendar_row.addControl(self.link_field)
+        status, self.calendar_status, self.calendar_dot = status_line(self, "", False)
+        calendar_row.addControl(status)
+        layout.addWidget(calendar_row)
+        self.updateCalendarStatus()
+
+        self.vault_field = QLineEdit(str(vaultIndex.VAULT_PATH or ""), self)
+        self.vault_field.setPlaceholderText("No vault chosen")
+        self.vault_field.setReadOnly(True)  # changed only through Browse, so it is always a real folder
+        self.vault_field.setFixedHeight(style.SETTINGS_INPUT_HEIGHT)
+        self.vault_field.setStyleSheet(style.settings_field_stylesheet())
+        self.vault_field.installEventFilter(self)
+        vault_row = SettingRow(self, "Vault folder", stacked=True)
+        vault_row.addControl(self.fieldWithButton(self.vault_field, "BROWSE", self.browseVault))
+        vault_status, self.vault_status, self.vault_dot = status_line(self, "", False)
+        vault_row.addControl(vault_status)
+        layout.addWidget(vault_row)
+        self.updateVaultStatus()
+
+        ocr = Segmented(self, ["Korean", "English", "Both"], "Korean", disabled=("English", "Both"))
+        layout.addWidget(SettingRow(self, "Screen reading language", "Only Korean for now", ocr))
+        layout.addWidget(SettingRow(self, "Claude", "sonnet, through your Claude CLI login"))
+        layout.addStretch(1)
+
+        note = QLabel("Every field here is optional. Bel works without a calendar or a vault; those features just stay quiet.", self)
+        note.setWordWrap(True)
+        note.setStyleSheet(style.settings_desc_stylesheet())
+        layout.addWidget(note)
+        return page
+
+    def fieldWithButton(self, field, button_text, on_click):
+        row = QHBoxLayout()
+        row.setSpacing(style.SPACE_2)
+        row.addWidget(field, 1)
+        button = ghost_button(self, button_text)
+        button.clicked.connect(on_click)
+        row.addWidget(button)
+        return row
+
+    def browseVault(self):
+        folder = QFileDialog.getExistingDirectory(self, "Choose your vault folder", str(vaultIndex.VAULT_PATH or ""))
+        if not folder:
             return
-        collision = next((row for row in self.rows if row is not changed_row and row.assigned_id == new_id), None)
-        changed_row.assigned_id = new_id
-        if collision is not None:
-            collision.setAssignedId(old_id)
+        try:
+            vaultIndex.save_vault_path(folder)
+        except ValueError:
+            self.setVaultStatus("Can't use a Private folder", False)
+            return
+        self.vault_field.setText(str(vaultIndex.VAULT_PATH))
+        self.updateVaultStatus()
+
+    def updateVaultStatus(self):
+        if vaultIndex.VAULT_PATH is None:
+            self.setVaultStatus("No vault; ? lookups and ! save stay quiet", False)
+            return
+        found = vaultIndex.VAULT_PATH.exists()
+        self.setVaultStatus("Folder found" if found else "Folder not found", found)
+
+    def setVaultStatus(self, text, ok):
+        self.vault_status.setText(text)
+        color = style.STATUS_OK if ok else style.CHAT_INERT_HINT
+        self.vault_dot.setStyleSheet(f"background: {color}; border-radius: 3px;")
+
+    def updateCalendarStatus(self):
+        has_link = bool(self.link_field.text().strip())
+        self.calendar_status.setText("Link saved" if has_link else "No link yet; ! today and ! week stay quiet")
+        color = style.STATUS_OK if has_link else style.CHAT_INERT_HINT
+        self.calendar_dot.setStyleSheet(f"background: {color}; border-radius: 3px;")
+
+    def buildAccentControl(self):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.swatches = {}
+        for name, (color, _) in style.ACCENT_CHOICES.items():
+            swatch = QPushButton(self)
+            swatch.setFixedSize(style.SETTINGS_SWATCH_SIZE, style.SETTINGS_SWATCH_SIZE)
+            swatch.setCursor(Qt.PointingHandCursor)
+            swatch.setToolTip(name)
+            swatch.clicked.connect(lambda checked=False, name=name: self.onAccentPicked(name))
+            self.swatches[name] = swatch
+            row.addWidget(swatch)
+        self.styleSwatches()
+        return row
+
+    def buildSizeControl(self):
+        """Chat card size. Applies to the next chat card opened; one already
+        open keeps the size it opened with."""
+        self.size_value = QLabel(self)
+        self.size_value.setStyleSheet(style.settings_desc_stylesheet())
+        self.size_value.setFixedWidth(style.SETTINGS_ARROW_SIZE + 12)
+        self.size_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        self.size_slider = QSlider(Qt.Horizontal, self)
+        self.size_slider.setFixedWidth(style.SETTINGS_SLIDER_WIDTH)
+        self.size_slider.setRange(round(style.CHAT_SIZE_SCALE_MIN * 100), round(style.CHAT_SIZE_SCALE_MAX * 100))
+        self.size_slider.setStyleSheet(style.settings_slider_stylesheet())
+        self.size_slider.setValue(round(style.CHAT_SIZE_SCALE * 100))
+        self.size_slider.valueChanged.connect(self.onSizeChanged)
+        self.size_slider.installEventFilter(self)  # Escape closes the card, not just the slider
+        self.size_value.setText(f"{self.size_slider.value()}%")
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(self.size_slider)
+        row.addWidget(self.size_value)
+        return row
+
+    def styleSwatches(self):
+        for name, swatch in self.swatches.items():
+            swatch.setStyleSheet(style.settings_swatch_stylesheet(style.ACCENT_CHOICES[name][0], name == style.accent_name))
+
+    def onAccentPicked(self, name):
+        style.save_accent(name)
+        self.styleSwatches()
+        self.size_slider.setStyleSheet(style.settings_slider_stylesheet())
+        for tab in self.tabs.buttons():
+            tab.setStyleSheet(style.settings_tab_stylesheet())
+        for toggle in (self.motion_toggle, self.startup_toggle):
+            toggle.update()
+
+    def onSizeChanged(self, percent):
+        self.size_value.setText(f"{percent}%")
+        style.save_chat_size_scale(percent / 100)
+
+    def moveWedge(self, wedge_id, target):
+        """Takes the wedge out of its place and puts it at `target` (0 is first), the rest shifting to make room."""
+        index = next(i for i, entry in enumerate(self.entries) if entry["id"] == wedge_id)
+        if target == index:
+            return
+        self.entries.insert(target, self.entries.pop(index))
+        self.ring_preview.setConfig(wedgeConfig.full_config(self.entries))
         self.save()
 
     # --- persistence ---
@@ -176,8 +306,12 @@ class SettingsCard(QWidget):
 
     def save(self):
         self.save_timer.stop()
-        entries = self.currentEntries()
+        entries = [dict(entry) for entry in self.entries]
         wedgeConfig.save_other_wedges(entries)
+        link = self.link_field.text().strip()
+        if link != self.link_saved:
+            timetable.save_link(link)
+            self.link_saved = link
         if self.on_change is not None:
             self.on_change(entries)
 
@@ -216,6 +350,8 @@ class SettingsCard(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         m = margin()
         frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
-        painter.setBrush(QColor(style.CHAT_SURFACE))
+        body_top = self.stack.y()
+        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, body_top, body_top)
         painter.setPen(QPen(QColor(style.CHAT_BORDER), 1))
+        painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(frame, style.CHAT_RADIUS, style.CHAT_RADIUS)

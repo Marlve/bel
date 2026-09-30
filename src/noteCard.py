@@ -18,8 +18,8 @@ import shadow
 import cardStore
 from anims.clock import Tween
 from draggable import WindowDrag, ResizeGrip
-from floatingCard import FloatingCard, paint_card_bands
-from util import reduced_motion
+from floatingCard import FloatingCard, paint_card_bands, paint_header_accent
+from util import LiveMotion
 
 STORE_KEY = "note"
 
@@ -45,7 +45,7 @@ class WrapWidthLayout(QPlainTextDocumentLayout):
         return size
 
 
-class NoteCard(FloatingCard, QWidget):
+class NoteCard(LiveMotion, FloatingCard, QWidget):
     def __init__(self):
         super().__init__(None)  # top-level: outlives the ring, persists for the app's life
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -58,7 +58,6 @@ class NoteCard(FloatingCard, QWidget):
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self.save)
-        self.motion = not reduced_motion()
         self.fade = Tween(self, self.onFadeTick)
         shadow.apply(self)
 
@@ -197,11 +196,9 @@ class NoteCard(FloatingCard, QWidget):
         m = margin()
         frame = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
 
-        # Body reads one step lighter than the header bar - the one deliberate
-        # exception in the palette, per floating-card-redesign.md: a note is
-        # a different kind of object from the todo/chat cards.
         header_bottom = self.body.y()
-        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.SURFACE_RAISED, header_bottom, header_bottom)
+        paint_card_bands(painter, frame, style.CHAT_RADIUS, style.CARD_BODY, header_bottom, header_bottom)
+        paint_header_accent(painter, self.header_label, header_bottom)
 
         dragging = hasattr(self, "grip") and self.grip.dragging
         painter.setPen(QPen(QColor(style.card_border_color(dragging)), 1))

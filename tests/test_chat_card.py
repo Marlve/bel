@@ -80,7 +80,7 @@ ALL_NOTES = NOTES + [{"path": str(Path("2 Areas") / "School" / "FIT3143 Week 3.m
 CONCEPT_HIT = {"hit": True, "kind": "concept", "path": str(Path("3 Reference") / "Dijkstra.md"), "content": "Shortest path algorithm.", "all_notes": ALL_NOTES}
 CONCEPT_MISS = {"hit": False, "kind": "concept", "draft": "A drafted explanation.", "all_notes": ALL_NOTES, "content_matches": []}
 MAYBES = [{"path": str(Path("3 Reference") / "Dijkstra.md"), "recent": False}]
-VOCAB_NOTE = {"path": str(Path("2 Areas") / "Korean" / "Vocab.md"), "recent": False}
+VOCAB_NOTE = {"path": str(Path("3 Reference") / "Vocab.md"), "recent": False}
 VOCAB_MISS = {"hit": False, "kind": "vocab", "draft": "thanks", "notes": NOTES, "all_notes": ALL_NOTES, "vocab": VOCAB_NOTE}
 BREAKDOWN = {
     "translation": "thank you",

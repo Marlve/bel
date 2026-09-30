@@ -1,4 +1,4 @@
-# Incremental SQLite FTS5 index over Derich's Obsidian vault, so
+# Incremental SQLite FTS5 index over the user's Obsidian vault, so
 # search_notes (issue 03 in .scratch/vault-search/, not built yet) has
 # something to query without rescanning every markdown file on every call.
 # refresh() diffs by mtime against the last-indexed state and only touches
@@ -14,10 +14,25 @@ import re
 import sqlite3
 from pathlib import Path
 
-# Hardcoded per the vault-search spec - matches Bel's existing preference
-# against unrequested configurability. Revisit if Derich ever asks for a
-# second vault or a moved path.
-VAULT_PATH = Path("C:/Vault/ObsidianVault")
+import cardStore
+
+# The vault Bel reads and writes: None until one is chosen in Settings, which
+# leaves the vault features (`?` lookups, `! save`) with nothing to work on.
+# Set by load_vault_path() at startup and save_vault_path() on a pick;
+# everything else reads it through current_vault() at call time, so a change
+# reaches lookups and saves without a restart. refresh() drops the old
+# vault's rows on its next run, since it removes whatever it no longer sees.
+VAULT_PATH = None
+VAULT_STORE_KEY = "vault"
+
+
+def current_vault(vault_path=None):
+    """`vault_path`, else the chosen vault. Raises FileNotFoundError - an
+    OSError, which every caller already treats as "couldn't" - when there is none."""
+    vault_path = vault_path or VAULT_PATH
+    if vault_path is None:
+        raise FileNotFoundError("no vault chosen")
+    return vault_path
 
 # Bel's own local state, matching the Path.home() / ".bel" pattern already
 # used for CLAUDE_CWD in claude.py - never inside the vault folder itself,
@@ -31,6 +46,29 @@ INDEX_DB_PATH = Path.home() / ".bel" / "vault-index.sqlite3"
 # "6 PRIVATE" or "6 private" (Explorer, a sync tool, a typo) is still
 # caught - this exclusion is a hard requirement, not a style convention.
 EXCLUDED_FOLDERS = {"private"}
+
+
+def is_off_limits_root(path):
+    """True if `path` is, or sits inside, a folder the vault rules exclude - a
+    `6 Private` picked as the vault would otherwise be indexed from the inside."""
+    return any(folder_name(Path(part)).casefold() in EXCLUDED_FOLDERS for part in Path(path).parts)
+
+
+def load_vault_path():
+    """Applies the saved vault folder. Called once at startup."""
+    global VAULT_PATH
+    saved = cardStore.load(VAULT_STORE_KEY, {}).get("path")
+    if saved and not is_off_limits_root(saved):
+        VAULT_PATH = Path(saved)
+
+
+def save_vault_path(path):
+    """Points Bel at `path`. Raises ValueError for a folder the never-access rule covers."""
+    global VAULT_PATH
+    if is_off_limits_root(path):
+        raise ValueError("that folder is off limits")
+    VAULT_PATH = Path(path)
+    cardStore.save(VAULT_STORE_KEY, {"path": str(VAULT_PATH)})
 
 
 def folder_name(path):
@@ -79,7 +117,7 @@ def connect(db_path=None):
 
 
 def refresh(vault_path=None, db_path=None):
-    vault_path = vault_path or VAULT_PATH
+    vault_path = current_vault(vault_path)
     conn = connect(db_path)
     try:
         # Rows are written by rowid, never `WHERE path = ?` - rowid is the
