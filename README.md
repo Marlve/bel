@@ -60,18 +60,21 @@ Press **Ctrl+Shift+Space**. The pie menu opens around your cursor; pick **Bel** 
 | `Ctrl+Shift+Space` | Open or close the pie menu |
 | `Ctrl+Alt+Space` | Put the keyboard back in the open chat |
 
+Both can be changed in **Settings → Keys**: click a combo, then press the new one. A combo needs Ctrl, Shift or Alt with a letter or Space, or can be any F key.
+
 > [!NOTE]
-> Another app holding one of these combinations stops that hotkey from working. Bel prints a message to stderr when it can't register one, so close the other app, or start Bel from a terminal to see it.
+> Another app holding one of these combinations stops that hotkey from working. **Settings → Keys** shows which one is affected ("Another app has this combo"); pick a different combo there, or close the other app and press the same combo again.
 
 Bel keeps to one instance. To quit it, right-click the tray icon and choose **Quit Bel**.
 
 ### Commands
 
-Type these into the chat card's composer.
+Type these into the chat card's composer, or into the first message box that opens from the pie menu. Start a command with `!` and the rest of it shows dimmed; press **Tab** to fill it in (Tab again cycles when several match).
 
 | Command | What it does |
 | --- | --- |
 | `! help` | List the commands |
+| `! new` | Clear this chat and start a fresh conversation |
 | `! today` / `! week` | Show what's on your timetable today or in the next 7 days |
 | `! ss` | Drag over part of the screen; the crop is sent with your next message |
 | `! read` | Drag over text on screen and it lands in the composer (offline OCR) |

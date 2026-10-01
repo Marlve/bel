@@ -1,4 +1,4 @@
-# Entry point. Runs quietly in the background; Ctrl+Shift+Space summons the pie menu, Ctrl+Alt+Space refocuses the chat.
+# Entry point. Runs quietly in the background; a hotkey (Ctrl+Shift+Space by default) summons the pie menu, another (Ctrl+Alt+Space) refocuses the chat.
 
 import sys
 from PySide6.QtWidgets import QApplication
@@ -10,11 +10,9 @@ from hotkey import HotkeyListener
 from claude import resetClaudeHistory
 from trayIcon import TrayIcon
 from assets import assetPath
+import hotkey
 import style
 import vaultIndex
-
-PIE_MENU_HOTKEY = "ctrl+shift+space"
-CHAT_FOCUS_HOTKEY = "ctrl+alt+space"  # brings the open chat back under the keyboard
 
 
 def main():
@@ -42,15 +40,18 @@ def main():
     vaultIndex.load_vault_path()
 
     pie_menu = PieMenu()
-    hotkey = HotkeyListener(PIE_MENU_HOTKEY)
+    saved = hotkey.load_hotkeys()
+    pie_hotkey = HotkeyListener(saved["pie"])
     # Queued: WM_HOTKEY arrives inside Qt's native event filter, and the
     # ring shouldn't open (grab the mouse, force foreground) mid-dispatch.
-    hotkey.triggered.connect(pie_menu.onKeyPress, Qt.QueuedConnection)
-    hotkey.start()
+    pie_hotkey.triggered.connect(pie_menu.onKeyPress, Qt.QueuedConnection)
+    pie_hotkey.start()
 
-    chat_hotkey = HotkeyListener(CHAT_FOCUS_HOTKEY, hotkey_id=2)
+    chat_hotkey = HotkeyListener(saved["chat"], hotkey_id=2)  # brings the open chat back under the keyboard
     chat_hotkey.triggered.connect(pie_menu.chat.focus, Qt.QueuedConnection)
     chat_hotkey.start()
+
+    hotkey.listeners.update(pie=pie_hotkey, chat=chat_hotkey)
 
     sys.exit(app.exec())
 

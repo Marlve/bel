@@ -4,9 +4,12 @@
 
 from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QAbstractButton, QButtonGroup, QVBoxLayout, QHBoxLayout
 from PySide6.QtGui import QPainter, QColor
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtCore import Qt, QRectF, Signal
 
 import style
+from hotkey import format_hotkey
+
+MODIFIER_KEYS = (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_AltGr)
 
 
 class Toggle(QAbstractButton):
@@ -57,6 +60,75 @@ class Segmented(QWidget):
             layout.addWidget(button)
         if on_change is not None:
             self.group.buttonClicked.connect(lambda button: on_change(button.text()))
+
+
+class KeyCapture(QPushButton):
+    """Shows a hotkey; click it, then press the new combo. Needs a Ctrl, Shift
+    or Alt unless the key is an F-key, so it can't swallow plain typing.
+    Escape or clicking away keeps the old one."""
+
+    captured = Signal(str)
+
+    def __init__(self, parent, combo):
+        super().__init__(parent)
+        self.combo = combo
+        self.capturing = False
+        self.setFixedHeight(style.SETTINGS_BUTTON_HEIGHT)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(style.settings_button_stylesheet())
+        self.clicked.connect(self.startCapture)
+        self.showCombo()
+
+    def setCombo(self, combo):
+        self.combo = combo
+        self.showCombo()
+
+    def showCombo(self):
+        self.capturing = False
+        self.setText(format_hotkey(self.combo))
+
+    def startCapture(self):
+        self.capturing = True
+        self.setText("Press keys...")
+        self.setFocus()
+
+    def keyPressEvent(self, event):
+        if not self.capturing:
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key == Qt.Key_Escape:
+            self.showCombo()
+        elif key not in MODIFIER_KEYS:
+            combo = self.comboFromEvent(event)
+            if combo is None:
+                return
+            self.showCombo()
+            self.captured.emit(combo)
+
+    def comboFromEvent(self, event):
+        key = event.key()
+        is_function_key = Qt.Key_F1 <= key <= Qt.Key_F24
+        if key == Qt.Key_Space:
+            name = "space"
+        elif Qt.Key_A <= key <= Qt.Key_Z:
+            name = chr(key).lower()
+        elif is_function_key:
+            name = f"f{key - Qt.Key_F1 + 1}"
+        else:
+            return None
+        modifiers = [
+            word for word, flag in (("ctrl", Qt.ControlModifier), ("shift", Qt.ShiftModifier), ("alt", Qt.AltModifier))
+            if event.modifiers() & flag
+        ]
+        if not modifiers and not is_function_key:
+            return None
+        return "+".join(modifiers + [name])
+
+    def focusOutEvent(self, event):
+        if self.capturing:
+            self.showCombo()
+        super().focusOutEvent(event)
 
 
 def ghost_button(parent, text, enabled=True):

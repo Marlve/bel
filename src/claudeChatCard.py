@@ -24,19 +24,22 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QPlainTextEdit, QScrollArea,
     QVBoxLayout, QHBoxLayout, QLayout, QApplication, QFrame,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QFontMetrics, QPalette, QCursor, QPixmap
+from PySide6.QtGui import QPainter, QColor, QPen, QFontMetrics, QPalette, QCursor, QPixmap, QTextCursor
 from PySide6.QtCore import Qt, QRect, QRectF, QTimer, QVariantAnimation, Signal
 
 import cardStore
 from assets import assetPath
 import chatMarkdown
 import dockCorner
+import hotkey
 import ocr
 import screenshot
 import style
 import timetable
 import vaultSearch
 from floatingCard import paint_card_bands
+from commandComplete import CommandCompleter
+from commandInput import CommandCompletion
 from dueList import DueList
 from breakdownBlock import BreakdownBlock
 from notePicker import NotePicker
@@ -59,9 +62,8 @@ HELP_TEXT = """| type | what it does |
 | `! save` | file my last reply at the end of a note you pick |
 | `! ss` | drag a screenshot to send with your next message |
 | `! read` | drag over text on screen and it lands in the composer |
-| `! help` | this list |
-
-Ctrl+Shift+Space opens the pie menu, Ctrl+Alt+Space puts the keyboard back in this chat."""
+| `! new` | clear this chat and start a fresh conversation |
+| `! help` | this list |"""
 
 LOGO_MARK_BOUNDS = QRect(205, 60, 596, 904)  # where the mark sits inside bel-mark-*-1024.png
 SHOT_SETTLE_MS = 120  # for the card to actually leave the screen before it is grabbed
@@ -80,7 +82,7 @@ def command_name(text):
     return text[len(COMMAND_PREFIX):].strip().casefold() or None
 
 
-class Composer(QPlainTextEdit):
+class Composer(CommandCompletion, QPlainTextEdit):
     """Present from the moment the card lands - no mode switch between
     reading and asking. Enter sends, Shift+Enter newlines, Escape blurs the
     field rather than closing the card."""
@@ -108,6 +110,7 @@ class Composer(QPlainTextEdit):
         self.document().setDocumentMargin(0)
         pad = max(0, (style.CHAT_COMPOSER_HEIGHT - QFontMetrics(self.font()).height()) // 2)
         self.setViewportMargins(0, pad, 0, pad)
+        self.completer = CommandCompleter()  # for CommandCompletion
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -120,6 +123,20 @@ class Composer(QPlainTextEdit):
                 self.clear()
             return
         super().keyPressEvent(event)
+
+    def commandText(self):
+        return self.toPlainText()
+
+    def fillCommand(self, text):
+        self.setPlainText(text)
+        self.moveCursor(QTextCursor.End)
+
+    def caretAtEnd(self):
+        return self.textCursor().atEnd()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        self.paintGhost(self.viewport())
 
 
 class ChatCard(QWidget):
@@ -389,6 +406,9 @@ class ChatCard(QWidget):
         if command == "save":
             self.startSave(text)
             return
+        if command == "new":
+            self.startNewConversation()
+            return
         if command is not None:
             self.startCommand(text, command)
             return
@@ -407,6 +427,37 @@ class ChatCard(QWidget):
         self.state.request.chunk.connect(self.onChunk)
         self.state.request.session_started.connect(self.onSessionStarted)
         self.state.request.finished.connect(self.onStreamFinished)
+
+    # --- `! new` ---
+
+    def startNewConversation(self):
+        """Wipes the transcript and forgets the session id, so the next message
+        starts a fresh `claude` session instead of resuming this one."""
+        self.unwire()
+        self.clearAttachment()
+        self.clearTranscript()
+        self.state.session_id = None
+        self.state.turns.clear()
+        self.state.buffered = ""
+        self.state.streaming_text = ""
+        self.streaming_label = None
+        self.streaming_index = None
+        self.picker = None
+        self.maybe_block = None
+        self.breakdown_block = None
+        self.due_list = None
+        self.focusComposer()
+
+    def clearTranscript(self):
+        while self.transcript_layout.count() > 1:  # the last item is the bottom-anchoring stretch
+            self.deleteLayoutItem(self.transcript_layout.takeAt(0))
+
+    def deleteLayoutItem(self, item):
+        if item.widget() is not None:
+            item.widget().deleteLater()
+        elif item.layout() is not None:
+            while item.layout().count():
+                self.deleteLayoutItem(item.layout().takeAt(0))
 
     # --- `! ss` ---
 
@@ -693,7 +744,9 @@ class ChatCard(QWidget):
         label = self.appendClaudeTurn()
         index = self.streaming_index
         self.state.turns[index]["unsaveable"] = True
-        self.showReply(label, index, HELP_TEXT)
+        keys = {name: hotkey.format_hotkey(combo) for name, combo in hotkey.load_hotkeys().items()}
+        keys_line = f"{keys['pie']} opens the pie menu, {keys['chat']} puts the keyboard back in this chat."
+        self.showReply(label, index, f"{HELP_TEXT}\n\n{keys_line}")
 
     # --- `!` commands ---
 

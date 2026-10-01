@@ -17,13 +17,18 @@ import timetable
 import wedgeConfig
 import autostart
 import vaultIndex
+import hotkey
 from draggable import WindowDrag
 from floatingCard import paint_card_bands
 from ringPreview import RingPreview
-from settingsWidgets import Toggle, Segmented, SettingRow, ghost_button, status_line
+from settingsWidgets import Toggle, Segmented, SettingRow, KeyCapture, ghost_button, status_line
 from util import reduce_motion_setting, save_reduce_motion_setting
 
 WEDGE_NAMES = dict(wedgeConfig.ACTION_CHOICES)
+KEY_ROWS = {
+    "pie": ("Open the pie menu", "Press it again to close the ring"),
+    "chat": ("Refocus the chat", "Puts the keyboard back in the open chat"),
+}
 
 
 def margin():
@@ -90,6 +95,7 @@ class SettingsCard(QWidget):
         pages = [
             ("WEDGES", self.buildWedgesPage()),
             ("LOOK", self.buildLookPage()),
+            ("KEYS", self.buildKeysPage()),
             ("CONNECT", self.buildConnectPage()),
         ]
         self.tabs = QButtonGroup(self)
@@ -152,6 +158,58 @@ class SettingsCard(QWidget):
         layout.addWidget(SettingRow(self, "Start with Windows", "Runs quietly in the tray", self.startup_toggle))
         layout.addStretch(1)
         return page
+
+    def buildKeysPage(self):
+        page, layout = self.newPage()
+        saved = hotkey.load_hotkeys()
+        self.key_buttons = {}
+        self.key_status = {}
+        for name, (title, desc) in KEY_ROWS.items():
+            button = KeyCapture(self, saved[name])
+            button.captured.connect(lambda combo, name=name: self.onKeyCaptured(name, combo))
+            self.key_buttons[name] = button
+            row = SettingRow(self, title, desc, stacked=True)
+            row.addControl(button)
+            status, label, dot = status_line(self, "", False)
+            self.key_status[name] = (label, dot)
+            row.addControl(status)
+            layout.addWidget(row)
+            listener = hotkey.listeners.get(name)
+            if listener is not None and not listener.registered:
+                self.setKeyStatus(name, "Another app has this combo; pick a different one", False)
+            else:
+                self.setKeyStatus(name, "Active", listener is not None)
+        layout.addStretch(1)
+
+        note = QLabel("Click a combo, then press the new one. Use Ctrl, Shift or Alt with a letter or Space, or any F key.", self)
+        note.setWordWrap(True)
+        note.setStyleSheet(style.settings_desc_stylesheet())
+        layout.addWidget(note)
+        return page
+
+    def setKeyStatus(self, name, text, ok):
+        label, dot = self.key_status[name]
+        label.setText(text)
+        color = style.STATUS_OK if ok else style.CHAT_INERT_HINT
+        dot.setStyleSheet(f"background: {color}; border-radius: 3px;")
+
+    def onKeyCaptured(self, name, combo):
+        """Rebinds `name` to `combo` live and saves it - unless the other Bel
+        hotkey already uses it or another app holds it, in which case the old
+        combo stays and the status says why."""
+        for other, button in self.key_buttons.items():
+            if other != name and hotkey.parse_hotkey(button.combo) == hotkey.parse_hotkey(combo):
+                self.setKeyStatus(name, f"{hotkey.format_hotkey(combo)} is already used to {KEY_ROWS[other][0].lower()}", False)
+                return
+        listener = hotkey.listeners.get(name)
+        if listener is not None and not listener.rebind(combo):
+            held = listener.registered
+            text = f"Another app has {hotkey.format_hotkey(combo)}"
+            self.setKeyStatus(name, text + ("; kept the old one" if held else "; nothing is bound now"), False)
+            return
+        hotkey.save_hotkey(name, combo)
+        self.key_buttons[name].setCombo(combo)
+        self.setKeyStatus(name, "Active", listener is not None)
 
     def buildConnectPage(self):
         page, layout = self.newPage()

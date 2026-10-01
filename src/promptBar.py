@@ -24,6 +24,8 @@ from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal
 
 import style
 import shadow
+from commandComplete import CommandCompleter
+from commandInput import CommandCompletion
 from promptBarState import PromptBarState, EMPTY, TYPING, SENDING, REJECTED
 from promptBarAnimation import PromptBarAnimation
 
@@ -34,6 +36,31 @@ BORDER_BY_STATE = {
     REJECTED: style.FIELD_BORDER_REJECTED,
 }
 SEND_HINT = "⏎"  # the return glyph, sitting in the right inset
+
+
+class PromptField(CommandCompletion, QLineEdit):
+    """The message field. Tab completes a `!` command; it never moves focus,
+    since the only other thing to land on is the ring overlay behind it, and
+    focus there leaves the field dead."""
+
+    tab_leaves_field = False
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.completer = CommandCompleter()
+
+    def commandText(self):
+        return self.text()
+
+    def fillCommand(self, text):
+        self.setText(text)
+
+    def caretAtEnd(self):
+        return self.cursorPosition() == len(self.text())
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        self.paintGhost(self)
 
 
 class PromptBar(QWidget):
@@ -50,7 +77,7 @@ class PromptBar(QWidget):
         # as "cancel" and would throw away what the user had typed.
         self.setAttribute(Qt.WA_NoMousePropagation)
 
-        self.field = QLineEdit(self)
+        self.field = PromptField(self)
         self.field.setFrame(False)
         self.field.installEventFilter(self)  # Escape steps back to the ring, it doesn't close everything
         self.field.textChanged.connect(self.onTextChanged)
